@@ -5,6 +5,10 @@ set -e
 NAS_IP="192.168.179.11"
 NAS_NAME="DS1813-01"
 
+# NFS version and mount options
+NFS_VERSION="4"
+MOUNT_OPTIONS="vers=${NFS_VERSION},rsize=1048576,wsize=1048576,noatime,nodiratime,async"
+
 # Volumes to mount
 VOLUMES=(
   "volume1:/volume1/Volume-1"
@@ -35,14 +39,14 @@ for entry in "${VOLUMES[@]}"; do
     mkdir -p "${LOCAL_PATH}"
 
     echo "Testing mount for ${NAS_EXPORT}..."
-    mount -t nfs -o vers=4.2,rsize=1048576,wsize=1048576,noatime,nodiratime,async \
+    mount -t nfs -o ${MOUNT_OPTIONS} \
         "${NAS_IP}:${NAS_EXPORT}" "${LOCAL_PATH}"
 
     echo "Unmounting test mount..."
     umount "${LOCAL_PATH}"
 
     echo "Adding to /etc/fstab if not already present..."
-    FSTAB_ENTRY="${NAS_IP}:${NAS_EXPORT}  ${LOCAL_PATH}  nfs  vers=4.2,rsize=1048576,wsize=1048576,noatime,nodiratime,async  0  0"
+    FSTAB_ENTRY="${NAS_IP}:${NAS_EXPORT}  ${LOCAL_PATH}  nfs  ${MOUNT_OPTIONS}  0  0"
 
     grep -qxF "${FSTAB_ENTRY}" /etc/fstab || echo "${FSTAB_ENTRY}" >> /etc/fstab
 done
