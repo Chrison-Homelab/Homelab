@@ -2,6 +2,14 @@
 
 My Homelab
 
+## Install PowerShell Script
+
+Installs PowerShell Core on the Proxmox node for running PowerShell scripts.
+
+**WGET:** `bash <(wget -qO- https://raw.githubusercontent.com/ChrisonSimtian/Homelab/main/src/Proxmox/install-powershell.sh)`
+
+**CURL:** `bash <(curl -fsSL https://raw.githubusercontent.com/ChrisonSimtian/Homelab/main/src/Proxmox/install-powershell.sh)`
+
 ## Inventory Script
 
 Grabs the Hardware for inventory purposes and outputs it in a MD format
