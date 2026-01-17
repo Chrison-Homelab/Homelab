@@ -2,8 +2,8 @@
 
 set -e
 
-NAS_IP="192.168.179.11"
-NAS_NAME="DS1813-01"
+NAS_IP="${1:-192.168.179.11}"
+NAS_NAME="${2:-DS1813-01}"
 BASE_MOUNT="/mnt/${NAS_NAME}"
 
 # NFS mount options
