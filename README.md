@@ -18,6 +18,20 @@ Grabs the Hardware for inventory purposes and outputs it in a MD format
 
 **CURL:** `bash <(curl -fsSL https://github.com/ChrisonSimtian/Homelab/blob/main/src/Proxmox/inventory.sh)`
 
+Or use the powershell version:
+
+**Using curl:**
+
+```bash
+pwsh -c "Invoke-Expression (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ChrisonSimtian/Homelab/main/src/Proxmox/inventory.ps1' -UseBasicParsing).Content"
+```
+
+**Using wget (download first):**
+
+```bash
+wget https://raw.githubusercontent.com/ChrisonSimtian/Homelab/main/src/Proxmox/inventory.ps1 -O /tmp/inventory.ps1 && pwsh /tmp/inventory.ps1
+```
+
 ## Setup NFS Shares Script
 
 After a longer session with CoPilot, it turns out that setting NFS shares up on the proxmox node itself and sharing it out from there into LXC container is way better for performance. Plus it makes it easier to mount shares, no more messing around with NFS.
@@ -30,11 +44,13 @@ This also allows us to at some point add a SSD to the node and use this for cach
 Or run the powershell version:
 
 **Direct execution:**
+
 ```bash
 pwsh -c "Invoke-Expression (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ChrisonSimtian/Homelab/main/src/Proxmox/setup-nfs-shares.ps1' -UseBasicParsing).Content"
 ```
 
 **With custom parameters:**
+
 ```bash
 pwsh -c "Invoke-Expression (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ChrisonSimtian/Homelab/main/src/Proxmox/setup-nfs-shares.ps1' -UseBasicParsing).Content" -- -NasIP "192.168.1.100" -NasName "MyNAS"
 ```
