@@ -26,6 +26,20 @@ fi
 echo "Found exports:"
 echo "$EXPORTS"
 
+# TODO: Exclude exports on the wrong subnet
+# This requires additional logic to determine the subnet of the Proxmox host
+# and compare it with the export paths if they contain subnet information.
+# For now, we will mount all discovered exports.
+# TODO: Add filtering logic here if needed
+# For example, to exclude certain exports:
+# FILTERED_EXPORTS=""
+# for EXPORT in $EXPORTS; do
+#     if [[ "$EXPORT" != *"excluded_pattern"* ]]; then
+#         FILTERED_EXPORTS+="$EXPORT "
+#     fi
+# done
+# EXPORTS="$FILTERED_EXPORTS"
+
 echo "Creating base directory: ${BASE_MOUNT}"
 mkdir -p "${BASE_MOUNT}"
 
@@ -44,6 +58,7 @@ for EXPORT in $EXPORTS; do
 
     mkdir -p "${LOCAL_PATH}"
 
+    # Test mount
     echo "Testing mount..."
     mount -t nfs -o ${NFS_MOUNT_OPTIONS} \
         "${NAS_IP}:${EXPORT}" "${LOCAL_PATH}"
@@ -51,6 +66,11 @@ for EXPORT in $EXPORTS; do
     echo "Unmounting test mount..."
     umount "${LOCAL_PATH}"
 
+    # Persist mount in /etc/fstab if mount test was successful
+    echo "Persisting mount in /etc/fstab..."
+    
+
+    # Add to /etc/fstab if not already present
     FSTAB_ENTRY="${NAS_IP}:${EXPORT}  ${LOCAL_PATH}  nfs  ${NFS_MOUNT_OPTIONS}  0  0"
 
     echo "Adding to /etc/fstab if missing..."
