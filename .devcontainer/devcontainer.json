@@ -1,16 +1,25 @@
 {
   "name": "Homelab Dev",
   "dockerFile": "Dockerfile",
+  "remoteUser": "vscode",
+  "mounts": [
+    "source=${localWorkspaceFolder},target=/workspace,type=bind"
+  ],
   "context": "..",
-  "runArgs": ["--privileged"],
-  "postCreateCommand": "pwsh -c Install-Module Pester -Force",
+  "runArgs": [
+    "--privileged"
+  ],
+  "postCreateCommand": "bash .devcontainer/setup.sh",
   "customizations": {
     "vscode": {
       "extensions": [
         "ms-vscode.powershell",
         "ms-azuretools.vscode-docker",
         "hashicorp.terraform",
-        "redhat.ansible"
+        "redhat.ansible",
+        "samuelcolvin.jinjahtml",
+        "tamasfe.even-better-toml",
+        "davidanson.vscode-markdownlint"
       ]
     }
   }

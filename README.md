@@ -166,6 +166,13 @@ services:
 
 ### Ansible
 
+**Installation:**
+
+1. Install Ansible
+`pip install ansible`
+2. Install Community.Synology collection
+`ansible-galaxy collection install community.synology`
+
 **Proxmox:**
 [Ansible Module](https://github.com/ansible-collections/community.proxmox)
 

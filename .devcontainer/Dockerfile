@@ -17,4 +17,10 @@ RUN apt-get install -y gnupg && \
     apt-get install -y terraform
 
 # Ansible
-RUN apt-get install -y ansible
+RUN apt-get update && \
+    apt-get install -y python3 python3-pip ssh && \
+    pip3 install ansible && \
+    pip3 install ansible-lint yamllint
+
+# Synology DSM CLI
+RUN ansible-galaxy collection install community.synology

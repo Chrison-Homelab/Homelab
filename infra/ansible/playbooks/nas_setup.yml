@@ -1,0 +1,26 @@
+- name: Test DSM Setup
+  hosts: nas
+  gather_facts: false
+  tasks:
+    - name: Check DSM is reachable
+      uri:
+        url: "http://{{ dsm_host }}/webapi/entry.cgi"
+        method: GET
+        return_content: yes
+      register: dsm_response
+
+    - name: Assert DSM responded successfully
+      assert:
+        that:
+          - dsm_response.status == 200
+          - "'DSM' in dsm_response.content"
+
+    - name: Get DSM info
+      community.general.synology_dsm_info:
+        host: "{{ dsm_host }}"
+        username: "{{ dsm_user }}"
+        password: "{{ dsm_password }}"
+      register: dsm_info
+
+    - debug:
+        var: dsm_info

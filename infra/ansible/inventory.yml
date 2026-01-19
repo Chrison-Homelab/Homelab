@@ -1,0 +1,6 @@
+all:
+  hosts:
+    nas:
+      ansible_host: localhost
+      ansible_port: 5000
+      ansible_connection: local
