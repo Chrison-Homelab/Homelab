@@ -30,76 +30,21 @@ However, on Linux & Windows you can run a container
 
 ### Ansible
 
-**Installation:**
+**MacOS Installation:**
+Run `brew install ansible`. Its that simple on MacOS
+
+**Windows Installation:**
+Run `pip install ansible`. Sadly its not that simple. You need to add the right path, install the correct python, etc. Just use MacOS or Linux already. 
 
 1. Install Ansible
-`pip install ansible`
 2. Install Community.Synology collection
-`ansible-galaxy collection install community.synology`
 
 **Proxmox:**
 [Ansible Module](https://github.com/ansible-collections/community.proxmox)
 
 **Synology DSM:**
 [Ansible Synology DSM](https://github.com/agaffney/ansible-synology-dsm)
-
-## Install PowerShell Script
-
-Installs PowerShell Core on the Proxmox node for running PowerShell scripts.
-
-**WGET:** `bash <(wget -qO- https://raw.githubusercontent.com/ChrisonSimtian/Homelab/main/src/Proxmox/install-powershell.sh)`
-
-**CURL:** `bash <(curl -fsSL https://raw.githubusercontent.com/ChrisonSimtian/Homelab/main/src/Proxmox/install-powershell.sh)`
-
-## Inventory Script
-
-Grabs the Hardware for inventory purposes and outputs it in a MD format
-
-**WGET:** `bash <(wget -qO- https://github.com/ChrisonSimtian/Homelab/blob/main/src/Proxmox/inventory.sh)`
-
-**CURL:** `bash <(curl -fsSL https://github.com/ChrisonSimtian/Homelab/blob/main/src/Proxmox/inventory.sh)`
-
-Or use the powershell version:
-
-**Using curl:**
-
-```bash
-pwsh -c "Invoke-Expression (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ChrisonSimtian/Homelab/main/src/Proxmox/inventory.ps1' -UseBasicParsing).Content"
-```
-
-**Using wget (download first):**
-
-```bash
-wget https://raw.githubusercontent.com/ChrisonSimtian/Homelab/main/src/Proxmox/inventory.ps1 -O /tmp/inventory.ps1 && pwsh /tmp/inventory.ps1
-```
-
-## Setup NFS Shares Script
-
-After a longer session with CoPilot, it turns out that setting NFS shares up on the proxmox node itself and sharing it out from there into LXC container is way better for performance. Plus it makes it easier to mount shares, no more messing around with NFS.
-This also allows us to at some point add a SSD to the node and use this for caching.
-
-**WGET:** `bash <(wget -qO- https://github.com/ChrisonSimtian/Homelab/blob/main/src/Proxmox/setup-ds1813-shares.sh)`
-
-**CURL:** `bash <(curl -fsSL https://github.com/ChrisonSimtian/Homelab/blob/main/src/Proxmox/setup-ds1813-shares.sh)`
-
-Or run the powershell version:
-
-**Direct execution:**
-
-```bash
-pwsh -c "Invoke-Expression (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ChrisonSimtian/Homelab/main/src/Proxmox/setup-nfs-shares.ps1' -UseBasicParsing).Content"
-```
-
-**With custom parameters:**
-
-```bash
-pwsh -c "Invoke-Expression (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ChrisonSimtian/Homelab/main/src/Proxmox/setup-nfs-shares.ps1' -UseBasicParsing).Content" -- -NasIP "192.168.1.100" -NasName "MyNAS"
-```
-
-## Useful links
-
-- [Synology's DSM API](https://global.download.synology.com/download/Document/Software/DeveloperGuide/Package/FileStation/All/enu/Synology_File_Station_API_Guide.pdf)
-- [Proxmox API](https://pve.proxmox.com/wiki/Proxmox_VE_API)
+`ansible-galaxy collection install community.synology`
 
 ## Testing
 
@@ -113,3 +58,8 @@ docker-compose exec debian-test bash
 ```
 
 See [TESTING.md](TESTING.md) for detailed testing instructions.
+
+## Useful links
+
+- [Synology's DSM API](https://global.download.synology.com/download/Document/Software/DeveloperGuide/Package/FileStation/All/enu/Synology_File_Station_API_Guide.pdf)
+- [Proxmox API](https://pve.proxmox.com/wiki/Proxmox_VE_API)
