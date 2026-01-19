@@ -1,0 +1,37 @@
+services:
+  debian-test:
+    build: .
+    container_name: homelab-debian-test
+    volumes:
+      - ./src/Proxmox:/homelab/scripts:ro
+    working_dir: /homelab
+    stdin_open: true
+    tty: true
+    command: /bin/bash
+    networks:
+      - homelab-test
+    
+  # Optional: NFS server for testing NFS mounting scripts
+  nfs-test:
+    image: itsthenetwork/nfs-server-alpine:latest
+    container_name: homelab-nfs-test
+    privileged: true
+    environment:
+      - SHARED_DIRECTORY=/exports
+    volumes:
+      - nfs-exports:/exports
+    networks:
+      homelab-test:
+        ipv4_address: 192.168.100.10
+    ports:
+      - "2049:2049"
+
+networks:
+  homelab-test:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.100.0/24
+
+volumes:
+  nfs-exports:

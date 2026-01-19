@@ -1,0 +1,20 @@
+# Docker/testing files
+Dockerfile
+docker-compose.yml
+TESTING.md
+.dockerignore
+
+# Container volumes
+nfs-exports/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.log
