@@ -162,6 +162,16 @@ services:
     stop_grace_period: 2m
 ```
 
+## Infrastructure as Code
+
+### Ansible
+
+**Proxmox:**
+[Ansible Module](https://github.com/ansible-collections/community.proxmox)
+
+**Synology DSM:**
+[Ansible Synology DSM](https://github.com/agaffney/ansible-synology-dsm)
+
 ## Scripts
 
 ### Inventory Script
@@ -171,3 +181,8 @@ Grabs the Hardware for inventory purposes and outputs it in a MD format
 **WGET:** `bash <(wget -qO- https://github.com/ChrisonSimtian/Homelab/blob/main/src/proxmox-inventory.sh)`
 
 **CURL:** `bash <(curl -fsSL https://github.com/ChrisonSimtian/Homelab/blob/main/src/proxmox-inventory.sh)`
+
+## Useful links
+
+- [Synology's DSM API](https://global.download.synology.com/download/Document/Software/DeveloperGuide/Package/FileStation/All/enu/Synology_File_Station_API_Guide.pdf)
+- [Proxmox API](https://pve.proxmox.com/wiki/Proxmox_VE_API)
