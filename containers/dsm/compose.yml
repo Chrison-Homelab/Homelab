@@ -1,0 +1,21 @@
+services:
+  dsm:
+    container_name: dsm
+    image: vdsm/virtual-dsm
+    environment:
+      DISK_SIZE: "10G"
+      DISK2_SIZE: "10G"
+      DISK3_SIZE: "10G"
+    devices:
+      - /dev/kvm
+      - /dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - 5000:5000
+    volumes:
+      - ./dsm:/storage
+      - ./example2:/storage2
+      - ./example3:/storage3
+    restart: always
+    stop_grace_period: 2m

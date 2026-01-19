@@ -1,0 +1,12 @@
+services:
+  proxmox:
+    container_name: proxmox-test
+    image: longqtsea/containerized-proxmox
+    privileged: true
+    devices:
+      - /dev/kvm
+    ports:
+      - 8006:8006
+    volumes:
+      - ./config:/var/lib/vz
+    restart: unless-stopped
