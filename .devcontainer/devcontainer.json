@@ -1,0 +1,17 @@
+{
+  "name": "Homelab Dev",
+  "dockerFile": "Dockerfile",
+  "context": "..",
+  "runArgs": ["--privileged"],
+  "postCreateCommand": "pwsh -c Install-Module Pester -Force",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.powershell",
+        "ms-azuretools.vscode-docker",
+        "hashicorp.terraform",
+        "redhat.ansible"
+      ]
+    }
+  }
+}
