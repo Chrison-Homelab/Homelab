@@ -236,3 +236,15 @@ pwsh -c "Invoke-Expression (Invoke-WebRequest -Uri 'https://raw.githubuserconten
 
 - [Synology's DSM API](https://global.download.synology.com/download/Document/Software/DeveloperGuide/Package/FileStation/All/enu/Synology_File_Station_API_Guide.pdf)
 - [Proxmox API](https://pve.proxmox.com/wiki/Proxmox_VE_API)
+
+## Testing
+
+A Debian 13 container is provided for testing scripts locally before deploying to Proxmox nodes.
+
+**Quick test environment:**
+```bash
+docker-compose up -d debian-test
+docker-compose exec debian-test bash
+```
+
+See [TESTING.md](TESTING.md) for detailed testing instructions.
