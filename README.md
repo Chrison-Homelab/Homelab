@@ -242,6 +242,7 @@ pwsh -c "Invoke-Expression (Invoke-WebRequest -Uri 'https://raw.githubuserconten
 A Debian 13 container is provided for testing scripts locally before deploying to Proxmox nodes.
 
 **Quick test environment:**
+
 ```bash
 docker-compose up -d debian-test
 docker-compose exec debian-test bash

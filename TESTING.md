@@ -5,6 +5,7 @@ This container provides a Debian 13 (Trixie) environment for testing Proxmox scr
 ## Quick Start
 
 ### Build and Run
+
 ```bash
 # Build the container
 docker build -t homelab-test .
@@ -20,6 +21,7 @@ docker-compose exec debian-test bash
 ### Test Scripts
 
 Inside the container:
+
 ```bash
 # Test bash scripts
 ./scripts/inventory.sh
