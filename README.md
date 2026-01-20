@@ -27,6 +27,7 @@ My Homelab infrastructure repository containing scripts, automation, and documen
 
 - **[Scripts Documentation](docs/Scripts.md)** - Usage guide for all automation scripts
 - **[Testing Guide](TESTING.md)** - How to test scripts locally
+- **[Contributing Guide](CONTRIBUTING.md)** - Guidelines for contributing to this repository
 - **[Network Architecture](docs/Network.md)** - VLAN and network design
 - **[Device Inventory](docs/Devices.md)** - Hardware documentation
 
