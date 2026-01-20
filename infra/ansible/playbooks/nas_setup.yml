@@ -1,3 +1,20 @@
+---
+# NAS Setup and Testing Playbook
+#
+# Description: Tests connectivity to Synology DSM and retrieves system information
+#
+# Requirements:
+#   - community.synology collection
+#   - Install: ansible-galaxy collection install community.synology
+#
+# Usage:
+#   ansible-playbook -i ../inventory.yml nas_setup.yml
+#
+# Purpose:
+#   - Verify DSM API is reachable
+#   - Test authentication
+#   - Retrieve and display DSM system information
+
 - name: Test DSM Setup
   hosts: nas
   gather_facts: false

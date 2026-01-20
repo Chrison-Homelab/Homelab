@@ -1,3 +1,16 @@
+# Virtual Synology DSM Development Container
+# For detailed documentation, see README.md
+# 
+# Platform Requirements:
+# - Linux (x86_64) or Windows (x86_64) with KVM support
+# - NOT compatible with macOS ARM64
+#
+# Quick Start:
+#   docker-compose up -d
+#   Access DSM at http://localhost:5000
+#
+# Default Password: See infra/ansible/group_vars/nas.yml
+
 services:
   dsm:
     container_name: dsm

@@ -1,3 +1,20 @@
+# Proxmox VE 3-Node Cluster Configuration
+# For detailed documentation, see README.md
+#
+# Platform Requirements:
+# - Linux (x86_64) or Windows (x86_64) with kernel module support
+# - NOT compatible with macOS ARM64
+#
+# Quick Start:
+#   docker-compose -f compose.cluster.yml up -d
+#   Access nodes at:
+#     - Node 1: https://localhost:8006
+#     - Node 2: https://localhost:8007
+#     - Node 3: https://localhost:8008
+#     - PDM: https://localhost:8443
+#
+# Default Credentials: root / 123 (DEVELOPMENT ONLY)
+
 # Common option
 x-service: &systemd
   restart: unless-stopped

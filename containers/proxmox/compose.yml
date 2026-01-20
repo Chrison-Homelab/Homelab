@@ -1,3 +1,7 @@
+# Simple single-node Proxmox configuration
+# For detailed documentation, see README.md
+# For a full cluster setup, use compose.cluster.yml instead
+
 services:
   proxmox:
     container_name: proxmox-test

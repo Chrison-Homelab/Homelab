@@ -1,3 +1,14 @@
+# Homelab Testing Environment
+# For detailed documentation, see README.md and ../../TESTING.md
+#
+# This provides a Debian 13 environment matching Proxmox VE for testing scripts
+#
+# Quick Start:
+#   docker-compose up -d debian-test
+#   docker-compose exec debian-test bash
+#
+# Platform Support: macOS, Linux, Windows (all architectures)
+
 services:
   debian-test:
     build: .
