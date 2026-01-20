@@ -1,6 +1,11 @@
 #!/bin/bash
 # proxmox-cpu-snapshot.sh
-# Collects VM/LXC CPU config + usage for analysis
+# 
+# Collects CPU configuration and usage statistics for VMs and LXC containers
+# Useful for capacity planning, performance analysis, and resource optimization
+#
+# Usage: ./proxmox-cpu-snapshot.sh
+# Requirements: qm (QEMU/KVM management), pct (Proxmox Container Toolkit), mpstat
 
 NODE=$(hostname)
 

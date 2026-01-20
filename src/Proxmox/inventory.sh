@@ -1,6 +1,13 @@
 #!/bin/bash
-# proxmox-inventory.sh
-# Collects hardware info for Proxmox nodes in a Confluence-friendly format
+# inventory.sh
+#
+# Collects hardware information from Proxmox nodes in Markdown format
+# Output is formatted for easy copying into Confluence or other documentation
+#
+# Usage: ./inventory.sh
+# Output: Markdown-formatted hardware inventory including CPU, memory, storage, network, and PCI devices
+#
+# Requirements: lscpu, free, lsblk, ip, lspci, dmidecode
 
 HOSTNAME=$(hostname)
 

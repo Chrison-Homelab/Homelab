@@ -1,4 +1,12 @@
 #!/bin/bash
+# get-hardware-info.sh
+# 
+# Comprehensive hardware information collector for Proxmox nodes
+# Gathers detailed information about CPU, memory, storage, network, GPU, and system components
+# Useful for troubleshooting, inventory, and documentation purposes
+#
+# Usage: ./get-hardware-info.sh
+# Requirements: smartctl, dmidecode, ethtool, lspci, vainfo (optional for Intel GPU)
 
 echo "=== Hostname and OS ==="
 hostnamectl

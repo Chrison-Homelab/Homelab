@@ -1,4 +1,13 @@
 #!/bin/bash
+# install-powershell.sh
+#
+# Installs PowerShell Core on Debian-based Proxmox nodes
+# Uses snap package manager as Microsoft doesn't officially support Debian 13 yet
+#
+# Usage: bash <(curl -fsSL https://raw.githubusercontent.com/ChrisonSimtian/Homelab/main/src/Proxmox/install-powershell.sh)
+#
+# Requirements: snap package manager (installed by this script)
+# Note: The official Microsoft repository method is commented out as it doesn't support Debian 13
 
 # This would be the proper way to install PowerShell on Debian-based systems,
 # but it's currently commented out because Microsoft doesnt support Debian 13 and Proxmox is based on this version.

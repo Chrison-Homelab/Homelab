@@ -1,4 +1,15 @@
 #!/usr/bin/env pwsh
+# inventory.ps1
+#
+# PowerShell version of the inventory script for Proxmox nodes
+# Collects hardware information in Markdown format with comprehensive error handling
+# 
+# Usage: 
+#   Direct execution: pwsh -c "Invoke-Expression (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ChrisonSimtian/Homelab/main/src/Proxmox/inventory.ps1' -UseBasicParsing).Content"
+#   Local execution: pwsh ./inventory.ps1
+#
+# Output: Markdown-formatted hardware inventory including CPU, memory, storage, network, PCI devices, and Proxmox version
+# Requirements: PowerShell Core, lscpu, free, lsblk, ip, lspci, dmidecode, pveversion
 
 # proxmox-inventory.ps1
 # Collects hardware info for Proxmox nodes in a Confluence-friendly format

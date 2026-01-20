@@ -1,6 +1,11 @@
 #!/bin/bash
 # hardware-info.sh
-# Collects vendor + model info for key components on a Proxmox host
+# 
+# Collects vendor and model information for key hardware components on a Proxmox host
+# Provides a quick overview of CPU, mainboard, RAM, graphics cards, and network interfaces
+#
+# Usage: ./hardware-info.sh
+# Requirements: lscpu, dmidecode, lspci
 
 echo "=== Hardware Information for $(hostname) ==="
 
