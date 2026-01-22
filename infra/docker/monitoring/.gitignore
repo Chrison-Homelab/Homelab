@@ -1,0 +1,11 @@
+# Ignore data folder
+data/*
+
+# Ignore config folder, except for samples
+config/*
+!config/sample.*
+
+# Ignore .env files, except for samples
+
+!.env
+.env.local*
