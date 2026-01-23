@@ -8,10 +8,10 @@ terraform {
 }
 
 provider synology {
-  endpoint = var.synology_endpoint
-  username = var.synology_username
+  host = var.synology_endpoint
+  user= var.synology_username
   password = var.synology_password
 
   # Set to true if using self-signed certs
-  insecure = true
+  skip_cert_check = true
 }
