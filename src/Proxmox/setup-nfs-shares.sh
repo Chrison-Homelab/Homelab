@@ -1,4 +1,16 @@
 #!/usr/bin/env bash
+# setup-nfs-shares.sh
+#
+# Dynamically discovers and mounts NFS exports from a NAS to a Proxmox node
+# Automatically creates mount points and persists them in /etc/fstab
+# 
+# Usage: ./setup-nfs-shares.sh [NAS_IP] [NAS_NAME]
+#   NAS_IP: IP address of the NAS (default: 192.168.179.11)
+#   NAS_NAME: Name for the mount base directory (default: DS1813-01)
+#
+# Example: ./setup-nfs-shares.sh 192.168.1.100 MyNAS
+#
+# Requirements: showmount, nfs-common package
 
 set -e
 

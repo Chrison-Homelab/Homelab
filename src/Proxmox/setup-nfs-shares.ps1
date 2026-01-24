@@ -1,4 +1,20 @@
 #!/usr/bin/env pwsh
+# setup-nfs-shares.ps1
+#
+# PowerShell version of the NFS shares setup script
+# Dynamically discovers and mounts NFS exports from a NAS to a Proxmox node
+# Automatically creates mount points and persists them in /etc/fstab
+#
+# Usage: 
+#   Direct execution: pwsh -c "Invoke-Expression (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ChrisonSimtian/Homelab/main/src/Proxmox/setup-nfs-shares.ps1' -UseBasicParsing).Content"
+#   With parameters: pwsh -c "Invoke-Expression (Invoke-WebRequest -Uri '...' -UseBasicParsing).Content" -- -NasIP "192.168.1.100" -NasName "MyNAS"
+#   Local execution: pwsh ./setup-nfs-shares.ps1 -NasIP "192.168.1.100" -NasName "MyNAS"
+#
+# Parameters:
+#   -NasIP: IP address of the NAS (default: 192.168.179.11)
+#   -NasName: Name for the mount base directory (default: DS1813-01)
+#
+# Requirements: PowerShell Core, showmount, nfs-common package
 
 # PowerShell version of setup-nfs-shares.sh
 # Requires PowerShell Core to be installed on the Proxmox node

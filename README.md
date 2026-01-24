@@ -1,6 +1,35 @@
 # Homelab
 
-My Homelab
+My Homelab infrastructure repository containing scripts, automation, and documentation for managing Proxmox VE nodes, Synology NAS, and related homelab services.
+
+## Repository Structure
+
+```
+.
+├── src/                    # Automation scripts
+│   └── Proxmox/           # Proxmox VE management scripts
+├── containers/            # Docker containers for development/testing
+│   ├── homelab/          # Debian testing container (all platforms)
+│   ├── dsm/              # Virtual Synology DSM (Linux/Windows only)
+│   └── proxmox/          # Containerized Proxmox (Linux/Windows only)
+├── infra/                # Infrastructure as Code
+│   └── ansible/          # Ansible playbooks and configurations
+├── docs/                 # Documentation
+│   ├── Devices.md        # Hardware inventory
+│   ├── Network.md        # Network architecture
+│   └── Scripts.md        # Script usage guide
+├── .ai/                  # AI assistant conventions and patterns
+├── .devcontainer/        # VS Code dev container configuration
+└── .github/              # GitHub workflows and configurations
+```
+
+## Quick Links
+
+- **[Scripts Documentation](docs/Scripts.md)** - Usage guide for all automation scripts
+- **[Testing Guide](TESTING.md)** - How to test scripts locally
+- **[Contributing Guide](CONTRIBUTING.md)** - Guidelines for contributing to this repository
+- **[Network Architecture](docs/Network.md)** - VLAN and network design
+- **[Device Inventory](docs/Devices.md)** - Hardware documentation
 
 ## Development Environment
 

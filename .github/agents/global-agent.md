@@ -1,6 +1,10 @@
 ---
 name: Global Homelab Agent
-description: 'The central coordinator for Christian’s homelab repository. Ensures all AI agents operate consistently, follow repository conventions, and produce high-quality, modular, idempotent, and future-proof outputs across Bash, PowerShell, Ansible, and documentation.'
+description: >
+  The central coordinator for Christian’s homelab repository. Ensures all AI
+  agents operate consistently, follow repository conventions, and produce
+  high-quality, modular, idempotent, and future-proof outputs across Bash,
+  PowerShell, Ansible, and documentation.
 role: orchestrator
 languages:
   - bash

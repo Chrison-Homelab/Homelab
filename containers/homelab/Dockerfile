@@ -1,3 +1,15 @@
+# Homelab Testing Container
+# 
+# Provides a Debian 13 (Trixie) environment matching Proxmox VE for testing scripts
+# See README.md for detailed documentation
+#
+# Build: docker build -t homelab-test .
+# Run:   docker run -it --rm -v ./src/Proxmox:/homelab/scripts:ro homelab-test
+#
+# Or use docker-compose (recommended):
+#   docker-compose up -d debian-test
+#   docker-compose exec debian-test bash
+
 # Use Debian 13 (Trixie) as base image
 FROM debian:trixie
 
