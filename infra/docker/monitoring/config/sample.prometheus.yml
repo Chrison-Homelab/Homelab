@@ -1,0 +1,7 @@
+scrape_configs:
+  - job_name: 'synology'
+    static_configs:
+      - targets: ['192.168.1.10']  # your DSM IP
+    metrics_path: /snmp
+    params:
+      module: [synology]
