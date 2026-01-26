@@ -1,4 +1,20 @@
 services:
+  servarr-exporter:
+    image: ghcr.io/onedr0p/servarr_exporter
+    container_name: servarr_exporter
+    ports:
+      - "9707:9707"
+    environment:
+      - TZ=Pacific/Auckland
+      - RADARR_API_KEY=${RADARR_API_KEY}
+      - RADARR_URL=${RADARR_URL}
+      - SONARR_API_KEY=${SONARR_API_KEY}
+      - SONARR_URL=${SONARR_URL}
+      - PROWLARR_API_KEY=${PROWLARR_API_KEY}
+      - PROWLARR_URL=${PROWLARR_URL}
+      # Add whichever apps you run
+    restart: unless-stopped
+
   snmp_exporter:
     image: prom/snmp-exporter
     ports:
