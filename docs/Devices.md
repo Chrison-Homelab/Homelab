@@ -19,10 +19,12 @@ Copy the output and paste it into the appropriate section below.
 ## Proxmox Hosts
 
 ### Intel NUC
+Intel NUC D34010WYK
 
 <!-- Paste inventory.sh output here -->
 
 ### HP EliteDesk
+HP EliteDesk 800 G2 DM
 
 <!-- Paste inventory.sh output here -->
 
