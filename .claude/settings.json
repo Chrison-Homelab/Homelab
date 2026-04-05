@@ -1,0 +1,5 @@
+{
+  "enabledPlugins": {
+    "unifi-network@unifi-plugins": true
+  }
+}
