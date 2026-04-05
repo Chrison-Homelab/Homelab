@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "pve": {
+      "command": "npx",
+      "args": ["-y", "@samik081/mcp-pve"],
+      "env": {
+        "PVE_BASE_URL": "https://${PVE_HOST}:8006",
+        "PVE_TOKEN_ID": "${PVE_TOKEN_ID}",
+        "PVE_TOKEN_SECRET": "${PVE_TOKEN_SECRET}",
+        "PVE_VERIFY_SSL": "false",
+        "PVE_ACCESS_TIER": "read-execute"
+      }
+    },
+    "unifi-network": {
+      "command": "uvx",
+      "args": ["unifi-network-mcp@latest"],
+      "env": {
+        "UNIFI_NETWORK_HOST": "${UNIFI_NETWORK_HOST}",
+        "UNIFI_NETWORK_USERNAME": "${UNIFI_NETWORK_USERNAME}",
+        "UNIFI_NETWORK_PASSWORD": "${UNIFI_NETWORK_PASSWORD}"
+      }
+    }
+  }
+}
