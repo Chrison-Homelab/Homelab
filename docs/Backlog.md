@@ -152,10 +152,18 @@ and use **GitHub Environments + Releases** to track homelab state. See
 
 - [x] Create the four GitHub Environments
 - [x] Add the on-demand `release-state-snapshot` workflow + `docs/CICD.md`
-- [ ] Run `fallout :setup` to scaffold the `_build` project *(Chris — interactive)*
-- [ ] Add a `ValidateShapes` target + `[GitHubActions]` CI workflow (Fallout-generated)
+- [x] Run `fallout :setup` to scaffold the build project (`build/`) *(on WIP branch `feat/fallout-ci-wip`)*
+- [x] Write the `ValidateShapes` target + `[GitHubActions("ci")]` attribute *(on WIP branch)*
+- [ ] **BLOCKED — restore fails.** Fallout's restructure pulled everything past
+      `10.3.x` from NuGet.org, so `Fallout.Common`/`fallout.cli` `11.0.18` can't
+      restore. Fix is to consume the **experimental Fallout package channel**
+      (being stood up in a separate session), then re-pin `build/build.csproj`
+      + `.config/dotnet-tools.json` to a version that channel actually serves.
+      *(Earlier "rebrand namespace" theory in the WIP-branch note was wrong —
+      it's a package-availability problem, not a namespace one.)*
+- [ ] Generate `.github/workflows/ci.yml` (blocked on the restore above)
 - [ ] Create the fine-grained PAT and store it as `SUBMODULES_PAT` *(Chris)*
-- [ ] Verify a clean CI run checks out all four stack submodules
+- [ ] Verify CI runs `ValidateShapes` green; verify release workflow checks out submodules
 
 ---
 
