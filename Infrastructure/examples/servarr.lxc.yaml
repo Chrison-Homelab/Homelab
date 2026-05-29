@@ -17,10 +17,14 @@ metadata:
 
 spec:
   node: hpe-01
+  app: docker           # community-scripts slug → ct/docker.sh
   ctid: 3000
   cores: 2
   memory: 2048          # MB
   disk: 16              # GB
+  unprivileged: true
+  os: debian
+  osVersion: 12
   storage: local-lvm
   templateStorage: local
   network:

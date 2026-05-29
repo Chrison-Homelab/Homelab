@@ -248,27 +248,29 @@ fed by the discovery output (BL-009).
 ---
 
 ### BL-013 — Provision via community-scripts over SSH
-**Status:** Idea
-**Priority:** Medium
+**Status:** In Progress — renderer built + **live smoke test passed** 2026-05-29 (CT 3099 created on hpe-01, verified via MCP, destroyed)
+**Plan:** [docs/plans/BL-013-community-scripts-deploy.md](plans/BL-013-community-scripts-deploy.md)
+**Priority:** High — the unblocked Proxmox deploy foundation (C#/Fallout path is blocked)
 **Tags:** `iac` `proxmox` `community-scripts` `converge`
 **Relates to:** [BL-010](#bl-010--c-native-iac-converge-reproducible-provisioning)
 
 Chris already provisions most Proxmox infra with
 [community-scripts.org](https://community-scripts.org/) and wants to stick with
-it. The scripts run non-interactively over SSH, and community-scripts now offers
-**automated mode with predefined parameters** (e.g.
-`mode=generated var_ctid="3001" var_vlan="1010" … bash -c "$(curl -fsSL …/ct/<app>.sh)"`).
+it. Confirmed mechanism: **`mode=generated`** bypasses the whiptail menu
+(`build.func`: `CHOICE="${mode:-${1:-}}"`) and the exported `var_*` drive a
+non-interactive, no-TTY install over SSH —
+`mode=generated var_ctid=3000 … bash -c "$(curl -fsSL …/ct/<app>.sh)"`.
 
-This is a strong candidate for the **Converge** mechanism: instead of
-reimplementing LXC creation in ProxmoxSharp from scratch, the C# engine could
-render a shape into a community-script invocation and run it over SSH. ProxmoxSharp
-still owns discovery + post-create config + lifecycle (start/stop/destroy).
+Decided split (the create mechanism for **Converge**, BL-010): **community-scripts
+create over SSH**, ProxmoxSharp owns discovery + post-create config + lifecycle.
 
+- [x] Confirm the automated mode trigger (`mode=generated`) + full `var_*` surface (from `build.func`)
+- [x] Define the shape → var mapping (added `spec.app`/`unprivileged`/`os`/`osVersion` to the schema)
+- [x] Build the renderer — `Infrastructure/deploy/Deploy-Shape.ps1` (PowerShell; dry-run default, existence guard, `-Apply`)
+- [x] Dry-run verified against `examples/servarr.lxc.yaml`
+- [x] **Live smoke test passed** — CT 3099 created on hpe-01 over SSH, verified running via MCP, destroyed. Needed `TERM=xterm` in the remote env (community-scripts call `clear`, which fails over no-TTY SSH) — now baked into the renderer.
 - [ ] Catalogue which community-scripts back our LXCs (map app → script)
-- [ ] Confirm the automated/predefined-parameter mode + its full var surface
-- [ ] Define how a shape (`shape.yaml`) maps to script vars (ctid, vlan, storage, mounts…)
-- [ ] Spike: C# engine renders a shape → community-script call → runs over SSH
-- [ ] Decide the split: community-scripts (create) vs. ProxmoxSharp (config/lifecycle)
+- [ ] Post-create host-level mounts (NFS) — not covered by community-scripts; deferred to ProxmoxSharp lifecycle
 
 ---
 
