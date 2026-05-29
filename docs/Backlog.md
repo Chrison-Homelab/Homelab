@@ -10,7 +10,7 @@ Maintained collaboratively with Claude Code — items are sized and sequenced fo
 ## Active
 
 ### BL-001 — Investigate & Deploy Teleport (Authentication)
-**Status:** Planned
+**Status:** ✅ Done — confirmed via discovery 2026-05-29 (`teleport` LXC 9904 running on nuc-01; no `keycloak` container exists)
 **Plan:** [docs/plans/BL-001-teleport.md](plans/BL-001-teleport.md)
 **Priority:** High
 **Tags:** `security` `auth` `infrastructure`
@@ -67,12 +67,19 @@ Investigate whether Teleport provides value for this homelab as an authenticatio
 
 ## Backlog (Not Started)
 
-### BL-002 — Legacy Network Migration (192.168.179.x → 10.x)
-**Status:** Idea
+### BL-002 — Legacy Network Migration (192.168.178.1/23 → 10.x)
+**Status:** In Progress
 **Priority:** High
 **Tags:** `networking` `migration`
 
-Move all devices and services off the legacy `192.168.179.x` subnet onto the proper VLAN-segmented `10.x.x.x` architecture. See migration status table in `Services.md`.
+Move all devices and services off the legacy `192.168.178.1/23` subnet (spans
+`.178.x`–`.179.x`) onto the VLAN-segmented `10.x` architecture. Live migration
+status is in [Services.md](Services.md) (auto-documented 2026-05-29).
+
+**Discovery finding:** the primary WiFi SSID `Blackbox` still maps to the Old
+Network — a hard blocker for moving personal devices. Still legacy: all 3 Proxmox
+nodes, DS1813 NAS, Home Assistant, prowlarr/sonarr/radarr/bazarr, github-runner,
+plex (dual-homed), and most personal devices.
 
 Key items:
 - Proxmox nodes (hpe-01, nuc-01, desktop-01) → `10.0.x.x` (Network Devices VLAN)
@@ -84,36 +91,37 @@ Key items:
 ---
 
 ### BL-003 — Clarify & Document desktop-01 VMs
-**Status:** Idea
+**Status:** ✅ Done — identified via discovery 2026-05-29
 **Priority:** Low
 **Tags:** `documentation`
 
-3 VMs (VMID 1001–1003) on desktop-01 have unknown purpose. Identify, document, or decommission.
+VMs 1001–1003 on desktop-01 identified: `Plex-VM` (1001), `gaming-vm-01` (1002),
+`gaming-vm-02` (1003) — all currently stopped. Documented in [Devices.md](Devices.md)
+/ [Services.md](Services.md). Decommission decision (esp. `Plex-VM` vs the `plex`
+LXC) is a separate cleanup.
 
 ---
 
 ### BL-004 — Clean Up Stopped/Unused Containers
-**Status:** Idea
+**Status:** ✅ Done — confirmed via discovery 2026-05-29 (all three removed)
 **Priority:** Low
 **Tags:** `cleanup`
 
-Review and remove containers that are stopped and appear unused:
-- `jellyseerr` (5001) — superseded by `seerr`
-- `qbittorrent-clone` (5010) — likely unused clone
-- `vpn-china` (2005) — assess if still needed
+Original targets are gone: `jellyseerr` (5001), `qbittorrent-clone` (5010), and
+`vpn-china` (2005) no longer exist (CTID 2005 is now `github-runner`). New
+stopped-container review candidates surfaced by discovery → tracked informally in
+[Services.md](Services.md): `qbittorrent` (5007), `asp-dev` (2006), and the
+stopped VMs 1001–1003.
 
 ---
 
 ### BL-005 — Deploy Keycloak (or Replace with Teleport)
-**Status:** Idea
+**Status:** 🚫 Won't Do — superseded by Teleport (BL-001)
 **Priority:** Medium
 **Tags:** `auth` `security`
 
-Keycloak (LXC 2006) is deployed but stopped. Traefik has no auth backend. Either:
-- Start Keycloak and configure forward auth with Traefik, or
-- Replace with Teleport (see BL-001)
-
-Blocked on BL-001 decision.
+Resolved by BL-001: Teleport was deployed and Keycloak removed. No `keycloak`
+container exists anymore (former CTID 2006 is now `asp-dev`).
 
 ---
 
@@ -122,7 +130,7 @@ Blocked on BL-001 decision.
 **Priority:** Medium
 **Tags:** `networking` `hardware`
 
-Both USW Flex Mini switches (Lounge + Master Bedroom) are offline. Investigate cause — power, cable, or firmware issue.
+Both USW Flex Mini switches (Lounge + Master Bedroom) are offline. Investigate cause — power, cable, or firmware issue. **Confirmed still offline via discovery 2026-05-29** (Lounge 10.0.217.66, Master Bedroom 10.0.111.213; both firmware 2.1.6).
 
 ---
 
@@ -165,7 +173,7 @@ need provisioned, before any engine code exists.
 ---
 
 ### BL-009 — C#-native IaC: Discover (read-only state import)
-**Status:** Idea
+**Status:** In Progress — first MCP-driven sweep done 2026-05-29; ProxmoxSharp code still pending
 **Plan:** [docs/plans/iac-csharp-native.md](plans/iac-csharp-native.md)
 **Priority:** High
 **Tags:** `iac` `proxmox` `proxmoxsharp` `discovery`
@@ -173,11 +181,12 @@ need provisioned, before any engine code exists.
 Phase 2. Grab current Proxmox state read-only and reconcile shapes against it.
 First real use of [ProxmoxSharp](https://github.com/ChrisonSimtian/ProxmoxSharp).
 
-- [ ] Stand up a Proxmox MCP to explore the cluster (Chris to provide one)
-- [ ] ProxmoxSharp read path: auth + nodes/LXCs/VMs/storage/network (read-only)
-- [ ] `discover` command → structured dump of live state
-- [ ] Auto-generate / reconcile `Devices.md` + `Services.md` from reality
-- [ ] Reconcile hand-written shapes vs. discovered state
+- [x] Stand up a Proxmox MCP (`Samik081/mcp-pve`, read-only tier) + UniFi MCP (`enuno`)
+- [x] First read-only sweep of the live cluster + network (via MCP)
+- [x] Regenerate `Devices.md` + `Services.md` + `Network.md` from reality
+- [ ] ProxmoxSharp read path: auth + nodes/LXCs/VMs/storage/network (read-only) — *the actual dogfood goal; done via MCP for now*
+- [ ] `discover` command → structured dump of live state (repeatable, in code)
+- [ ] Reconcile hand-written shapes vs. discovered state (started in `/Infrastructure/nodes`)
 
 ---
 
@@ -253,4 +262,7 @@ still owns discovery + post-create config + lifecycle (start/stop/destroy).
 
 ## Done
 
-*(nothing yet)*
+- **BL-001** — Teleport deployed (LXC 9904); Keycloak removed. *(confirmed 2026-05-29)*
+- **BL-003** — desktop-01 VMs identified (Plex-VM, gaming-vm-01/02). *(2026-05-29)*
+- **BL-004** — jellyseerr / qbittorrent-clone / vpn-china all removed. *(2026-05-29)*
+- **BL-005** — Keycloak won't-do; superseded by Teleport. *(2026-05-29)*

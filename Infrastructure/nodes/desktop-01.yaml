@@ -10,9 +10,12 @@ metadata:
   tags: [proxmox, host, gaming-pc]
 
 spec:
-  hardware: Gaming PC         # TODO: confirm model via discovery
-  # cores:                    # TODO: discover
-  # memory:                   # TODO: discover (MB)
-  # storage:                  # TODO: discover
-  # network:                  # TODO: discover bridges / VLAN-aware config
-  # note: hosts VMs 1001–1003 of unknown purpose (see BL-003)
+  hardware: Gaming PC                # discovered 2026-05-29
+  cpu: AMD Ryzen 5 3600              # 6 cores / 12 threads
+  cores: 6
+  memory: 16384               # MB
+  pveVersion: "9.2.2"
+  boot: legacy-bios
+  storages: [local, local-lvm]       # local-lvm ~1.8 TB
+  # Hosts VMs 1001–1003 (all stopped): Plex-VM, gaming-vm-01, gaming-vm-02
+  # network: TODO — bridges / VLAN-aware config not yet captured
