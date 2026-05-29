@@ -1,143 +1,146 @@
 # Homelab Services
 
-Auto-documented from Proxmox MCP + UniFi MCP.
-**Last updated:** 2026-04-05
+Auto-documented from the Proxmox + UniFi MCP servers (read-only discovery, BL-009).
+**Last updated:** 2026-05-29
 
-This document is structured for both human reference and AI-assisted optimization.
-Key fields for optimization: `IP Status` (legacy vs migrated), `vCPU/RAM` (for right-sizing), `Tags` (for grouping/placement decisions).
+Structured for both human reference and AI-assisted optimization. Key fields:
+`Network` (legacy vs migrated), `vCPU/RAM` (right-sizing), `Status`.
+`Net` legend: ✅ Homelab `10.10.x` · ⚠️ legacy `192.168.17x` · `—` no DHCP lease seen.
 
 ---
 
 ## Proxmox Cluster Nodes
 
-| Node | Hostname | Role | vCPU | RAM | Local Disk | Status | IP (Legacy) |
-|---|---|---|---|---|---|---|---|
-| hpe-01 | HP EliteDesk 800 G2 DM | Primary workload host | 4 | 15.5 GB | ~94 GB | Online | 192.168.179.3 |
-| nuc-01 | Intel NUC D34010WYK | Secondary workload host | 4 | 15.5 GB | ~38 GB | Online | 192.168.179.1 |
-| desktop-01 | Gaming PC | Tertiary / dev host | — | — | — | Online | 192.168.179.2 |
+| Node | Hardware | vCPU | RAM | Local disk | Status | Mgmt IP |
+|---|---|---|---|---|---|---|
+| hpe-01 | HP EliteDesk 800 G2 DM (i5-6500T) | 4 | 16 GB | ~343 GB | 🟢 Online | 192.168.179.3 ⚠️ |
+| nuc-01 | Intel NUC D34010WYK (i3-4010U) | 2/4 | 16 GB | ~58 GB | 🟢 Online | 192.168.179.1 ⚠️ |
+| desktop-01 | Gaming PC (Ryzen 5 3600) | 6/12 | 16 GB | ~1.8 TB | 🟢 Online | 192.168.179.2 ⚠️ |
 
-**Shared NAS Storage (NFS from DS1813-01):**
-
-| Volume | Size | Used | Purpose |
-|---|---|---|---|
-| ds1813-nfs-volume-1 | 1.8 TB | 258 GB | General |
-| ds1813-nfs-volume-2 | 3.6 TB | 66 GB | General |
-| ds1813-nfs-volume-3 | 5.4 TB | 3.1 TB | Media / large data |
+**Shared NAS storage (NFS from DS1813-01):** `ds1813-nfs-volume-1` ~1.9 TB ·
+`-2` ~3.8 TB · `-3` ~5.7 TB (media, ~3.9 TB used). Mounted on all nodes.
 
 ---
 
 ## Infrastructure Services
 
-| Name | VMID | Type | Node | Status | IP | VLAN | vCPU | RAM | Purpose |
+| Name | VMID | Type | Node | Status | IP | Net | vCPU | RAM | Purpose |
 |---|---|---|---|---|---|---|---|---|---|
-| homeassistant | 2000 | VM (QEMU) | hpe-01 | Running | 192.168.179.102 ⚠️ | 1010 + 1040 | 2 | 2 GB | Smart home controller |
-| cloudflared-01 | 2001 | LXC | hpe-01 | Running | 10.10.133.209 ✅ | Homelab | 1 | 512 MB | Cloudflare tunnel (remote access) |
-| proxmox-datacenter-manager | 2002 | LXC | nuc-01 | Running | 10.10.208.155 ✅ | Homelab | 2 | 2 GB | Proxmox Datacenter Manager UI |
-| pve-scripts-local | 2003 | LXC | nuc-01 | Running | — | Homelab | 2 | 4 GB | Local Proxmox helper scripts |
-| traefik | 2007 | LXC | nuc-01 | Running | — | 1010 | 1 | 512 MB | Reverse proxy / ingress |
-| keycloak | 2006 | LXC | nuc-01 | **Stopped** | — | — | 2 | 2 GB | SSO / identity provider (planned) |
-| vpn-china | 2005 | LXC | nuc-01 | **Stopped** | — | — | 1 | 512 MB | VPN exit node (China) |
+| cloudflared-01 | 2001 | LXC | hpe-01 | 🟢 Running | 10.10.133.209 | ✅ | 1 | 512 MB | Cloudflare tunnel (remote access) |
+| traefik | 2007 | LXC | nuc-01 | 🟢 Running | — | — | 1 | 512 MB | Reverse proxy / ingress |
+| teleport | 9904 | LXC | nuc-01 | 🟢 Running | — | — | 1 | 1 GB | Zero-trust access (SSH + app SSO) |
+| proxmox-datacenter-manager | 2002 | LXC | nuc-01 | 🟢 Running | 10.10.208.155 | ✅ | 2 | 2 GB | Proxmox Datacenter Manager UI |
+| pve-scripts-local | 2003 | LXC | nuc-01 | 🟢 Running | — | — | 2 | 4 GB | Local Proxmox helper scripts |
+| github-runner | 2005 | LXC | hpe-01 | 🟢 Running | 192.168.178.119 | ⚠️ | 2 | 2 GB | Self-hosted CI runner (Fallout/GH Actions) |
+
+> **Teleport (9904) is deployed and running** — resolves BL-001. No `keycloak`
+> container exists (it was replaced by Teleport — closes BL-005).
+
+## Smart Home
+
+| Name | VMID | Type | Node | Status | IP | Net | vCPU | RAM | Purpose |
+|---|---|---|---|---|---|---|---|---|---|
+| homeassistant | 2000 | VM (QEMU) | hpe-01 | 🟢 Running | 192.168.179.102 | ⚠️ | 2 | 2 GB | Smart-home controller (VLAN 1010 + 1040) |
+
+## Media Stack (*arr)
+
+Tagged `arr-stack`. Target VLAN: Homelab `10.10.0.0/16`.
+
+| Name | VMID | Type | Node | Status | IP | Net | vCPU | RAM | Purpose |
+|---|---|---|---|---|---|---|---|---|---|
+| prowlarr | 5002 | LXC | hpe-01 | 🟢 Running | 192.168.179.152 | ⚠️ | 1 | 1 GB | Indexer manager |
+| sonarr | 5003 | LXC | hpe-01 | 🟢 Running | 192.168.179.153 | ⚠️ | 1 | 1 GB | TV automation |
+| radarr | 5004 | LXC | hpe-01 | 🟢 Running | 192.168.179.154 | ⚠️ | 1 | 1 GB | Movie automation |
+| bazarr | 5006 | LXC | nuc-01 | 🟢 Running | 192.168.179.156 | ⚠️→✅ | 1 | 1 GB | Subtitles (migrating — new 1010 lease seen) |
+| flaresolverr | 5005 | LXC | nuc-01 | 🟢 Running | — | — | 1 | 2 GB | Captcha bypass for indexers |
+| qbittorrent | 5007 | LXC | hpe-01 | 🔴 Stopped | — | — | 2 | 2 GB | Download client |
+| plex | 5008 | LXC | hpe-01 | 🟢 Running | 192.168.179.62 / 10.10.200.98 | ⚠️ dual | 2 | 2 GB | Media server (dual-homed mid-migration) |
+| tautulli | 5009 | LXC | nuc-01 | 🟢 Running | — | ✅ | 2 | 1 GB | Plex analytics (VLAN 1010) |
+| seerr | 5011 | LXC | hpe-01 | 🟢 Running | 10.10.48.42 | ✅ | 4 | 4 GB | Media request manager |
+| tracearr | 5013 | LXC | hpe-01 | 🟢 Running | — | — | 2 | 2 GB | *arr-stack monitoring |
+
+## Media Libraries
+
+| Name | VMID | Type | Node | Status | IP | Net | vCPU | RAM | Purpose |
+|---|---|---|---|---|---|---|---|---|---|
+| audiobookshelf | 5014 | LXC | hpe-01 | 🟢 Running | — | ✅ | 2 | 2 GB | Audiobook / podcast server |
+| shelfmark | 5015 | LXC | hpe-01 | 🟢 Running | 10.10.52.82 | ✅ | 2 | 2 GB | Ebook management |
+| romm | 5012 | LXC | hpe-01 | 🟢 Running | — | — | 2 | 4 GB | ROM / emulation library |
+
+## Apps & AI
+
+| Name | VMID | Type | Node | Status | IP | Net | vCPU | RAM | Purpose |
+|---|---|---|---|---|---|---|---|---|---|
+| searxng | 2004 | LXC | desktop-01 | 🟢 Running | 10.10.137.178 | ✅ | 2 | 2 GB | Meta search engine |
+| openwebui | 9905 | LXC | desktop-01 | 🟢 Running | 10.10.97.77 | ✅ | 4 | 8 GB | LLM web UI |
+| erp-for-factory-games | 2008 | LXC | desktop-01 | 🟢 Running | 10.10.107.175 | ✅ | 2 | 4 GB | ERP for Factory Games stack (Cloudflare tunnel) |
+| obsidian-livesync | 9906 | LXC | nuc-01 | 🟢 Running | — | ⚠️ | 1 | 512 MB | Obsidian sync (CouchDB) |
+| cookbook | 9966 | LXC | nuc-01 | 🟢 Running | 10.10.83.46 | ✅ | 1 | 512 MB | Recipe manager |
+| asp-dev | 2006 | LXC | desktop-01 | 🔴 Stopped | — | — | 2 | 3 GB | Dev sandbox |
+
+## Gaming / Other VMs (desktop-01, all stopped)
+
+| Name | VMID | Type | vCPU | RAM | Purpose |
+|---|---|---|---|---|---|
+| Plex-VM | 1001 | VM | 2 | 4 GB | (legacy Plex VM — superseded by `plex` LXC 5008?) |
+| gaming-vm-01 | 1002 | VM | 6 | 12 GB | Gaming VM |
+| gaming-vm-02 | 1003 | VM | 6 | 12 GB | Gaming VM |
 
 ---
 
-## Media Stack (Arr)
+## Migration Status (live, 2026-05-29)
 
-All services tagged `arr-stack`. Target VLAN: `10.10.0.0/16` (Homelab). Many still on legacy `192.168.179.x`.
+Legacy `192.168.17x` → Homelab `10.10.0.0/16`.
 
-| Name | VMID | Type | Node | Status | IP | IP Status | vCPU | RAM | Purpose |
-|---|---|---|---|---|---|---|---|---|---|
-| plex | 5008 | LXC | hpe-01 | Running | 192.168.179.62 / 10.10.200.98 | ⚠️ Dual | 2 | 2 GB | Media server |
-| sonarr | 5003 | LXC | hpe-01 | Running | 192.168.179.153 | ⚠️ Legacy | 1 | 1 GB | TV show automation |
-| radarr | 5004 | LXC | hpe-01 | Running | 192.168.179.154 | ⚠️ Legacy | 1 | 1 GB | Movie automation |
-| prowlarr | 5002 | LXC | hpe-01 | Running | 192.168.179.152 | ⚠️ Legacy | 1 | 1 GB | Indexer manager |
-| bazarr | 5006 | LXC | nuc-01 | Running | 192.168.179.156 | ⚠️ Legacy | 1 | 1 GB | Subtitle automation |
-| qbittorrent | 5007 | LXC | hpe-01 | Running | 192.168.179.157 | ⚠️ Legacy | 2 | 2 GB | Download client |
-| flaresolverr | 5005 | LXC | nuc-01 | Running | — | — | 1 | 2 GB | Captcha bypass for indexers |
-| tautulli | 5009 | LXC | nuc-01 | Running | — | — | 2 | 1 GB | Plex analytics |
-| seerr | 5011 | LXC | hpe-01 | Running | 10.10.48.42 ✅ | ✅ Migrated | 4 | 4 GB | Media request manager |
-| tracearr | 5013 | LXC | hpe-01 | Running | — | — | 2 | 2 GB | Arr stack monitoring |
-| audiobookshelf | 5014 | LXC | hpe-01 | Running | 10.10.162.226 ✅ | ✅ Migrated | 2 | 2 GB | Audiobook / podcast server |
-| shelfmark | 5015 | LXC | hpe-01 | Running | 10.10.52.82 ✅ | ✅ Migrated | 2 | 2 GB | Ebook management |
-| romm | 5012 | LXC | hpe-01 | Running | — | — | 2 | 4 GB | ROM / emulation library |
-| jellyseerr | 5001 | LXC | hpe-01 | **Stopped** | — | — | 1 | 4 GB | Media requests (replaced by seerr) |
-| qbittorrent-clone | 5010 | LXC | nuc-01 | **Stopped** | — | — | 2 | 2 GB | Clone / unused |
+**✅ Migrated:** cloudflared-01, proxmox-datacenter-manager, searxng, openwebui,
+erp-for-factory-games, seerr, shelfmark, cookbook, tautulli, audiobookshelf.
 
----
+**⚠️ Still on legacy (priority):**
 
-## Apps & Utilities
-
-| Name | VMID | Type | Node | Status | IP | VLAN | vCPU | RAM | Purpose |
-|---|---|---|---|---|---|---|---|---|---|
-| mealie | 2004 | LXC | hpe-01 | Running | 10.10.16.239 ✅ | 1010 | 2 | 3 GB | Recipe manager |
-| kitchenowl | 9903 | LXC | hpe-01 | Running | 10.10.174.9 ✅ | 1010 | 1 | 2 GB | Grocery / meal planner |
-| finance | 9902 | LXC | nuc-01 | **Stopped** | — | 1010 | 2 | 2 GB | Personal finance app (planned) |
-
----
-
-## Migration Status Summary
-
-Services still on the legacy `192.168.179.x` / `192.168.178.x` network that need migrating to `10.10.0.0/16`:
-
-| Service | Current IP | Priority |
+| Item | Current IP | Priority |
 |---|---|---|
-| homeassistant | 192.168.179.102 | High (core infrastructure) |
-| Proxmox hpe-01 | 192.168.179.3 | High (node itself) |
-| Proxmox nuc-01 | 192.168.179.1 | High (node itself) |
-| Proxmox desktop-01 | 192.168.179.2 | Low (offline) |
-| DS1813-01 (NAS) | 192.168.179.11 | High (shared storage) |
-| plex | 192.168.179.62 | Medium |
-| sonarr | 192.168.179.153 | Medium |
-| radarr | 192.168.179.154 | Medium |
-| prowlarr | 192.168.179.152 | Medium |
-| bazarr | 192.168.179.156 | Medium |
-| qbittorrent | 192.168.179.157 | Medium |
+| Proxmox hpe-01 / nuc-01 / desktop-01 (nodes) | 192.168.179.3 / .1 / .2 | High |
+| DS1813-01 (NAS) | 192.168.179.11 | High |
+| homeassistant | 192.168.179.102 | High |
+| prowlarr / sonarr / radarr | .152 / .153 / .154 | Medium |
+| bazarr | 192.168.179.156 (migrating) | Medium |
+| plex (dual-homed) | 192.168.179.62 + 10.10.200.98 | Medium |
+| github-runner | 192.168.178.119 | Low |
+| obsidian-livesync | (legacy lease) | Low |
+| Zigbee GW (`tube-zb-gw…`) | 192.168.179.222 | Low |
+
+> **Main WiFi SSID `Blackbox` still lands clients on the legacy "Old Network"**
+> — a key blocker for finishing BL-002 (see Network.md).
 
 ---
 
-## UniFi Network Devices
+## Personal & IoT Clients (selected, live)
 
-| Device | Model | IP | VLAN | Status | Uptime | Firmware |
-|---|---|---|---|---|---|---|
-| Cloud Gateway Ultra | UDRULT | 192.168.178.1 | Network Devices | Online | 9.4d | 5.0.16 |
-| US 24 PoE 250W | US24P250 | 10.0.53.142 | Network Devices | Online | 32.0d | 7.2.123 |
-| AC LR (Lounge) | U7LR | 10.0.14.89 | Network Devices | Online | 13.8d | 6.8.2 |
-| AC LR (Kitchen) | U7LR | 10.0.93.133 | Network Devices | Online | 32.0d | 6.8.2 |
-| AC LR (Master Bedroom) | U7LR | 10.0.161.161 | Network Devices | Online | 32.0d | 6.8.2 |
-| USW Flex Mini (Lounge) | USMINI | 10.0.217.66 | Network Devices | **Offline** | — | 2.1.6 |
-| USW Flex Mini (Master Bedroom) | USMINI | 10.0.111.213 | Network Devices | **Offline** | — | 2.1.6 |
+| Device | IP | Network |
+|---|---|---|
+| MacBook Chris | 192.168.178.85 | ⚠️ Old |
+| MacBookAir Yuhan | 192.168.179.4 | ⚠️ Old |
+| iPhone Chris / Yuhan | 192.168.179.32 / .145 | ⚠️ Old |
+| Apple TV Bedroom | 192.168.178.71 | ⚠️ Old |
+| Alexa Lounge / Bedroom | 192.168.178.200 / .145 | ⚠️ Old |
+| Samsung-Washer | 10.40.84.50 | ✅ IoT (1040) |
+| Meross Smart Plug | 10.40.170.241 | ✅ IoT (1040) |
+| Yeelink lamp | 10.40.18.24 | ✅ IoT (1040) |
 
----
-
-## Wireless Clients
-
-| Name | IP | VLAN | Notes |
-|---|---|---|---|
-| MacBook Chris | 192.168.178.85 | Legacy | Primary dev machine |
-| MacBookAir Yuhan | 192.168.179.4 | Legacy | |
-| iPhone Chris | 192.168.179.32 | Legacy | |
-| iPhohe Yuhan | 192.168.179.145 | Legacy | |
-| iWatch Chris | 192.168.179.159 | Legacy | |
-| Watch | 192.168.179.204 | Legacy | |
-| iPad | 192.168.178.48 | Legacy | |
-| Apple TV Bedroom | 192.168.178.71 | Legacy/Consumer | |
-| Alexa Lounge | 192.168.178.200 | Legacy/Consumer | |
-| Alexa Bedroom | 192.168.178.145 | Legacy/Consumer | |
-| Karl Babymonitor | 192.168.178.78 | Legacy/Consumer | |
-| Fan Karl | 192.168.178.130 | Legacy/Consumer | |
-| Fan Bedroom | 192.168.179.224 | Legacy/Consumer | |
-| Samsung-Washer | 10.40.84.50 | IoT ✅ | |
-| Meross Smart Plug | 10.40.170.241 | IoT ✅ | |
-| d8:c8:0c:b0:9e:28 | 10.40.2.131 | IoT ✅ | Unknown device |
+Personal devices (MacBooks, iPhones, Apple TVs, Alexas) are still on the legacy
+network — they should move to Consumer `10.20.0.0/16` (VLAN 1020). IoT devices are
+correctly on VLAN 1040.
 
 ---
 
 ## Known Issues / Open TODOs
 
-- [ ] **desktop-01 VMs unknown** — 3 VMs (VMID 1001–1003) assigned, purpose to be confirmed
-- [ ] **2x USW Flex Mini offline** — Lounge and Master Bedroom switches need investigation
-- [ ] **Legacy network migration** — Proxmox nodes, NAS, and most arr-stack still on 192.168.179.x
-- [ ] **keycloak stopped** — SSO not yet deployed; traefik has no auth backend
-- [ ] **jellyseerr stopped** — appears superseded by seerr; candidate for removal
-- [ ] **qbittorrent-clone stopped** — likely unused; candidate for removal
-- [ ] **Plex has dual IPs** — indicates incomplete VLAN migration
-- [ ] **Consumer/personal devices still on legacy network** — MacBooks, iPhones, Apple TV, Alexas should move to 10.20.x.x
+- [ ] **Legacy network migration** (BL-002) — nodes, NAS, Home Assistant, core
+  *arr LXCs, and all personal devices still on `192.168.17x`. Blocked partly by
+  the `Blackbox` SSID mapping to Old Network.
+- [ ] **2× USW Flex Mini offline** (BL-006) — Lounge + Master Bedroom.
+- [ ] **plex dual-homed** — holds both a legacy and a Homelab lease; finish its cutover.
+- [ ] **Stopped containers to review:** `qbittorrent` (5007), `asp-dev` (2006);
+  VMs `Plex-VM`/`gaming-vm-01/02` (1001–1003).
+- [x] ~~desktop-01 VMs unknown~~ → identified (Plex-VM, gaming-vm-01/02).
+- [x] ~~Keycloak / SSO~~ → replaced by Teleport (9904), running.
