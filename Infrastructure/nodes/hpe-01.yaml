@@ -1,0 +1,17 @@
+# Proxmox host — described, not provisioned via API (it hosts the LXCs/VMs).
+# Specs are TODO: confirmed by Phase 2 discovery against the live cluster,
+# not guessed. See ../README.md.
+
+apiVersion: homelab/v1
+kind: Node
+
+metadata:
+  name: hpe-01
+  tags: [proxmox, host]
+
+spec:
+  hardware: HP EliteDesk      # TODO: confirm model via discovery
+  # cores:                    # TODO: discover
+  # memory:                   # TODO: discover (MB)
+  # storage: [local, local-lvm]   # TODO: discover
+  # network:                  # TODO: discover bridges / VLAN-aware config

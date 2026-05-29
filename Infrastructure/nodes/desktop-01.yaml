@@ -1,0 +1,18 @@
+# Proxmox host — described, not provisioned via API (it hosts the LXCs/VMs).
+# Specs are TODO: confirmed by Phase 2 discovery against the live cluster,
+# not guessed. See ../README.md.
+
+apiVersion: homelab/v1
+kind: Node
+
+metadata:
+  name: desktop-01
+  tags: [proxmox, host, gaming-pc]
+
+spec:
+  hardware: Gaming PC         # TODO: confirm model via discovery
+  # cores:                    # TODO: discover
+  # memory:                   # TODO: discover (MB)
+  # storage:                  # TODO: discover
+  # network:                  # TODO: discover bridges / VLAN-aware config
+  # note: hosts VMs 1001–1003 of unknown purpose (see BL-003)

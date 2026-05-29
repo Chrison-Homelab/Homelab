@@ -147,6 +147,85 @@ Wire the hub repo's GitOps pipeline up with [Fallout](https://github.com/Chrison
 
 ---
 
+### BL-008 — C#-native IaC: Define shapes
+**Status:** In Progress
+**Plan:** [docs/plans/iac-csharp-native.md](plans/iac-csharp-native.md) · **ADR:** [ADR-0001](adr/ADR-0001-iac-tooling.md)
+**Priority:** High
+**Tags:** `iac` `infrastructure` `csharp` `dogfood`
+
+Phase 1 (Define) of the C#-native IaC initiative. Establish the declarative
+**shape** contract under `/Infrastructure` so submodules can declare what they
+need provisioned, before any engine code exists.
+
+- [x] ADR-0001 + plan recorded
+- [x] `/Infrastructure` scaffold: schema, nodes, reference example
+- [ ] Iterate the shape schema as real fields surface
+- [ ] Author per-submodule `shape.yaml` (after Phase 2 discovery grounds them)
+
+---
+
+### BL-009 — C#-native IaC: Discover (read-only state import)
+**Status:** Idea
+**Plan:** [docs/plans/iac-csharp-native.md](plans/iac-csharp-native.md)
+**Priority:** High
+**Tags:** `iac` `proxmox` `proxmoxsharp` `discovery`
+
+Phase 2. Grab current Proxmox state read-only and reconcile shapes against it.
+First real use of [ProxmoxSharp](https://github.com/ChrisonSimtian/ProxmoxSharp).
+
+- [ ] Stand up a Proxmox MCP to explore the cluster (Chris to provide one)
+- [ ] ProxmoxSharp read path: auth + nodes/LXCs/VMs/storage/network (read-only)
+- [ ] `discover` command → structured dump of live state
+- [ ] Auto-generate / reconcile `Devices.md` + `Services.md` from reality
+- [ ] Reconcile hand-written shapes vs. discovered state
+
+---
+
+### BL-010 — C#-native IaC: Converge (reproducible provisioning)
+**Status:** Idea
+**Plan:** [docs/plans/iac-csharp-native.md](plans/iac-csharp-native.md)
+**Priority:** Medium
+**Tags:** `iac` `proxmox` `proxmoxsharp`
+
+Phase 3. Turn on create/update/destroy, gated behind plan/dry-run.
+
+- [ ] ProxmoxSharp write path (LXC + VM lifecycle + config)
+- [ ] `plan` — diff desired shapes vs. discovered state, no mutation
+- [ ] `apply` — converge, dry-run by default, explicit confirm to mutate
+- [ ] Idempotency + reversibility guarantees
+- [ ] Repackage engine as a Fallout plugin once v12 `Fallout.Plugin.Sdk` ships
+
+---
+
+### BL-011 — Unifi: discovery + C# client
+**Status:** Idea
+**Priority:** Medium
+**Tags:** `networking` `unifi` `iac` `csharp`
+
+Bring the Unifi-managed network under the same model. Explore via an MCP, then
+build a small C# Unifi client so network config is deployable too.
+
+- [ ] Find / stand up a Unifi MCP; explore the current network
+- [ ] Document current network state into `docs/Network.md`
+- [ ] Build a small C# Unifi API client
+- [ ] Define network shapes (VLANs, firewall, ports) under `/Infrastructure`
+
+---
+
+### BL-012 — Homelab dashboard
+**Status:** Idea
+**Priority:** Low
+**Tags:** `dashboard` `docs` `github-pages`
+
+A dashboard for the homelab, likely a GitHub Page linked against an owned domain,
+fed by the discovery output (BL-009).
+
+- [ ] Decide host (GitHub Pages) + domain
+- [ ] Decide content (inventory, stack status, network map)
+- [ ] Wire it to discovery output so it stays current
+
+---
+
 ## Done
 
 *(nothing yet)*
