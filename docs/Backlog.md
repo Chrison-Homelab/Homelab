@@ -226,6 +226,31 @@ fed by the discovery output (BL-009).
 
 ---
 
+### BL-013 — Provision via community-scripts over SSH
+**Status:** Idea
+**Priority:** Medium
+**Tags:** `iac` `proxmox` `community-scripts` `converge`
+**Relates to:** [BL-010](#bl-010--c-native-iac-converge-reproducible-provisioning)
+
+Chris already provisions most Proxmox infra with
+[community-scripts.org](https://community-scripts.org/) and wants to stick with
+it. The scripts run non-interactively over SSH, and community-scripts now offers
+**automated mode with predefined parameters** (e.g.
+`mode=generated var_ctid="3001" var_vlan="1010" … bash -c "$(curl -fsSL …/ct/<app>.sh)"`).
+
+This is a strong candidate for the **Converge** mechanism: instead of
+reimplementing LXC creation in ProxmoxSharp from scratch, the C# engine could
+render a shape into a community-script invocation and run it over SSH. ProxmoxSharp
+still owns discovery + post-create config + lifecycle (start/stop/destroy).
+
+- [ ] Catalogue which community-scripts back our LXCs (map app → script)
+- [ ] Confirm the automated/predefined-parameter mode + its full var surface
+- [ ] Define how a shape (`shape.yaml`) maps to script vars (ctid, vlan, storage, mounts…)
+- [ ] Spike: C# engine renders a shape → community-script call → runs over SSH
+- [ ] Decide the split: community-scripts (create) vs. ProxmoxSharp (config/lifecycle)
+
+---
+
 ## Done
 
 *(nothing yet)*

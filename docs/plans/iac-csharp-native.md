@@ -48,6 +48,12 @@ Requires: a Proxmox MCP (to explore interactively) + a thin ProxmoxSharp read pa
 
 ## Phase 3 — Converge (reproducible) — `BL-010`
 
+> **Create mechanism (BL-013):** Chris already provisions with
+> [community-scripts.org](https://community-scripts.org/), which run over SSH and
+> now support a predefined-parameter automated mode. Likely split: render a shape
+> → community-script invocation for **create**, ProxmoxSharp for **config +
+> lifecycle** (start/stop/destroy). Decided during BL-010/BL-013.
+
 - [ ] ProxmoxSharp write path (create/update/destroy LXC + VM, config).
 - [ ] `plan` — diff desired shapes vs. discovered state, **no mutation**.
 - [ ] `apply` — converge, gated behind an explicit confirm; dry-run by default.

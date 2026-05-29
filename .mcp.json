@@ -8,16 +8,18 @@
         "PVE_TOKEN_ID": "${PVE_TOKEN_ID}",
         "PVE_TOKEN_SECRET": "${PVE_TOKEN_SECRET}",
         "PVE_VERIFY_SSL": "false",
-        "PVE_ACCESS_TIER": "read-execute"
+        "PVE_ACCESS_TIER": "read-only"
       }
     },
-    "unifi-network": {
+    "unifi": {
       "command": "uvx",
-      "args": ["unifi-network-mcp@latest"],
+      "args": ["unifi-mcp-server"],
       "env": {
-        "UNIFI_NETWORK_HOST": "${UNIFI_NETWORK_HOST}",
-        "UNIFI_NETWORK_USERNAME": "${UNIFI_NETWORK_USERNAME}",
-        "UNIFI_NETWORK_PASSWORD": "${UNIFI_NETWORK_PASSWORD}"
+        "UNIFI_API_KEY": "${UNIFI_API_KEY}",
+        "UNIFI_API_TYPE": "local",
+        "UNIFI_LOCAL_HOST": "${UNIFI_LOCAL_HOST}",
+        "UNIFI_LOCAL_PORT": "443",
+        "UNIFI_LOCAL_VERIFY_SSL": "false"
       }
     }
   }
