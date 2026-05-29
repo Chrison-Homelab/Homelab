@@ -134,24 +134,28 @@ Both USW Flex Mini switches (Lounge + Master Bedroom) are offline. Investigate c
 
 ---
 
-### BL-007 — Fallout CI/CD for private submodules
-**Status:** Idea
+### BL-007 — Fallout CI/CD + GitHub Environments & Releases
+**Status:** In Progress
+**Doc:** [docs/CICD.md](CICD.md)
 **Priority:** Medium
-**Tags:** `ci-cd` `fallout` `gitops` `auth`
+**Tags:** `ci-cd` `fallout` `gitops` `auth` `environments` `releases`
 
-Wire the hub repo's GitOps pipeline up with [Fallout](https://github.com/ChrisonSimtian/Fallout) (the C#/.NET build system) and solve checking out the private `Homelab.Stacks.*` submodules in GitHub Actions. The submodules are wired in (PR #6) but a default Actions checkout can't read them — needs an auth strategy. Deliberately deferred from the submodule-wiring PR to its own session.
+Wire the hub repo's GitOps pipeline up with [Fallout](https://github.com/ChrisonSimtian/Fallout)
+and use **GitHub Environments + Releases** to track homelab state. See
+[docs/CICD.md](CICD.md) for the full model.
 
-**Investigation questions:**
-- What auth does Fallout-generated Actions need to checkout private submodules — PAT, GitHub App token, or per-repo deploy keys?
-- Does Fallout generate the submodule checkout step, or is it hand-added to the generated workflow?
-- One credential with org-wide read, or scoped per submodule?
-- How are secrets surfaced to the runner (Actions secrets vs. Bitwarden, matching the stacks' deploy pattern)?
+**Decisions (2026-05-29):**
+- **Environments:** per-node (`hpe-01`/`nuc-01`/`desktop-01`) + a `homelab` umbrella.
+- **Releases:** on-demand state snapshots (workflow_dispatch) bundling
+  `docs/` + `Infrastructure/` + pinned submodule SHAs.
+- **Submodule auth:** fine-grained PAT stored as Actions secret `SUBMODULES_PAT`.
 
-- [ ] Add a Fallout build project (C#) to the hub repo
-- [ ] Generate the `.github/workflows/*.yml` via Fallout
-- [ ] Configure private-submodule checkout auth in the generated workflow
-- [ ] Verify a clean CI run checks out all five stacks
-- [ ] Document the chosen auth approach in the README / `docs/Development.md`
+- [x] Create the four GitHub Environments
+- [x] Add the on-demand `release-state-snapshot` workflow + `docs/CICD.md`
+- [ ] Run `fallout :setup` to scaffold the `_build` project *(Chris — interactive)*
+- [ ] Add a `ValidateShapes` target + `[GitHubActions]` CI workflow (Fallout-generated)
+- [ ] Create the fine-grained PAT and store it as `SUBMODULES_PAT` *(Chris)*
+- [ ] Verify a clean CI run checks out all four stack submodules
 
 ---
 

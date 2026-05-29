@@ -1,0 +1,69 @@
+name: release-state-snapshot
+
+# On-demand snapshot of the homelab's declared state (state tracking, BL-007).
+# Cuts a GitHub Release capturing the committed inventory + the pinned stack
+# submodule versions at a point in time.
+#
+# NOTE: live cluster discovery is NOT performed here — GitHub-hosted runners
+# can't reach the homelab network. Capturing live state would run on the
+# self-hosted runner (LXC 2005, github-runner) and is a later step.
+#
+# PREREQUISITE: a fine-grained PAT with read access to the private
+# Homelab.Stacks.* repos, stored as the Actions secret SUBMODULES_PAT
+# (Settings → Secrets and variables → Actions). Without it the submodule
+# checkout fails.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag (e.g. v0.1.0 or 2026.05.29)'
+        required: true
+        type: string
+      notes:
+        description: 'What changed / why this snapshot'
+        required: false
+        type: string
+
+permissions:
+  contents: write          # create the tag + GitHub Release
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    environment: homelab     # records this snapshot as a deployment to the umbrella env
+    steps:
+      - name: Checkout (with private submodules)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          token: ${{ secrets.SUBMODULES_PAT }}
+
+      - name: Build state manifest + bundle
+        run: |
+          mkdir -p dist
+          {
+            echo "# Homelab state snapshot — ${{ inputs.version }}"
+            echo
+            echo "- Commit: \`${{ github.sha }}\`"
+            echo "- Cut:    $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo
+            echo "## Pinned stack submodules"
+            echo '```'
+            git submodule status
+            echo '```'
+          } > dist/MANIFEST.md
+          tar -czf "dist/homelab-state-${{ inputs.version }}.tar.gz" \
+            docs/ Infrastructure/ .gitmodules dist/MANIFEST.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ inputs.version }}" \
+            "dist/homelab-state-${{ inputs.version }}.tar.gz" \
+            "dist/MANIFEST.md" \
+            --title "Homelab state ${{ inputs.version }}" \
+            --notes "${{ inputs.notes || 'On-demand homelab state snapshot.' }}" \
+            --target "${{ github.sha }}"
