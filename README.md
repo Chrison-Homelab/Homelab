@@ -1,94 +1,131 @@
 # Homelab
 
-My Homelab infrastructure repository containing scripts, automation, and documentation for managing Proxmox VE nodes, Synology NAS, and related homelab services.
+> The single source of truth for my homelab. Infrastructure, configuration, and
+> documentation as code — provisioned via GitOps, deployed by my own CI/CD.
 
-## Repository Structure
+This is an **eat-your-own-dogfood** repository. Everything that runs in the lab
+is described here (or in a linked submodule), version-controlled, and reconciled
+from Git. If it isn't in the repo, it doesn't exist.
+
+---
+
+## 🎯 Mission
+
+1. **Infrastructure as Code** — provision and configure the homelab (Proxmox
+   nodes, LXCs/VMs, Synology NAS, networking) declaratively. No manual clicking
+   in web UIs where it can be avoided.
+2. **GitOps-driven** — Git is the source of truth. Changes land via commits and
+   are rolled out by **[Fallout](#-cicd-fallout)**, my own CI/CD system. Pushing
+   to the repo is how the lab changes.
+3. **Documented** — the network, devices, and architecture are described here so
+   the lab is understandable and rebuildable by future-me (and anyone else).
+
+## 🧱 Repository model
+
+This is the **main repository** — the hub. Self-contained, reusable stacks live
+in their **own `Homelab.Stacks.*` repositories and are linked here as Git
+submodules**. The hub owns shared infrastructure, conventions, networking, docs,
+and orchestration; each submodule owns one stack end to end.
 
 ```
-.
-├── src/                    # Automation scripts
-│   └── Proxmox/           # Proxmox VE management scripts
-├── containers/            # Docker containers for development/testing
-│   ├── homelab/          # Debian testing container (all platforms)
-│   ├── dsm/              # Virtual Synology DSM (Linux/Windows only)
-│   └── proxmox/          # Containerized Proxmox (Linux/Windows only)
-├── infra/                # Infrastructure as Code
-│   └── ansible/          # Ansible playbooks and configurations
-├── docs/                 # Documentation
-│   ├── Devices.md        # Hardware inventory
-│   ├── Network.md        # Network architecture
-│   └── Scripts.md        # Script usage guide
-├── .ai/                  # AI assistant conventions and patterns
-├── .devcontainer/        # VS Code dev container configuration
-└── .github/              # GitHub workflows and configurations
+Homelab (this repo)            ← hub: shared infra, networking, docs, CI/CD glue
+├── stacks/
+│   ├── Infrastructure         ← Homelab.Stacks.Infrastructure   (container hosts)
+│   ├── Komodo                 ← Homelab.Stacks.Komodo           (Docker host mgmt)
+│   ├── DevOps                 ← Homelab.Stacks.DevOps
+│   ├── ServArr                ← Homelab.Stacks.ServArr          (*arr media stack)
+│   └── ErpForFactoryGames     ← Homelab.Stacks.ErpForFactoryGames
+└── infra, docs, src, …        ← shared, cross-cutting concerns
 ```
 
-## Quick Links
+**Rule of thumb:** a thing becomes its own `Homelab.Stacks.*` submodule when it
+is a self-contained service/stack with its own lifecycle. Cross-cutting concerns
+(networking, monitoring, base provisioning, conventions) stay in the hub.
 
-- **[Scripts Documentation](docs/Scripts.md)** - Usage guide for all automation scripts
-- **[Testing Guide](TESTING.md)** - How to test scripts locally
-- **[Contributing Guide](CONTRIBUTING.md)** - Guidelines for contributing to this repository
-- **[Network Architecture](docs/Network.md)** - VLAN and network design
-- **[Device Inventory](docs/Devices.md)** - Hardware documentation
+### Stack conventions
 
-## Development Environment
+Every `Homelab.Stacks.*` repo follows the same shape (see
+[`ErpForFactoryGames`](https://github.com/ChrisonSimtian/Homelab.Stacks.ErpForFactoryGames)
+as the reference):
 
-In order to develop in an isolated dev environment (and not in prod ;-)) there is a few docker containers I spin up to test my scripts against:
+- **`compose.yml`** + per-service `*.env` / `stack.env` — the stack itself.
+- **`ingress.json`** — Cloudflare Tunnel ingress rules (TLS terminates at the
+  edge; plain HTTP inside the Docker network).
+- **`bin/*.ps1`** — deploy lifecycle (`provision.ps1`, `deploy.ps1`,
+  `load-secrets.ps1`). Runs on a Proxmox LXC, SSH from the dev box.
+- **Secrets from Bitwarden** — fetched at deploy time, never written to disk
+  (file fallback only until BW is fully adopted).
+- **`README.md`** with an architecture diagram + first-time setup, **`LICENSE`**.
 
-**MacOS:**
-run `brew install orbstack` to install orbstack and apparently be happy?
-Not sure, needs some testing on my MacBook first.
+## 🧭 Principles
 
-**NFS shares:**
-Just run a generic debian container, maybe set up a second one side by side that shares out a NFS export or two.
-[see compose.yml](containers/homelab/compose.yml)
+Inherited from the [Overseer agent](.github/agents/global-agent.md) and applied
+to everything in this repo:
 
-**Proxmox:**
-Currently there is no easy way to containerize this. MacOS is ARM64 so you wont be able to run Proxmox in a container. Debian 13 is the way to go.
-However, on Linux & Windows you can run a container
-[Containerized Proxmox](https://github.com/LongQT-sea/containerized-proxmox/)
-[see compose.cluster.yml](containers/proxmox/compose.cluster.yml)
+- **IaC-first** — declarative over imperative; UIs are a last resort.
+- **Idempotent** — running the same thing twice changes nothing the second time.
+- **Reversible** — changes can be rolled back; destructive steps are explicit.
+- **Modular** — small, composable pieces; link and reuse instead of duplicating.
+- **Explicit over implicit** — no hidden behavior.
+- **Multi-everything** — assume multiple nodes, multiple NAS, multiple services.
 
-**Synology DSM:**
-Currently there is no easy way to containerize this. MacOS is ARM64 so you wont be able to run DSM in a container.
-However, on Linux & Windows you can run a container
-[Virtual Synology DSM](https://github.com/vdsm/virtual-dsm)
-[see compose.yml](containers/dsm/compose.yml)
+## 🗂️ What lives where
 
-## Infrastructure as Code
+| Path | Purpose |
+| --- | --- |
+| `docs/` | [Network](docs/Network.md), [devices](docs/Devices.md), [services](docs/Services.md), [backlog](docs/Backlog.md), and plans. |
+| `infra/ansible/` | Configuration management (currently: Synology NAS setup). |
+| `infra/opentofu/` | Declarative provisioning (currently: Synology NAS, early). |
+| `infra/docker/` | Self-hosted stacks run as containers (e.g. monitoring). |
+| `infra/proxmox/` | Proxmox-side provisioning helpers & community scripts. |
+| `src/Proxmox/` | Bash + PowerShell scripts for node bootstrap & inventory. |
+| `containers/` | Local dev/test environments (Proxmox, DSM, Debian). |
+| `.github/agents/` | AI agent personas that enforce repo conventions. |
+| `stacks/` | Submodules — one self-contained stack per repo. |
 
-### Ansible
+> **Tooling note:** the OpenTofu / Ansible / scripts split is **not yet locked
+> in**. Several tools currently overlap in purpose; consolidating "which tool
+> owns which layer" is an open decision (see [Roadmap](#-roadmap)).
 
-**MacOS Installation:**
-Run `brew install ansible`. Its that simple on MacOS
+## ⚙️ CI/CD: Fallout
 
-**Windows Installation:**
-Run `pip install ansible`. Sadly its not that simple. You need to add the right path, install the correct python, etc. Just use MacOS or Linux already. 
+GitOps is driven by **[Fallout](https://github.com/ChrisonSimtian/Fallout)** — my
+own C#/.NET build system (a successor to NUKE). Instead of hand-written YAML, the
+build/deploy logic is a **C# console app**, and Fallout *generates* the
+`.github/workflows/*.yml` that GitHub Actions executes. Build steps live in code,
+with full IDE support, type-safety, and debugging.
 
-1. Install Ansible
-2. Install Community.Synology collection
-
-**Proxmox:**
-[Ansible Module](https://github.com/ansible-collections/community.proxmox)
-
-**Synology DSM:**
-[Ansible Synology DSM](https://github.com/agaffney/ansible-synology-dsm)
-`ansible-galaxy collection install community.synology`
-
-## Testing
-
-A Debian 13 container is provided for testing scripts locally before deploying to Proxmox nodes.
-
-**Quick test environment:**
+The intent: commits to this repo (and its submodules) drive deployment to the lab
+via GitHub Actions — no out-of-band manual deploys.
 
 ```bash
-docker-compose up -d debian-test
-docker-compose exec debian-test bash
+dotnet tool install -g Fallout.Cli   # or pin per-repo via .config/dotnet-tools.json
+fallout                              # run the build locally
 ```
 
-See [TESTING.md](TESTING.md) for detailed testing instructions.
+Wiring the Fallout build project into this repo is in-progress (see
+[Roadmap](#-roadmap)).
 
-## Useful links
+## 🌐 Network & devices
 
-- [Synology's DSM API](https://global.download.synology.com/download/Document/Software/DeveloperGuide/Package/FileStation/All/enu/Synology_File_Station_API_Guide.pdf)
-- [Proxmox API](https://pve.proxmox.com/wiki/Proxmox_VE_API)
+See [`docs/Network.md`](docs/Network.md) for the VLAN-segmented architecture
+(Unifi Cloud Gateway) and [`docs/Devices.md`](docs/Devices.md) for the hardware
+inventory.
+
+## 🛠️ Development & testing
+
+Local dev environments, tool installation, and how to test scripts before they
+touch real nodes are documented in [`docs/Development.md`](docs/Development.md).
+
+## 🗺️ Roadmap
+
+- [x] Wire the 5 existing `Homelab.Stacks.*` repos in as submodules under `stacks/`.
+- [ ] Decide the tool ownership model (OpenTofu vs Ansible vs scripts per layer).
+- [ ] Add a Fallout build project (C#) + generate workflows, incl. private-submodule auth ([BL-007](docs/Backlog.md)).
+- [ ] Flesh out `docs/Devices.md` (the 3 Proxmox hosts + NAS).
+- [ ] Gitignore Grafana runtime data under `infra/docker/monitoring/data/`.
+
+## 🔗 Useful links
+
+- [Synology DSM File Station API](https://global.download.synology.com/download/Document/Software/DeveloperGuide/Package/FileStation/All/enu/Synology_File_Station_API_Guide.pdf)
+- [Proxmox VE API](https://pve.proxmox.com/wiki/Proxmox_VE_API)
