@@ -1,0 +1,33 @@
+# Reference shape — illustrative only.
+#
+# Shows the contract a Homelab.Stacks.* submodule would carry as its `shape.yaml`.
+# Values here model the ServArr stack's Docker host (VLAN 1010 on hpe-01, NFS
+# media mount) and are grounded in the existing community-scripts vars, but the
+# real shape is authored against discovered state in Phase 2 — not trusted yet.
+#
+# Validate against ../schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: servarr
+  stack: ServArr
+  tags: [arr-stack, homelab, vlan-1010, hpe-01]
+
+spec:
+  node: hpe-01
+  ctid: 3000
+  cores: 2
+  memory: 2048          # MB
+  disk: 16              # GB
+  storage: local-lvm
+  templateStorage: local
+  network:
+    vlan: 1010
+    ipv4: dhcp
+    ipv6: none
+  mounts:
+    - type: nfs
+      source: "ds1813-01:/volume1/media"
+      target: /mnt/media

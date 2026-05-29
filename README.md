@@ -73,19 +73,18 @@ to everything in this repo:
 
 | Path | Purpose |
 | --- | --- |
-| `docs/` | [Network](docs/Network.md), [devices](docs/Devices.md), [services](docs/Services.md), [backlog](docs/Backlog.md), and plans. |
-| `infra/ansible/` | Configuration management (currently: Synology NAS setup). |
-| `infra/opentofu/` | Declarative provisioning (currently: Synology NAS, early). |
-| `infra/docker/` | Self-hosted stacks run as containers (e.g. monitoring). |
-| `infra/proxmox/` | Proxmox-side provisioning helpers & community scripts. |
+| `Infrastructure/` | **New world** — C#-native, reproducible provisioning. Shapes + (soon) engine. |
+| `docs/` | [Network](docs/Network.md), [devices](docs/Devices.md), [services](docs/Services.md), [backlog](docs/Backlog.md), [ADRs](docs/adr), and plans. |
+| `infra/` | **Legacy world** — Ansible / OpenTofu / docker monitoring / proxmox scripts. Frozen, not extended. |
 | `src/Proxmox/` | Bash + PowerShell scripts for node bootstrap & inventory. |
 | `containers/` | Local dev/test environments (Proxmox, DSM, Debian). |
 | `.github/agents/` | AI agent personas that enforce repo conventions. |
-| `stacks/` | Submodules — one self-contained stack per repo. |
+| `stacks/` | Submodules — one self-contained stack per repo. Each declares its `shape`. |
 
-> **Tooling note:** the OpenTofu / Ansible / scripts split is **not yet locked
-> in**. Several tools currently overlap in purpose; consolidating "which tool
-> owns which layer" is an open decision (see [Roadmap](#-roadmap)).
+> **Tooling decision (locked in):** we build our **own C#-native IaC**, run from
+> `/Infrastructure`, dogfooding ProxmoxSharp / SynoSharp / Fallout. Submodules
+> declare *shape* (YAML); the hub provisions. The old `/infra` (OpenTofu/Ansible)
+> is legacy and frozen. See [ADR-0001](docs/adr/ADR-0001-iac-tooling.md).
 
 ## ⚙️ CI/CD: Fallout
 
@@ -120,10 +119,12 @@ touch real nodes are documented in [`docs/Development.md`](docs/Development.md).
 ## 🗺️ Roadmap
 
 - [x] Wire the 5 existing `Homelab.Stacks.*` repos in as submodules under `stacks/`.
-- [ ] Decide the tool ownership model (OpenTofu vs Ansible vs scripts per layer).
-- [ ] Add a Fallout build project (C#) + generate workflows, incl. private-submodule auth ([BL-007](docs/Backlog.md)).
-- [ ] Flesh out `docs/Devices.md` (the 3 Proxmox hosts + NAS).
-- [ ] Gitignore Grafana runtime data under `infra/docker/monitoring/data/`.
+- [x] Lock in the IaC approach — C#-native, run from `/Infrastructure` ([ADR-0001](docs/adr/ADR-0001-iac-tooling.md)).
+- [ ] **Define** the shape contract ([BL-008](docs/Backlog.md)) — in progress.
+- [ ] **Discover** live Proxmox state read-only via ProxmoxSharp ([BL-009](docs/Backlog.md)).
+- [ ] **Converge** — reproducible provisioning, plan/apply ([BL-010](docs/Backlog.md)).
+- [ ] Unifi discovery + C# client ([BL-011](docs/Backlog.md)); homelab dashboard ([BL-012](docs/Backlog.md)).
+- [ ] Add a Fallout build project + private-submodule CI auth ([BL-007](docs/Backlog.md)).
 
 ## 🔗 Useful links
 

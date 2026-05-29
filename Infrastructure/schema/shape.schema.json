@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ChrisonSimtian/Homelab/Infrastructure/schema/shape.schema.json",
+  "title": "Homelab Infrastructure Shape",
+  "description": "Declarative shape of a unit of homelab infrastructure to be provisioned by the C#-native engine. See ADR-0001.",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "homelab/v1",
+      "description": "Schema version. Bumped when the shape contract changes."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["Node", "LXC", "VM", "NASShare"],
+      "description": "What this shape describes. 'Node' is a physical Proxmox host (described, not provisioned via API — it hosts the LXCs/VMs)."
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Stable, human-readable identifier (e.g. 'servarr')."
+        },
+        "stack": {
+          "type": "string",
+          "description": "Owning Homelab.Stacks.* submodule. Omit for hub-owned (non-stack) infra."
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Free-form labels (mirrors Proxmox tags)."
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "description": "Kind-specific desired state. Validated loosely in Phase 1; tightened per-kind as the engine matures.",
+      "properties": {
+        "node": {
+          "type": "string",
+          "description": "Target Proxmox node (e.g. 'hpe-01'). Required for LXC/VM."
+        },
+        "ctid": {
+          "type": "integer",
+          "description": "Container/VM ID. LXC/VM."
+        },
+        "cores": { "type": "integer", "minimum": 1 },
+        "memory": { "type": "integer", "description": "RAM in MB." },
+        "disk": { "type": "integer", "description": "Root disk in GB." },
+        "storage": {
+          "type": "string",
+          "description": "Proxmox storage for the container/VM disk (e.g. 'local-lvm')."
+        },
+        "templateStorage": {
+          "type": "string",
+          "description": "Proxmox storage holding the template (e.g. 'local'). LXC."
+        },
+        "network": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "vlan": { "type": "integer", "description": "VLAN tag (e.g. 1010)." },
+            "ipv4": {
+              "type": "string",
+              "description": "'dhcp' or a static CIDR (e.g. '10.10.30.1/16')."
+            },
+            "gateway": { "type": "string" },
+            "ipv6": {
+              "type": "string",
+              "default": "none",
+              "description": "'dhcp', 'slaac', a CIDR, or 'none'."
+            }
+          }
+        },
+        "mounts": {
+          "type": "array",
+          "description": "Storage mounts (e.g. NFS shares from the NAS).",
+          "items": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": { "type": "string", "enum": ["nfs", "bind", "volume"] },
+              "source": { "type": "string" },
+              "target": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
