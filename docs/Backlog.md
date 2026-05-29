@@ -126,6 +126,27 @@ Both USW Flex Mini switches (Lounge + Master Bedroom) are offline. Investigate c
 
 ---
 
+### BL-007 — Fallout CI/CD for private submodules
+**Status:** Idea
+**Priority:** Medium
+**Tags:** `ci-cd` `fallout` `gitops` `auth`
+
+Wire the hub repo's GitOps pipeline up with [Fallout](https://github.com/ChrisonSimtian/Fallout) (the C#/.NET build system) and solve checking out the private `Homelab.Stacks.*` submodules in GitHub Actions. The submodules are wired in (PR #6) but a default Actions checkout can't read them — needs an auth strategy. Deliberately deferred from the submodule-wiring PR to its own session.
+
+**Investigation questions:**
+- What auth does Fallout-generated Actions need to checkout private submodules — PAT, GitHub App token, or per-repo deploy keys?
+- Does Fallout generate the submodule checkout step, or is it hand-added to the generated workflow?
+- One credential with org-wide read, or scoped per submodule?
+- How are secrets surfaced to the runner (Actions secrets vs. Bitwarden, matching the stacks' deploy pattern)?
+
+- [ ] Add a Fallout build project (C#) to the hub repo
+- [ ] Generate the `.github/workflows/*.yml` via Fallout
+- [ ] Configure private-submodule checkout auth in the generated workflow
+- [ ] Verify a clean CI run checks out all five stacks
+- [ ] Document the chosen auth approach in the README / `docs/Development.md`
+
+---
+
 ## Done
 
 *(nothing yet)*
