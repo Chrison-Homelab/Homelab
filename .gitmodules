@@ -1,0 +1,15 @@
+[submodule "stacks/Infrastructure"]
+	path = stacks/Infrastructure
+	url = https://github.com/ChrisonSimtian/Homelab.Stacks.Infrastructure.git
+[submodule "stacks/Komodo"]
+	path = stacks/Komodo
+	url = https://github.com/ChrisonSimtian/Homelab.Stacks.Komodo.git
+[submodule "stacks/DevOps"]
+	path = stacks/DevOps
+	url = https://github.com/ChrisonSimtian/Homelab.Stacks.DevOps.git
+[submodule "stacks/ServArr"]
+	path = stacks/ServArr
+	url = https://github.com/ChrisonSimtian/Homelab.Stacks.ServArr.git
+[submodule "stacks/ErpForFactoryGames"]
+	path = stacks/ErpForFactoryGames
+	url = https://github.com/ChrisonSimtian/Homelab.Stacks.ErpForFactoryGames.git
