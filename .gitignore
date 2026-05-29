@@ -1,2 +1,9 @@
 # MCP secrets
 .mcp.env
+
+# .NET build artifacts (Fallout build project)
+**/bin/
+**/obj/
+
+# Fallout temp
+.fallout/temp/

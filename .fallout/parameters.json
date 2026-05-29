@@ -1,0 +1,4 @@
+{
+  "$schema": "build.schema.json",
+  "BuildProjectFile": "build/build.csproj"
+}

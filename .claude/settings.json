@@ -1,5 +1,11 @@
 {
   "enabledPlugins": {
     "unifi-network@unifi-plugins": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(fallout:*)",
+      "PowerShell(fallout:*)"
+    ]
   }
 }

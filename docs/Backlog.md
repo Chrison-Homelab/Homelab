@@ -152,10 +152,17 @@ and use **GitHub Environments + Releases** to track homelab state. See
 
 - [x] Create the four GitHub Environments
 - [x] Add the on-demand `release-state-snapshot` workflow + `docs/CICD.md`
-- [ ] Run `fallout :setup` to scaffold the `_build` project *(Chris — interactive)*
-- [ ] Add a `ValidateShapes` target + `[GitHubActions]` CI workflow (Fallout-generated)
+- [x] Run `fallout :setup` to scaffold the build project (`build/`)
+- [x] Write the `ValidateShapes` target + `[GitHubActions("ci")]` attribute (in WIP branch `feat/fallout-ci-wip`)
+- [ ] **BLOCKED:** Fallout scaffold won't compile — the `fallout :setup` template
+      (CLI v11.0.18) generates `Fallout.*` / `FalloutBuild` code, but the
+      `Fallout.Common` 11.0.18 package doesn't expose those namespaces yet
+      (rebrand mid-migration). Even the untouched `Build.cs`/`Configuration.cs`
+      fail with `CS0234`. Decide: use `Nuke.*` namespaces as a stopgap, pin a
+      matching `Fallout.Common`, or fix the rebrand in Fallout. → GH issue.
+- [ ] Generate `.github/workflows/ci.yml` (blocked on the compile above)
 - [ ] Create the fine-grained PAT and store it as `SUBMODULES_PAT` *(Chris)*
-- [ ] Verify a clean CI run checks out all four stack submodules
+- [ ] Verify CI runs `ValidateShapes` green; verify release workflow checks out submodules
 
 ---
 
