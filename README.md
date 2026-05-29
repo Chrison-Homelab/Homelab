@@ -33,10 +33,13 @@ Homelab (this repo)            ← hub: shared infra, networking, docs, CI/CD gl
 │   ├── Infrastructure         ← Homelab.Stacks.Infrastructure   (container hosts)
 │   ├── Komodo                 ← Homelab.Stacks.Komodo           (Docker host mgmt)
 │   ├── DevOps                 ← Homelab.Stacks.DevOps
-│   ├── ServArr                ← Homelab.Stacks.ServArr          (*arr media stack)
 │   └── ErpForFactoryGames     ← Homelab.Stacks.ErpForFactoryGames
-└── infra, docs, src, …        ← shared, cross-cutting concerns
+└── Infrastructure, infra, docs, src, …   ← shared, cross-cutting concerns
 ```
+
+> The `*arr` media stack is **not** a submodule: it runs as individual LXCs and
+> will be recreated from discovered state (Define → Discover → Converge), not
+> from a hand-authored compose stack.
 
 **Rule of thumb:** a thing becomes its own `Homelab.Stacks.*` submodule when it
 is a self-contained service/stack with its own lifecycle. Cross-cutting concerns
