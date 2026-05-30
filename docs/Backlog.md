@@ -284,20 +284,18 @@ create over SSH**, ProxmoxSharp owns discovery + post-create config + lifecycle.
 ---
 
 ### BL-014 — ProxmoxSharp CLI (dotnet global tool)
-**Status:** Idea — captured, not started
+**Status:** ✅ Done — 2026-05-31 (`proxmoxsharp` tool: discover/nodes/version, live-verified)
 **Priority:** Medium
 **Tags:** `proxmoxsharp` `cli` `dotnet-tool` `dx`
 **Relates to:** [BL-009](#bl-009--c-native-iac-discover-read-only-state-import)
 
-Build a `dotnet tool`-installable CLI inside the ProxmoxSharp repo that wraps the
-library — so the Proxmox read/discover surface is usable straight from the shell
-(and from Claude) without writing a host program each time. Depends on the
-ProxmoxSharp read path landing first (BL-009).
+`dotnet tool` CLI inside the ProxmoxSharp repo (`src/ProxmoxSharp.Cli`, command
+`proxmoxsharp`) wrapping the library — Proxmox read/discover from the shell.
 
-- [ ] CLI project in `vendor/ProxmoxSharp` packaged as a `dotnet tool` (`PackAsTool`)
-- [ ] Commands wrapping the read path (e.g. `proxmoxsharp nodes`, `… discover`)
-- [ ] Auth via env/API-token config; read-only first
-- [ ] Publish so `dotnet tool install -g` works (shares packaging story with BL-009 M5)
+- [x] CLI project packaged as a `dotnet tool` (`PackAsTool`, command `proxmoxsharp`)
+- [x] Commands: `discover` (JSON `ClusterSnapshot`), `nodes`, `version`
+- [x] Auth via `PROXMOX_*` env (read-only); self-contained tool package (bundles deps)
+- [x] Rides the solution-wide pack/publish → publishes to GitHub Packages with the libs
 
 ---
 
