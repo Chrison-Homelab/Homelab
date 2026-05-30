@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Homelab.Infrastructure</RootNamespace>
+    <AssemblyName>homelab-infra</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Consume the published ProxmoxSharp package from GitHub Packages.
+         Float to the latest prerelease (published on every push to main);
+         pin to a stable version when one is tagged. -->
+    <PackageReference Include="ProxmoxSharp" Version="0.1.0-preview.*" />
+  </ItemGroup>
+
+</Project>
