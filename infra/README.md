@@ -70,11 +70,11 @@ Ansible automation for Proxmox VE using the Community Proxmox collection.
 
 ## Development Environment
 
-The Ansible inventory is pre-configured to work with the containerized DSM environment in `containers/dsm/`.
+The Ansible inventory is pre-configured to work with the containerized DSM environment in `.containers/dsm/`.
 
 ```bash
 # Start DSM container
-cd ../../containers/dsm
+cd ../../.containers/dsm
 docker-compose up -d
 
 # Test Ansible connectivity

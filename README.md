@@ -80,7 +80,7 @@ to everything in this repo:
 | `docs/` | [Network](docs/Network.md), [devices](docs/Devices.md), [services](docs/Services.md), [backlog](docs/Backlog.md), [ADRs](docs/adr), and plans. |
 | `infra/` | **Legacy world** — Ansible / OpenTofu / docker monitoring / proxmox scripts. Frozen, not extended. |
 | `src/Proxmox/` | Bash + PowerShell scripts for node bootstrap & inventory. |
-| `containers/` | Local dev/test environments (Proxmox, DSM, Debian). |
+| `.containers/` | Local dev/test environments (Proxmox, DSM, Debian). |
 | `.github/agents/` | AI agent personas that enforce repo conventions. |
 | `stacks/` | Submodules — one self-contained stack per repo. Each declares its `shape`. |
 

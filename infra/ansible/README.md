@@ -70,7 +70,7 @@ all:
       ansible_connection: local
 ```
 
-This configuration is set up to work with the containerized DSM environment in `../../containers/dsm/`.
+This configuration is set up to work with the containerized DSM environment in `../../.containers/dsm/`.
 
 ### Testing Connectivity
 
@@ -128,7 +128,7 @@ For production:
 
 1. Start the DSM container:
    ```bash
-   cd ../../containers/dsm
+   cd ../../.containers/dsm
    docker-compose up -d
    ```
 

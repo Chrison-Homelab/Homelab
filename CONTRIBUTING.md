@@ -9,7 +9,7 @@ This repository is organized into several key areas:
 ```
 Homelab/
 ├── src/                    # Automation scripts
-├── containers/            # Development/testing containers
+├── .containers/            # Development/testing containers
 ├── infra/                # Infrastructure as Code (Ansible)
 ├── docs/                 # Documentation
 ├── .ai/                  # AI assistant conventions and patterns
@@ -47,7 +47,7 @@ Always test scripts before deploying to production:
 
 ```bash
 # Start the testing container
-cd containers/homelab
+cd .containers/homelab
 docker-compose up -d debian-test
 
 # Access the container
@@ -192,7 +192,7 @@ When adding Ansible playbooks:
 
 When adding Docker containers:
 
-1. **Create subdirectory** in `containers/`
+1. **Create subdirectory** in `.containers/`
 2. **Include**:
    - `compose.yml` with header documentation
    - `README.md` with detailed usage
@@ -201,7 +201,7 @@ When adding Docker containers:
    - Purpose and use cases
    - Platform compatibility
    - Quick start instructions
-4. **Update** `containers/README.md`
+4. **Update** `.containers/README.md`
 
 ## Documentation Standards
 

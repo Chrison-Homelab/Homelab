@@ -2,7 +2,7 @@
 # Ansible Inventory for Homelab Infrastructure
 # 
 # This inventory is configured for development/testing with the containerized DSM
-# in containers/dsm/
+# in .containers/dsm/
 #
 # For production use:
 # 1. Update ansible_host and ansible_port for your actual NAS

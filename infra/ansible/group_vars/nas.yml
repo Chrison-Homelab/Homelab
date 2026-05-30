@@ -2,7 +2,7 @@
 # NAS Group Variables
 #
 # ⚠️ DEVELOPMENT CREDENTIALS ONLY ⚠️
-# These credentials are for use with the containerized DSM in ../../containers/dsm/
+# These credentials are for use with the containerized DSM in ../../.containers/dsm/
 # 
 # For production:
 # 1. Create a separate file (e.g., group_vars/nas_prod.yml)

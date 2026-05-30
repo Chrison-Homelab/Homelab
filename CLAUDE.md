@@ -12,7 +12,7 @@ Personal homelab infrastructure-as-code repository managing Proxmox hypervisors,
 
 ```bash
 # Start the test container (mounts src/Proxmox as read-only)
-cd containers/homelab
+cd .containers/homelab
 docker compose up -d debian-test
 
 # Exec into it and run scripts
@@ -65,9 +65,9 @@ tofu apply
 - **`infra/ansible/`** — Ansible playbooks/inventory for DSM (Synology) configuration management. Credentials for local test DSM are in `group_vars/nas.yml`.
 - **`infra/opentofu/synology-nas/`** — OpenTofu IaC for Synology NAS resources (currently exploratory).
 - **`infra/docker/monitoring/`** — Docker Compose monitoring stack: SNMP Exporter → Prometheus → Grafana, plus Servarr Exporter for *arr apps.
-- **`containers/homelab/`** — Debian 13 (Trixie) test container matching the Proxmox OS. Used for local validation of `src/Proxmox/` scripts.
-- **`containers/proxmox/`** — Containerized Proxmox for local dev (requires `/dev/kvm`, Linux only).
-- **`containers/dsm/`** — Virtual DSM container (Synology) for local testing, exposed on port 5000.
+- **`.containers/homelab/`** — Debian 13 (Trixie) test container matching the Proxmox OS. Used for local validation of `src/Proxmox/` scripts.
+- **`.containers/proxmox/`** — Containerized Proxmox for local dev (requires `/dev/kvm`, Linux only).
+- **`.containers/dsm/`** — Virtual DSM container (Synology) for local testing, exposed on port 5000.
 - **`docs/`** — Network architecture, device inventory, and script documentation.
 - **`.devcontainer/`** — VS Code Dev Container (Ubuntu base) with PowerShell, Ansible, Terraform, and Docker extensions pre-configured.
 - **`.github/agents/`** — Agent persona definitions for AI-assisted development workflows.
