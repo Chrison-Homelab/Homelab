@@ -131,7 +131,7 @@ For testing Proxmox-specific commands, consider using the containerized Proxmox 
 ## Troubleshooting
 
 ### Scripts not found
-Ensure you're running docker-compose from the `containers/homelab/` directory and that `src/Proxmox/` exists two levels up.
+Ensure you're running docker-compose from the `.containers/homelab/` directory and that `src/Proxmox/` exists two levels up.
 
 ### Permission denied
 Scripts are mounted read-only. If you need to modify them, do so in the `src/Proxmox/` directory on your host.

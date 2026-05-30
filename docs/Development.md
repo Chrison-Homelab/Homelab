@@ -8,17 +8,17 @@ Since my MacBook is ARM64, most homelab targets can't run natively. Use these:
 
 **NFS shares:**
 A generic Debian container, optionally with a second one beside it exporting an
-NFS share or two. See [`containers/homelab/compose.yml`](../containers/homelab/compose.yml).
+NFS share or two. See [`.containers/homelab/compose.yml`](../.containers/homelab/compose.yml).
 
 **Proxmox:**
 No clean way to containerize on macOS (ARM64). On Linux & Windows you can use
 [Containerized Proxmox](https://github.com/LongQT-sea/containerized-proxmox/) —
-see [`containers/proxmox/compose.cluster.yml`](../containers/proxmox/compose.cluster.yml).
+see [`.containers/proxmox/compose.cluster.yml`](../.containers/proxmox/compose.cluster.yml).
 On macOS, Debian 13 is the way to go.
 
 **Synology DSM:**
 Same story — on Linux & Windows use [Virtual Synology DSM](https://github.com/vdsm/virtual-dsm).
-See [`containers/dsm/compose.yml`](../containers/dsm/compose.yml).
+See [`.containers/dsm/compose.yml`](../.containers/dsm/compose.yml).
 
 **OrbStack (macOS):** `brew install orbstack` (still needs testing on the MacBook).
 

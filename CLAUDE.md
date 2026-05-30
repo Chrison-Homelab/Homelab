@@ -12,7 +12,7 @@ Personal homelab infrastructure-as-code repository managing Proxmox hypervisors,
 
 ```bash
 # Start the test container (mounts src/Proxmox as read-only)
-cd containers/homelab
+cd .containers/homelab
 docker compose up -d debian-test
 
 # Exec into it and run scripts
@@ -28,7 +28,7 @@ docker compose up -d nfs-test
 ### Monitoring Stack
 
 ```bash
-cd infra/docker/monitoring
+cd stacks/monitoring
 # Requires .env file with: RADARR_API_KEY, RADARR_URL, SONARR_API_KEY, SONARR_URL,
 #   PROWLARR_API_KEY, PROWLARR_URL, GRAFANA_PORT, GF_SECURITY_ADMIN_USER, GF_SECURITY_ADMIN_PASSWORD
 docker compose up -d
@@ -38,36 +38,19 @@ docker compose up -d
 # Servarr:    http://localhost:9707
 ```
 
-### Ansible
-
-```bash
-# Install collections (already done in devcontainer post-create)
-ansible-galaxy collection install community.synology
-
-# Run playbooks
-ansible-playbook infra/ansible/playbooks/nas_setup.yml -i infra/ansible/inventory.yml
-```
-
-### OpenTofu (Synology IaC)
-
-```bash
-cd infra/opentofu/synology-nas
-tofu init
-tofu plan
-tofu apply
-```
+> **Note:** The legacy `infra/` directory (Ansible DSM automation + OpenTofu
+> Synology spike) was retired — both are superseded by the planned C#-native
+> SynoSharp. The monitoring stack moved to `stacks/monitoring/`. See git history.
 
 ## Architecture
 
 ### Directory Layout
 
 - **`src/Proxmox/`** — Bash and PowerShell scripts deployed directly to Proxmox nodes. Scripts exist in both `.sh` and `.ps1` variants with equivalent functionality.
-- **`infra/ansible/`** — Ansible playbooks/inventory for DSM (Synology) configuration management. Credentials for local test DSM are in `group_vars/nas.yml`.
-- **`infra/opentofu/synology-nas/`** — OpenTofu IaC for Synology NAS resources (currently exploratory).
-- **`infra/docker/monitoring/`** — Docker Compose monitoring stack: SNMP Exporter → Prometheus → Grafana, plus Servarr Exporter for *arr apps.
-- **`containers/homelab/`** — Debian 13 (Trixie) test container matching the Proxmox OS. Used for local validation of `src/Proxmox/` scripts.
-- **`containers/proxmox/`** — Containerized Proxmox for local dev (requires `/dev/kvm`, Linux only).
-- **`containers/dsm/`** — Virtual DSM container (Synology) for local testing, exposed on port 5000.
+- **`stacks/monitoring/`** — In-repo monitoring stack: SNMP Exporter → Prometheus → Grafana, plus Servarr Exporter for *arr apps. (Was `infra/docker/monitoring/`.)
+- **`.containers/homelab/`** — Debian 13 (Trixie) test container matching the Proxmox OS. Used for local validation of `src/Proxmox/` scripts.
+- **`.containers/proxmox/`** — Containerized Proxmox for local dev (requires `/dev/kvm`, Linux only).
+- **`.containers/dsm/`** — Virtual DSM container (Synology) for local testing, exposed on port 5000.
 - **`docs/`** — Network architecture, device inventory, and script documentation.
 - **`.devcontainer/`** — VS Code Dev Container (Ubuntu base) with PowerShell, Ansible, Terraform, and Docker extensions pre-configured.
 - **`.github/agents/`** — Agent persona definitions for AI-assisted development workflows.
