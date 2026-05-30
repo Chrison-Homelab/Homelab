@@ -9,7 +9,7 @@
 #   docker-compose up -d
 #   Access DSM at http://localhost:5000
 #
-# Default Password: See infra/ansible/group_vars/nas.yml
+# Default credentials: see README.md (dev_account)
 
 services:
   dsm:

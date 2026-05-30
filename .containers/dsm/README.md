@@ -46,17 +46,13 @@ docker-compose logs -f
 
 ## Use Cases
 
-### Testing Ansible Playbooks
+### Testing DSM Automation
 
-The virtual DSM instance is perfect for testing Ansible playbooks without affecting production NAS systems.
+The virtual DSM instance is a throwaway target for testing DSM automation without
+touching production NAS systems.
 
-```bash
-# From the repository root
-cd infra/ansible
-ansible-playbook -i inventory.yml playbooks/nas_setup.yml
-```
-
-The default inventory in `infra/ansible/inventory.yml` is configured to connect to this container.
+> The former Ansible DSM playbooks (`infra/ansible/`) were retired — superseded by
+> the planned C#-native **SynoSharp**. See git history if you need them.
 
 ### Testing NFS Exports
 
@@ -66,20 +62,9 @@ You can configure NFS exports in DSM and test mounting them from the homelab con
 
 Test scripts that interact with the Synology DSM API without risk to production systems.
 
-## Ansible Integration
+## Connection & Credentials
 
-The default Ansible inventory is configured for this container:
-
-```yaml
-all:
-  hosts:
-    nas:
-      ansible_host: localhost
-      ansible_port: 5000
-      ansible_connection: local
-```
-
-Default credentials in `infra/ansible/group_vars/nas.yml`:
+The container exposes DSM on `localhost:5000`. Development credentials:
 - Host: localhost:5000
 - User: dev_account
 - Password: FZzRN4XCSRncu4

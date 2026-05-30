@@ -78,11 +78,10 @@ to everything in this repo:
 | --- | --- |
 | `Infrastructure/` | **New world** — C#-native, reproducible provisioning. Shapes + (soon) engine. |
 | `docs/` | [Network](docs/Network.md), [devices](docs/Devices.md), [services](docs/Services.md), [backlog](docs/Backlog.md), [ADRs](docs/adr), and plans. |
-| `infra/` | **Legacy world** — Ansible / OpenTofu / docker monitoring / proxmox scripts. Frozen, not extended. |
 | `src/Proxmox/` | Bash + PowerShell scripts for node bootstrap & inventory. |
 | `.containers/` | Local dev/test environments (Proxmox, DSM, Debian). |
 | `.github/agents/` | AI agent personas that enforce repo conventions. |
-| `stacks/` | Submodules — one self-contained stack per repo. Each declares its `shape`. |
+| `stacks/` | Stacks — mostly submodules (one self-contained stack per repo); also the in-repo `monitoring/` stack. Each declares its `shape`. |
 
 > **Tooling decision (locked in):** we build our **own C#-native IaC**, run from
 > `/Infrastructure`, dogfooding ProxmoxSharp / SynoSharp / Fallout. Submodules
