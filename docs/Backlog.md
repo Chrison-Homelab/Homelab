@@ -185,20 +185,27 @@ need provisioned, before any engine code exists.
 ---
 
 ### BL-009 — C#-native IaC: Discover (read-only state import)
-**Status:** In Progress — first MCP-driven sweep done 2026-05-29; ProxmoxSharp code still pending
-**Plan:** [docs/plans/iac-csharp-native.md](plans/iac-csharp-native.md)
+**Status:** In Progress — MCP sweep done 2026-05-29; ProxmoxSharp vendored 2026-05-30; codegen plan drafted
+**Plan:** [docs/plans/iac-csharp-native.md](plans/iac-csharp-native.md) · **Codegen plan:** [docs/plans/BL-009-proxmoxsharp-codegen.md](plans/BL-009-proxmoxsharp-codegen.md)
 **Priority:** High
-**Tags:** `iac` `proxmox` `proxmoxsharp` `discovery`
+**Tags:** `iac` `proxmox` `proxmoxsharp` `discovery` `codegen`
 
 Phase 2. Grab current Proxmox state read-only and reconcile shapes against it.
-First real use of [ProxmoxSharp](https://github.com/ChrisonSimtian/ProxmoxSharp).
+First real use of [ProxmoxSharp](https://github.com/ChrisonSimtian/ProxmoxSharp)
+(now vendored at `vendor/ProxmoxSharp`). **Approach:** auto-generate most of the
+client from Proxmox's published schema (`apidoc.js`, version-matched from our
+node) + thin hand-written runtime/auth — see the codegen plan. Execution route
+(own emitter vs OpenAPI+Kiota) still to be decided.
 
 - [x] Stand up a Proxmox MCP (`Samik081/mcp-pve`, read-only tier) + UniFi MCP (`enuno`)
 - [x] First read-only sweep of the live cluster + network (via MCP)
 - [x] Regenerate `Devices.md` + `Services.md` + `Network.md` from reality
-- [ ] ProxmoxSharp read path: auth + nodes/LXCs/VMs/storage/network (read-only) — *the actual dogfood goal; done via MCP for now*
-- [ ] `discover` command → structured dump of live state (repeatable, in code)
+- [x] Vendor ProxmoxSharp as a submodule (`vendor/ProxmoxSharp`); confirm `apidoc.js` schema available on-node (M0)
+- [ ] Decide codegen route + scaffold the solution (M1)
+- [ ] ProxmoxSharp read path: auth + nodes/LXCs/VMs/storage/network (read-only) — *the actual dogfood goal; done via MCP for now* (M2–M3)
+- [ ] `discover` command → structured dump of live state (repeatable, in code) (M4)
 - [ ] Reconcile hand-written shapes vs. discovered state (started in `/Infrastructure/nodes`)
+- [ ] Package ProxmoxSharp as NuGet the hub consumes (M5)
 
 ---
 
@@ -271,6 +278,24 @@ create over SSH**, ProxmoxSharp owns discovery + post-create config + lifecycle.
 - [x] **Live smoke test passed** — CT 3099 created on hpe-01 over SSH, verified running via MCP, destroyed. Needed `TERM=xterm` in the remote env (community-scripts call `clear`, which fails over no-TTY SSH) — now baked into the renderer.
 - [ ] Catalogue which community-scripts back our LXCs (map app → script)
 - [ ] Post-create host-level mounts (NFS) — not covered by community-scripts; deferred to ProxmoxSharp lifecycle
+
+---
+
+### BL-014 — ProxmoxSharp CLI (dotnet global tool)
+**Status:** Idea — captured, not started
+**Priority:** Medium
+**Tags:** `proxmoxsharp` `cli` `dotnet-tool` `dx`
+**Relates to:** [BL-009](#bl-009--c-native-iac-discover-read-only-state-import)
+
+Build a `dotnet tool`-installable CLI inside the ProxmoxSharp repo that wraps the
+library — so the Proxmox read/discover surface is usable straight from the shell
+(and from Claude) without writing a host program each time. Depends on the
+ProxmoxSharp read path landing first (BL-009).
+
+- [ ] CLI project in `vendor/ProxmoxSharp` packaged as a `dotnet tool` (`PackAsTool`)
+- [ ] Commands wrapping the read path (e.g. `proxmoxsharp nodes`, `… discover`)
+- [ ] Auth via env/API-token config; read-only first
+- [ ] Publish so `dotnet tool install -g` works (shares packaging story with BL-009 M5)
 
 ---
 
