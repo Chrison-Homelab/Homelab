@@ -82,6 +82,7 @@ to everything in this repo:
 | `.containers/` | Local dev/test environments (Proxmox, DSM, Debian). |
 | `.github/agents/` | AI agent personas that enforce repo conventions. |
 | `stacks/` | Stacks — mostly submodules (one self-contained stack per repo); also the in-repo `monitoring/` stack. Each declares its `shape`. |
+| `vendor/` | Vendored dependencies as submodules — our own libraries we dogfood: [`ProxmoxSharp`](https://github.com/ChrisonSimtian/ProxmoxSharp) (C# Proxmox client). |
 
 > **Tooling decision (locked in):** we build our **own C#-native IaC**, run from
 > `/Infrastructure`, dogfooding ProxmoxSharp / SynoSharp / Fallout. Submodules
