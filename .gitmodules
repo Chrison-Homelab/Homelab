@@ -10,3 +10,6 @@
 [submodule "stacks/ErpForFactoryGames"]
 	path = stacks/ErpForFactoryGames
 	url = https://github.com/ChrisonSimtian/Homelab.Stacks.ErpForFactoryGames.git
+[submodule "vendor/ProxmoxSharp"]
+	path = vendor/ProxmoxSharp
+	url = https://github.com/ChrisonSimtian/ProxmoxSharp.git
