@@ -45,9 +45,27 @@
           "type": "string",
           "description": "Target Proxmox node (e.g. 'hpe-01'). Required for LXC/VM."
         },
+        "app": {
+          "type": "string",
+          "description": "community-scripts slug selecting which ct/<app>.sh to run (e.g. 'docker', 'debian'). Required for LXC created via the community-scripts deploy path (BL-013)."
+        },
         "ctid": {
           "type": "integer",
           "description": "Container/VM ID. LXC/VM."
+        },
+        "unprivileged": {
+          "type": "boolean",
+          "default": true,
+          "description": "Unprivileged container. LXC. Maps to var_unprivileged."
+        },
+        "os": {
+          "type": "string",
+          "default": "debian",
+          "description": "Base OS for the container (e.g. 'debian', 'alpine'). Maps to var_os."
+        },
+        "osVersion": {
+          "type": ["string", "integer"],
+          "description": "OS version (e.g. 12). Maps to var_version."
         },
         "cores": { "type": "integer", "minimum": 1 },
         "memory": { "type": "integer", "description": "RAM in MB." },

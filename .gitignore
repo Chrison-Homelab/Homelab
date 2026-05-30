@@ -1,2 +1,5 @@
 # MCP secrets
 .mcp.env
+
+# macOS
+.DS_Store
