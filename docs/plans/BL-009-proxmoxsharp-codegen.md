@@ -3,7 +3,8 @@
 **Backlog:** [BL-009](../Backlog.md#bl-009--c-native-iac-discover-read-only-state-import) ·
 **ADR:** [ADR-0001](../adr/ADR-0001-iac-tooling.md) ·
 **Repo:** `vendor/ProxmoxSharp` (submodule) ·
-**Status:** Proposed — 2026-05-30 (M0 explore done; execution route TBD)
+**Status:** Approved — 2026-05-30. M0 explore done. **Route A** chosen
+(apidoc.js → OpenAPI → Kiota → C#), target **net10.0** (current LTS).
 
 ## Goal
 
@@ -44,22 +45,44 @@ From `apidoc.js` → C#, two routes:
   the `0/1`-bool / custom-format / CSV quirks and idiomatic C# naming; one
   transform. We own the whole emitter.
 
-**Leaning B** for the model + typed-path layer (control over quirks + clean
-output), atop a thin hand-written runtime. **Decision deferred to execution.**
+### Decision (locked 2026-05-30): Route A
+
+**`apidoc.js` → our converter → OpenAPI 3.0 → [Kiota](https://github.com/microsoft/kiota) → C#.**
+Reuse Microsoft's maintained Kiota emitter; we own only the version-matched
+`apidoc.js`→OpenAPI converter + the auth provider + a thin runtime. Target
+**net10.0**.
+
+Pipeline:
+```
+apidoc.js (PVE 9.2.2, from our node)
+   │  ProxmoxSharp.SchemaGen  (our tool: strip JS wrapper, JSON tree → OpenAPI 3.0,
+   │                            normalising 0/1 bools, custom formats, CSV lists, optional flags)
+   ▼
+openapi.json  (committed, diffable)
+   │  kiota generate -l CSharp        (pinned via .config/dotnet-tools.json)
+   ▼
+generated C# request builders + models
+   │  + hand-written runtime: PVEAPIToken auth provider, {data:…} envelope, converters
+   ▼
+ProxmoxSharp  (NuGet the hub consumes)
+```
 
 ## Components (all inside `vendor/ProxmoxSharp`)
 
 1. **Pinned schema** — `schema/apidoc.<pve-version>.js` committed (snapshot from
    our node) + a small refresh script. Regen is explicit and diffable.
-2. **Generator** — console/MSBuild tool: schema → C# (models + typed path
-   clients). Runs on-demand; generated output committed for reviewable diffs.
-3. **Runtime (hand-written)** — `ProxmoxClient` over `HttpClient`; API-token auth
+2. **`ProxmoxSharp.SchemaGen`** — our converter tool: `apidoc.js` → OpenAPI 3.0,
+   normalising the Proxmox quirks. Output `openapi.json` committed. *(Open
+   sub-decision: build from scratch vs. fork an existing apidoc→OpenAPI converter
+   — lean build-our-own for version-match + control.)*
+3. **Kiota** — pinned as a local `dotnet tool`; a `generate.ps1`/lock file drives
+   `openapi.json` → C#. Generated output committed for reviewable diffs.
+4. **Runtime (hand-written)** — Kiota `IAuthenticationProvider` for API-token auth
    (`Authorization: PVEAPIToken=user@realm!tokenid=secret`); the `{ data: … }`
-   envelope; error handling; `0/1`↔`bool` and CSV-list converters. Generated code
-   sits on top.
-4. **Tests** — generator unit tests + one thin read-only integration test against
+   envelope unwrap; `0/1`↔`bool` and CSV-list converters. Generated code sits on top.
+5. **Tests** — converter unit tests + one thin read-only integration test against
    the live cluster.
-5. **Packaging** — NuGet (GitHub Packages or local feed) the hub consumes.
+6. **Packaging** — NuGet (GitHub Packages or local feed) the hub consumes (M5).
 
 ## Milestones
 
@@ -85,12 +108,13 @@ output), atop a thin hand-written runtime. **Decision deferred to execution.**
   wrapping ProxmoxSharp so it's usable directly from Claude. Captured; **not now**.
 - Write / lifecycle path → BL-010.
 
-## Execution decision points (discuss before coding)
+## Execution decision points
 
-1. **Codegen route A vs B** (OpenAPI+Kiota vs own emitter).
-2. **Packaging target** — GitHub Packages vs local feed (GH Packages shares the
-   PAT/auth story with BL-007).
-3. **Generator placement** — build-time MSBuild vs committed generated output
-   regenerated on-demand (committed output is friendlier for a consumed package
-   + diff review).
-4. **Target framework** — `net8.0` (LTS) vs `net9.0`.
+1. ~~Codegen route A vs B~~ → **A (OpenAPI + Kiota)**, locked 2026-05-30.
+2. ~~Target framework~~ → **net10.0**, locked 2026-05-30.
+3. **Generator placement** — committed generated output regenerated on-demand
+   (lean: friendlier for a consumed package + diff review). *Open, M3.*
+4. **Packaging target** — GitHub Packages vs local feed (GH Packages shares the
+   PAT/auth story with BL-007). *Open, M5.*
+5. **SchemaGen converter** — build our own vs fork an existing apidoc→OpenAPI
+   tool. *Open, M3 (lean build-our-own).*
