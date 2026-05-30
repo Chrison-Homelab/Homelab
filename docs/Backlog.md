@@ -185,7 +185,7 @@ need provisioned, before any engine code exists.
 ---
 
 ### BL-009 — C#-native IaC: Discover (read-only state import)
-**Status:** In Progress — ProxmoxSharp reads the live cluster via auto-generated code (M1–M3 done 2026-05-30); discover + coverage next
+**Status:** In Progress — ProxmoxSharp M1–M5 done 2026-05-30 (codegen + discover, published to GitHub Packages); reconcile vs. shapes next
 **Plan:** [docs/plans/iac-csharp-native.md](plans/iac-csharp-native.md) · **Codegen plan:** [docs/plans/BL-009-proxmoxsharp-codegen.md](plans/BL-009-proxmoxsharp-codegen.md)
 **Priority:** High
 **Tags:** `iac` `proxmox` `proxmoxsharp` `discovery` `codegen`
@@ -203,8 +203,9 @@ version = PVE release) + `ProxmoxSharp` (library, SemVer). CI green.
 - [x] M0–M1: vendor ProxmoxSharp; confirm `apidoc.js` on-node; scaffold solution (Route A, net10.0)
 - [x] M2: `ProxmoxClient` + PVEAPIToken auth + first live read (`GET /nodes`) verified
 - [x] M3: schema→OpenAPI→Kiota codegen; live reads of `/version` + the `/nodes` subtree (189 ops); regenerate-on-build + CI
-- [ ] Widen generated coverage (`/cluster`, `/storage`, `/access`) — extend `ApiIncludePaths`, rebuild
-- [ ] M4: `discover` command → structured dump of live state (repeatable, in code)
+- [x] Widen generated coverage to `/version,/nodes,/cluster,/storage,/access` (338 GET ops)
+- [x] M4: `ProxmoxDiscovery.DiscoverAsync()` → structured `ClusterSnapshot` (nodes → LXC/QEMU/storage/network), live-verified
+- [x] M5: both packages published to GitHub Packages (`ProxmoxSharp.Api` 9.2.2 + `ProxmoxSharp` 0.1.0) via `v*`-tag workflow
 - [ ] Reconcile hand-written shapes vs. discovered state (started in `/Infrastructure/nodes`)
 - [ ] M5: package ProxmoxSharp as NuGet the hub consumes
 
