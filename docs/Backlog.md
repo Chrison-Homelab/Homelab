@@ -185,27 +185,28 @@ need provisioned, before any engine code exists.
 ---
 
 ### BL-009 — C#-native IaC: Discover (read-only state import)
-**Status:** In Progress — MCP sweep done 2026-05-29; ProxmoxSharp vendored 2026-05-30; codegen plan drafted
+**Status:** In Progress — ProxmoxSharp reads the live cluster via auto-generated code (M1–M3 done 2026-05-30); discover + coverage next
 **Plan:** [docs/plans/iac-csharp-native.md](plans/iac-csharp-native.md) · **Codegen plan:** [docs/plans/BL-009-proxmoxsharp-codegen.md](plans/BL-009-proxmoxsharp-codegen.md)
 **Priority:** High
 **Tags:** `iac` `proxmox` `proxmoxsharp` `discovery` `codegen`
 
 Phase 2. Grab current Proxmox state read-only and reconcile shapes against it.
 First real use of [ProxmoxSharp](https://github.com/ChrisonSimtian/ProxmoxSharp)
-(now vendored at `vendor/ProxmoxSharp`). **Approach:** auto-generate most of the
-client from Proxmox's published schema (`apidoc.js`, version-matched from our
-node) + thin hand-written runtime/auth — see the codegen plan. Execution route
-(own emitter vs OpenAPI+Kiota) still to be decided.
+(vendored at `vendor/ProxmoxSharp`, pinned at M3). **Route A** chosen: generate the
+client from Proxmox's `apidoc.js` (version-matched) → OpenAPI → Kiota, on a thin
+hand-written runtime. Split into `ProxmoxSharp.Api` (generated, regenerate-on-build,
+version = PVE release) + `ProxmoxSharp` (library, SemVer). CI green.
 
 - [x] Stand up a Proxmox MCP (`Samik081/mcp-pve`, read-only tier) + UniFi MCP (`enuno`)
 - [x] First read-only sweep of the live cluster + network (via MCP)
 - [x] Regenerate `Devices.md` + `Services.md` + `Network.md` from reality
-- [x] Vendor ProxmoxSharp as a submodule (`vendor/ProxmoxSharp`); confirm `apidoc.js` schema available on-node (M0)
-- [ ] Decide codegen route + scaffold the solution (M1)
-- [ ] ProxmoxSharp read path: auth + nodes/LXCs/VMs/storage/network (read-only) — *the actual dogfood goal; done via MCP for now* (M2–M3)
-- [ ] `discover` command → structured dump of live state (repeatable, in code) (M4)
+- [x] M0–M1: vendor ProxmoxSharp; confirm `apidoc.js` on-node; scaffold solution (Route A, net10.0)
+- [x] M2: `ProxmoxClient` + PVEAPIToken auth + first live read (`GET /nodes`) verified
+- [x] M3: schema→OpenAPI→Kiota codegen; live reads of `/version` + the `/nodes` subtree (189 ops); regenerate-on-build + CI
+- [ ] Widen generated coverage (`/cluster`, `/storage`, `/access`) — extend `ApiIncludePaths`, rebuild
+- [ ] M4: `discover` command → structured dump of live state (repeatable, in code)
 - [ ] Reconcile hand-written shapes vs. discovered state (started in `/Infrastructure/nodes`)
-- [ ] Package ProxmoxSharp as NuGet the hub consumes (M5)
+- [ ] M5: package ProxmoxSharp as NuGet the hub consumes
 
 ---
 
