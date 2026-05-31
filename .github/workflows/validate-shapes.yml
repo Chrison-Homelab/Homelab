@@ -8,5 +8,8 @@ jobs:
     runs-on: [self-hosted, homelab]
     steps:
       - uses: actions/checkout@v6
+        with:
+          submodules: recursive          # pull stack submodules so their shapes are validated too
+          token: ${{ secrets.SUBMODULES_RO_PAT }}   # contents:read PAT (org repos)
       # python3 + python3-yaml + python3-jsonschema are pre-installed on the runner
       - run: python3 tools/validate-shapes.py
