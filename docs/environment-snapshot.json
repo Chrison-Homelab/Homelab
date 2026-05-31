@@ -1,0 +1,479 @@
+{
+  "generatedAt": "2026-05-31",
+  "summary": {
+    "nodes": 3,
+    "lxc": 29,
+    "qemu": 4,
+    "nasModel": "DS1813+",
+    "nasShares": 9,
+    "unifiGateway": "Cloud Gateway Ultra",
+    "activeClients": 46
+  },
+  "proxmox": {
+    "nodes": [
+      {
+        "node": "nuc-01",
+        "status": "Online",
+        "maxMem": 16693035008,
+        "uptime": 442023,
+        "lxc": [
+          {
+            "vmId": 5009,
+            "name": "tautulli",
+            "status": "Running",
+            "maxMem": 1073741824
+          },
+          {
+            "vmId": 9904,
+            "name": "teleport",
+            "status": "Running",
+            "maxMem": 1073741824
+          },
+          {
+            "vmId": 2002,
+            "name": "proxmox-datacenter-manager",
+            "status": "Running",
+            "maxMem": 2147483648
+          },
+          {
+            "vmId": 5006,
+            "name": "bazarr",
+            "status": "Running",
+            "maxMem": 1073741824
+          },
+          {
+            "vmId": 5005,
+            "name": "flaresolverr",
+            "status": "Running",
+            "maxMem": 2147483648
+          },
+          {
+            "vmId": 9906,
+            "name": "obsidian-livesync",
+            "status": "Running",
+            "maxMem": 536870912
+          },
+          {
+            "vmId": 9966,
+            "name": "cookbook",
+            "status": "Running",
+            "maxMem": 536870912
+          },
+          {
+            "vmId": 2007,
+            "name": "traefik",
+            "status": "Running",
+            "maxMem": 536870912
+          },
+          {
+            "vmId": 2003,
+            "name": "pve-scripts-local",
+            "status": "Running",
+            "maxMem": 4294967296
+          }
+        ],
+        "qemu": [],
+        "storage": [
+          {
+            "storage": "ds1813-nfs-volume-3",
+            "type": "nfs",
+            "active": null,
+            "content": "vztmpl,backup,images,rootdir,iso,import,snippets"
+          },
+          {
+            "storage": "ds1813-nfs-volume-2",
+            "type": "nfs",
+            "active": null,
+            "content": "rootdir,import,iso,snippets,vztmpl,backup,images"
+          },
+          {
+            "storage": "local-lvm",
+            "type": "lvmthin",
+            "active": null,
+            "content": "rootdir,images"
+          },
+          {
+            "storage": "local",
+            "type": "dir",
+            "active": null,
+            "content": "backup,iso,vztmpl"
+          },
+          {
+            "storage": "ds1813-nfs-volume-1",
+            "type": "nfs",
+            "active": null,
+            "content": "images,backup,vztmpl,snippets,iso,import,rootdir"
+          }
+        ],
+        "network": [
+          {
+            "iface": "eno1",
+            "type": "Eth",
+            "address": null
+          },
+          {
+            "iface": "vmbr0",
+            "type": "Bridge",
+            "address": "192.168.179.1"
+          }
+        ]
+      },
+      {
+        "node": "desktop-01",
+        "status": "Online",
+        "maxMem": 16707616768,
+        "uptime": 445161,
+        "lxc": [
+          {
+            "vmId": 2008,
+            "name": "erp-for-factory-games",
+            "status": "Running",
+            "maxMem": 4294967296
+          },
+          {
+            "vmId": 2006,
+            "name": "asp-dev",
+            "status": "Stopped",
+            "maxMem": 3145728000
+          },
+          {
+            "vmId": 3002,
+            "name": "github-runner",
+            "status": "Running",
+            "maxMem": 4294967296
+          },
+          {
+            "vmId": 3000,
+            "name": "forgejo",
+            "status": "Running",
+            "maxMem": 2147483648
+          },
+          {
+            "vmId": 9905,
+            "name": "openwebui",
+            "status": "Running",
+            "maxMem": 8589934592
+          },
+          {
+            "vmId": 2004,
+            "name": "searxng",
+            "status": "Running",
+            "maxMem": 2147483648
+          },
+          {
+            "vmId": 3001,
+            "name": "forgejo-runner",
+            "status": "Running",
+            "maxMem": 4294967296
+          },
+          {
+            "vmId": 3004,
+            "name": "cloudflared",
+            "status": "Running",
+            "maxMem": 536870912
+          }
+        ],
+        "qemu": [
+          {
+            "vmId": 1002,
+            "name": "gaming-vm-01",
+            "status": "Stopped",
+            "maxMem": 12884901888
+          },
+          {
+            "vmId": 1003,
+            "name": "gaming-vm-02",
+            "status": "Stopped",
+            "maxMem": 12884901888
+          },
+          {
+            "vmId": 1001,
+            "name": "Plex-VM",
+            "status": "Stopped",
+            "maxMem": 4294967296
+          }
+        ],
+        "storage": [
+          {
+            "storage": "local",
+            "type": "dir",
+            "active": null,
+            "content": "vztmpl,backup,iso"
+          },
+          {
+            "storage": "local-lvm",
+            "type": "lvmthin",
+            "active": null,
+            "content": "images,rootdir"
+          },
+          {
+            "storage": "ds1813-nfs-volume-3",
+            "type": "nfs",
+            "active": null,
+            "content": "backup,import,vztmpl,iso,rootdir,images,snippets"
+          },
+          {
+            "storage": "ds1813-nfs-volume-1",
+            "type": "nfs",
+            "active": null,
+            "content": "iso,rootdir,images,snippets,backup,import,vztmpl"
+          },
+          {
+            "storage": "ds1813-nfs-volume-2",
+            "type": "nfs",
+            "active": null,
+            "content": "backup,import,vztmpl,iso,images,rootdir,snippets"
+          }
+        ],
+        "network": [
+          {
+            "iface": "eno1",
+            "type": "Eth",
+            "address": null
+          },
+          {
+            "iface": "vmbr0",
+            "type": "Bridge",
+            "address": "192.168.179.2"
+          },
+          {
+            "iface": "wlp8s0",
+            "type": "Unknown",
+            "address": null
+          }
+        ]
+      },
+      {
+        "node": "hpe-01",
+        "status": "Online",
+        "maxMem": 16642457600,
+        "uptime": 443944,
+        "lxc": [
+          {
+            "vmId": 5011,
+            "name": "seerr",
+            "status": "Running",
+            "maxMem": 4294967296
+          },
+          {
+            "vmId": 2001,
+            "name": "cloudflared-01",
+            "status": "Running",
+            "maxMem": 536870912
+          },
+          {
+            "vmId": 5007,
+            "name": "qbittorrent",
+            "status": "Running",
+            "maxMem": 2147483648
+          },
+          {
+            "vmId": 5002,
+            "name": "prowlarr",
+            "status": "Running",
+            "maxMem": 1073741824
+          },
+          {
+            "vmId": 2005,
+            "name": "github-runner",
+            "status": "Running",
+            "maxMem": 2147483648
+          },
+          {
+            "vmId": 5014,
+            "name": "audiobookshelf",
+            "status": "Running",
+            "maxMem": 2147483648
+          },
+          {
+            "vmId": 5008,
+            "name": "plex",
+            "status": "Running",
+            "maxMem": 2147483648
+          },
+          {
+            "vmId": 5013,
+            "name": "tracearr",
+            "status": "Running",
+            "maxMem": 2147483648
+          },
+          {
+            "vmId": 5003,
+            "name": "sonarr",
+            "status": "Running",
+            "maxMem": 1073741824
+          },
+          {
+            "vmId": 5012,
+            "name": "romm",
+            "status": "Running",
+            "maxMem": 4294967296
+          },
+          {
+            "vmId": 5004,
+            "name": "radarr",
+            "status": "Running",
+            "maxMem": 1073741824
+          },
+          {
+            "vmId": 5015,
+            "name": "shelfmark",
+            "status": "Running",
+            "maxMem": 2147483648
+          }
+        ],
+        "qemu": [
+          {
+            "vmId": 2000,
+            "name": "homeassistant",
+            "status": "Running",
+            "maxMem": 2147483648
+          }
+        ],
+        "storage": [
+          {
+            "storage": "ds1813-nfs-volume-3",
+            "type": "nfs",
+            "active": null,
+            "content": "snippets,images,rootdir,iso,backup,import,vztmpl"
+          },
+          {
+            "storage": "local",
+            "type": "dir",
+            "active": null,
+            "content": "vztmpl,iso,backup"
+          },
+          {
+            "storage": "ds1813-nfs-volume-1",
+            "type": "nfs",
+            "active": null,
+            "content": "backup,import,vztmpl,images,snippets,rootdir,iso"
+          },
+          {
+            "storage": "local-lvm",
+            "type": "lvmthin",
+            "active": null,
+            "content": "images,rootdir"
+          },
+          {
+            "storage": "ds1813-nfs-volume-2",
+            "type": "nfs",
+            "active": null,
+            "content": "vztmpl,import,backup,rootdir,iso,snippets,images"
+          }
+        ],
+        "network": [
+          {
+            "iface": "vmbr0",
+            "type": "Bridge",
+            "address": "192.168.179.3"
+          },
+          {
+            "iface": "eno1",
+            "type": "Eth",
+            "address": null
+          }
+        ]
+      }
+    ]
+  },
+  "synology": {
+    "model": "DS1813+",
+    "serial": "1340LON003294",
+    "dsmVersion": "DSM 7.1.1-42962 Update 9",
+    "shares": [
+      "NetBackup",
+      "PlexMediaServer",
+      "Unraid-Backup",
+      "Volume-1",
+      "Volume-2",
+      "Volume-3",
+      "Volume-4",
+      "web",
+      "web_packages"
+    ],
+    "users": [
+      "admin",
+      "claude-mcp",
+      "csimon",
+      "guest",
+      "homelab",
+      "opentofu",
+      "plexsvc"
+    ]
+  },
+  "unifi": {
+    "gateway": {
+      "name": "Cloud Gateway Ultra",
+      "model": "UDRULT",
+      "ip": "192.168.178.1"
+    },
+    "activeClients": 46,
+    "devices": [
+      {
+        "name": "Cloud Gateway Ultra",
+        "model": "UDRULT",
+        "type": "gateway",
+        "online": true
+      },
+      {
+        "name": "US 24 PoE 250W",
+        "model": "US24P250",
+        "type": "switch",
+        "online": true
+      },
+      {
+        "name": "USW Flex Mini (Lounge)",
+        "model": "USMINI",
+        "type": "switch",
+        "online": false
+      },
+      {
+        "name": "USW Flex Mini (Master Bedroom)",
+        "model": "USMINI",
+        "type": "switch",
+        "online": false
+      },
+      {
+        "name": "AC LR (Lounge)",
+        "model": "U7LR",
+        "type": "ap",
+        "online": true
+      },
+      {
+        "name": "AC LR (Kitchen)",
+        "model": "U7LR",
+        "type": "ap",
+        "online": true
+      },
+      {
+        "name": "AC LR (Master Bedroom)",
+        "model": "U7LR",
+        "type": "ap",
+        "online": true
+      }
+    ],
+    "vlans": [
+      {
+        "name": "Homelab",
+        "cidr": "10.10.0.0/16"
+      },
+      {
+        "name": "Consumer",
+        "cidr": "10.20.0.0/16"
+      },
+      {
+        "name": "IoT",
+        "cidr": "10.40.0.0/16"
+      },
+      {
+        "name": "Network Devices",
+        "cidr": "10.0.0.0/16"
+      },
+      {
+        "name": "Legacy (deprecating)",
+        "cidr": "192.168.178.0/23"
+      }
+    ]
+  }
+}

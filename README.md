@@ -9,6 +9,60 @@ from Git. If it isn't in the repo, it doesn't exist.
 
 ---
 
+## 🗺️ Environment
+
+![Snapshot updated](https://img.shields.io/badge/snapshot_updated-2026--05--31-2ea44f)
+![Cluster](https://img.shields.io/badge/cluster-3_nodes_%7C_29_LXC_%7C_4_VM-blue)
+![NAS](https://img.shields.io/badge/NAS-DS1813%2B_%7C_9_shares-orange)
+![Network](https://img.shields.io/badge/network-Cloud_Gateway_Ultra_%7C_46_clients-8b5cf6)
+
+A live snapshot of the lab — discovered with our own clients (`proxmoxsharp` /
+`synosharp`) and the UniFi gateway. Full machine-readable inventory:
+[`docs/environment-snapshot.json`](docs/environment-snapshot.json).
+
+```mermaid
+graph TB
+  Internet([🌐 Internet]) --> CF["☁️ Cloudflare<br/>chrison.dev"]
+
+  subgraph NET["📡 UniFi · Cloud Gateway Ultra · 46 active clients"]
+    direction LR
+    GW["🛡️ Cloud Gateway Ultra<br/>UDRULT · 192.168.178.1"] --- SW["🔌 US-24-PoE<br/>+ 2× Flex Mini"] --- AP["📶 3× U7LR APs"]
+  end
+  CF -. cloudflared tunnels .-> NET
+
+  subgraph PVE["🖥️ Proxmox VE cluster · 29 LXC · 4 VM"]
+    direction LR
+    NUC["nuc-01<br/>9 LXC"]
+    DESK["desktop-01<br/>8 LXC · 3 VM"]
+    HPE["hpe-01<br/>12 LXC · 1 VM"]
+  end
+  NET ==> PVE
+
+  subgraph WL["Workloads by role"]
+    direction LR
+    EDGE["🔀 Edge<br/>Traefik · cloudflared · Teleport"]
+    MEDIA["🎬 Media<br/>Plex · Tautulli · audiobookshelf · romm · shelfmark"]
+    ARR["📥 *arr + DL<br/>radarr · sonarr · bazarr · prowlarr · seerr · qbittorrent"]
+    DEV["⚙️ Dev / CI<br/>Forgejo (+runner) · GitHub runners · ERP4FG · asp-dev"]
+    AI["🤖 AI<br/>OpenWebUI · SearXNG"]
+    HOME["🏠 Home / Other<br/>Home Assistant · cookbook · obsidian · 2× gaming VM · PDM"]
+  end
+  PVE --- WL
+
+  NAS[("🗄️ Synology DS1813+<br/>DSM 7.1.1 · 9 shares")]
+  NAS == NFS ==> PVE
+
+  classDef store fill:#fef3c7,stroke:#d97706;
+  classDef edge fill:#ede9fe,stroke:#7c3aed;
+  class NAS store;
+  class NET,GW,SW,AP edge;
+```
+
+> **VLANs:** Homelab `10.10/16` · Consumer `10.20/16` · IoT `10.40/16` · Net devices
+> `10.0/16` · legacy `192.168.178/23` (deprecating). Generated manually for now
+> (`proxmoxsharp` / `synosharp` discover + UniFi MCP) — **CI will refresh it on a
+> schedule**; the badge date tracks the last update.
+
 ## 🎯 Mission
 
 1. **Infrastructure as Code** — provision and configure the homelab (Proxmox
