@@ -7,6 +7,7 @@ This directory contains Docker Compose configurations for development and testin
 - **homelab/** - Debian-based testing container for Proxmox scripts
 - **dsm/** - Virtual Synology DSM container for development (Linux/Windows only)
 - **proxmox/** - Containerized Proxmox VE for development (Linux/Windows only)
+- **unifi/** - UniFi Network Application + MongoDB — safe API test target for UnifiSharp
 
 ## Container Environments
 
