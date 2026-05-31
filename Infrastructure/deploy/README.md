@@ -51,13 +51,44 @@ Host hpe-01
 
 Override the target ad hoc with `-Node <host-or-ip>`.
 
+## Stack inheritance
+
+If a shape sets `metadata.stack`, the renderer loads the sibling `stack.yaml`
+(`kind: Stack`) in the same folder and merges its `spec.defaults` *underneath*
+the member (member wins; nested objects like `network`/`source` merge key-by-key).
+So a member only declares what differs:
+
+```
+Infrastructure/devops/
+  stack.yaml              # ctidRange 3000-3999 + defaults (node, os, network, …)
+  forgejo.lxc.yaml        # just: app, ctid 3000, cores/memory/disk
+  forgejo-runner.lxc.yaml # + source.channel: dev   (overrides stack default)
+```
+
+The stack's `ctidRange` is also a **guard rail**: an explicit member `ctid`
+outside `[start,end]` is rejected.
+
+## Script source (channel) — stable vs dev
+
+`spec.source` chooses which community-scripts repo/ref the `ct/<app>.sh` comes from:
+
+| `spec.source`            | resolves to                                        |
+|--------------------------|----------------------------------------------------|
+| *(omitted)* / `channel: stable` | `community-scripts/ProxmoxVE@main` (stable) |
+| `channel: dev`           | `community-scripts/ProxmoxVED@main` (in-development, e.g. `forgejo-runner`) |
+| `repo: owner/name`       | explicit override of the repo                      |
+| `ref: <sha\|tag\|branch>` | pin a ref (recommended for `dev` — those scripts move) |
+
+`-BaseUrl <url>` still hard-overrides everything.
+
 ## Shape → var mapping
 
 | shape field            | var                     |
 |------------------------|-------------------------|
 | `spec.app`             | selects `ct/<app>.sh`   |
+| `spec.source`          | the `curl` base URL (channel/repo/ref) |
 | `metadata.name`        | `var_hostname`          |
-| `spec.ctid`            | `var_ctid`              |
+| `spec.ctid`            | `var_ctid` (explicit int required; `auto` rejected on this path) |
 | `spec.cores`           | `var_cpu`               |
 | `spec.memory`          | `var_ram`               |
 | `spec.disk`            | `var_disk`              |
@@ -66,16 +97,29 @@ Override the target ad hoc with `-Node <host-or-ip>`.
 | `spec.osVersion`       | `var_version`           |
 | `spec.storage`         | `var_container_storage` |
 | `spec.templateStorage` | `var_template_storage`  |
+| `spec.network.bridge`  | `var_brg`               |
 | `spec.network.vlan`    | `var_vlan`              |
 | `spec.network.ipv4`    | `var_net`               |
 | `spec.network.gateway` | `var_gateway`           |
 | `spec.network.ipv6`    | `var_ipv6_method`       |
-| `metadata.tags`        | `var_tags` (`;`-joined) |
+| `spec.network.mtu`     | `var_mtu`               |
+| `spec.nameserver`      | `var_ns`                |
+| `spec.searchdomain`    | `var_searchdomain`      |
+| `spec.features.nesting`| `var_nesting`           |
+| `spec.features.fuse`   | `var_fuse`              |
+| `metadata.tags` + `spec.tags` | `var_tags` (`;`-joined, deduped) |
+
+The schema (`../schema/shape.schema.json`) models the **full** Proxmox LXC
+surface (swap, cpulimit, startup, devices, multiple `networks`, `lxcRaw`, …);
+fields without a `var_*` above are **converge-only** (ProxmoxSharp / BL-010) and
+are simply not emitted by this create path.
 
 ## Guardrails & limits
 
 - **Dry-run by default.** `-Apply` is required to mutate. Mirrors the engine's
   eventual `plan`/`apply` split.
+- **Explicit CTID only.** `ctid: auto` is rejected here — auto-allocation from a
+  stack range is an engine (ProxmoxSharp / BL-010) concern, kept deliberate.
 - **Create-only + existence guard.** community-scripts create is **not
   idempotent**; before `-Apply` the renderer queries cluster resources and
   refuses if the CTID already exists. Update/destroy = ProxmoxSharp (BL-010).

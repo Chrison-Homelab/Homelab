@@ -1,6 +1,6 @@
 # Proxmox host — described, not provisioned via API (it hosts the LXCs/VMs).
-# Specs are TODO: confirmed by Phase 2 discovery against the live cluster,
-# not guessed. See ../README.md.
+# Reconciled against discovery (docs/discovered-state.json) 2026-05-31. The LXCs
+# /VMs it hosts are their own shapes, not listed here. See ../README.md.
 
 apiVersion: homelab/v1
 kind: Node
@@ -16,6 +16,9 @@ spec:
   memory: 16384               # MB
   pveVersion: "9.2.2"
   boot: legacy-bios
-  storages: [local, local-lvm]       # local-lvm ~1.8 TB
-  # Hosts VMs 1001–1003 (all stopped): Plex-VM, gaming-vm-01, gaming-vm-02
-  # network: TODO — bridges / VLAN-aware config not yet captured
+  storages: [local, local-lvm, ds1813-nfs-volume-1, ds1813-nfs-volume-2, ds1813-nfs-volume-3]  # local-lvm ~1.8 TB
+  network:                      # reconciled from discovery 2026-05-31
+    bridge: vmbr0
+    address: 192.168.179.2/23   # legacy mgmt — migration to 10.x pending (#37)
+    uplink: eno1
+    # wlp8s0 (onboard WiFi) present but unused
