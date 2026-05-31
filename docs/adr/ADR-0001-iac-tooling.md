@@ -17,9 +17,9 @@ Constraints and context that shape the decision:
   question is only about the **hub layer**: the nodes, the bare LXCs/VMs that
   *host* stacks, the NAS, and the network — not the stacks themselves.
 - **This repo eats its own dogfood.** Chris owns a C# ecosystem that is built
-  exactly for this: [Fallout](https://github.com/ChrisonSimtian/Fallout) (a
-  C#/.NET build system, NUKE successor), [ProxmoxSharp](https://github.com/ChrisonSimtian/ProxmoxSharp)
-  and [SynoSharp](https://github.com/ChrisonSimtian/SynoSharp) (API clients).
+  exactly for this: [Fallout](https://github.com/Fallout-build/Fallout) (a
+  C#/.NET build system, NUKE successor), [ProxmoxSharp](https://github.com/Chrison-dev/ProxmoxSharp)
+  and [SynoSharp](https://github.com/Chrison-dev/SynoSharp) (API clients).
 - **The building blocks are early.** As of this ADR, ProxmoxSharp and SynoSharp
   are empty stubs, and Fallout's plugin SDK (`Fallout.Plugin.Sdk`) is not shipped
   — it lands in Fallout v12 (5 RFCs open). Chris owns that roadmap.

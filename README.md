@@ -48,7 +48,7 @@ is a self-contained service/stack with its own lifecycle. Cross-cutting concerns
 ### Stack conventions
 
 Every `Homelab.Stacks.*` repo follows the same shape (see
-[`ErpForFactoryGames`](https://github.com/ChrisonSimtian/Homelab.Stacks.ErpForFactoryGames)
+[`ErpForFactoryGames`](https://github.com/Chrison-dev/Homelab.Stacks.ErpForFactoryGames)
 as the reference):
 
 - **`compose.yml`** + per-service `*.env` / `stack.env` — the stack itself.
@@ -82,7 +82,7 @@ to everything in this repo:
 | `.containers/` | Local dev/test environments (Proxmox, DSM, Debian). |
 | `.github/agents/` | AI agent personas that enforce repo conventions. |
 | `stacks/` | Stacks — mostly submodules (one self-contained stack per repo); also the in-repo `monitoring/` stack. Each declares its `shape`. |
-| `vendor/` | Vendored dependencies as submodules — our own libraries we dogfood: [`ProxmoxSharp`](https://github.com/ChrisonSimtian/ProxmoxSharp) (C# Proxmox client). |
+| `vendor/` | Vendored dependencies as submodules — our own libraries we dogfood: [`ProxmoxSharp`](https://github.com/Chrison-dev/ProxmoxSharp) (C# Proxmox client). |
 
 > **Tooling decision (locked in):** we build our **own C#-native IaC**, run from
 > `/Infrastructure`, dogfooding ProxmoxSharp / SynoSharp / Fallout. Submodules
@@ -91,7 +91,7 @@ to everything in this repo:
 
 ## ⚙️ CI/CD: Fallout
 
-GitOps is driven by **[Fallout](https://github.com/ChrisonSimtian/Fallout)** — my
+GitOps is driven by **[Fallout](https://github.com/Fallout-build/Fallout)** — my
 own C#/.NET build system (a successor to NUKE). Instead of hand-written YAML, the
 build/deploy logic is a **C# console app**, and Fallout *generates* the
 `.github/workflows/*.yml` that GitHub Actions executes. Build steps live in code,

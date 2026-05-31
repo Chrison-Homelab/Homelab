@@ -4,7 +4,7 @@
 
 - **Board:** [Homelab Backlog (Project #7)](https://github.com/users/ChrisonSimtian/projects/7)
   — the Idea → Planned → In Progress → Done view, with **Stage** and **Priority** fields.
-- **Items:** [GitHub Issues](https://github.com/ChrisonSimtian/Homelab/issues) — one
+- **Items:** [GitHub Issues](https://github.com/Chrison-dev/Homelab/issues) — one
   per `BL-xxx`. Labels carry priority (`priority:high|medium|low`) and tags
   (`iac`, `proxmox`, `networking`, `ci-cd`, …).
 - **Plans:** the detailed implementation plans stay in-repo under
