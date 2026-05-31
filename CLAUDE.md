@@ -37,8 +37,10 @@ The `pve` MCP is a **fallback** (use it if the CLI is unavailable or for an
 endpoint the CLI doesn't expose yet).
 
 ```bash
-# CLI reads PVE config from the environment; source the gitignored secrets first:
-set -a && . ./secrets.env && set +a          # PROXMOX_BASE_URL / _TOKEN_ID / _TOKEN_SECRET / _VERIFY_TLS
+# All CLIs read config from the environment. The root `secrets.env` (gitignored)
+# is the ONE canonical file — it holds every service (Proxmox / Synology / UniFi
+# + Cloudflare / GitHub); see `secrets.env.example` for the schema. Source it once:
+set -a && . ./secrets.env && set +a          # → proxmoxsharp / synosharp / unifisharp all configured
 proxmoxsharp discover    # structured ClusterSnapshot (JSON)
 proxmoxsharp nodes       # list nodes
 proxmoxsharp version     # PVE version
