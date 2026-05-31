@@ -6,7 +6,7 @@ name: discover-drift
 #
 # Package restore uses the built-in GITHUB_TOKEN — no PAT needed, BUT the
 # ProxmoxSharp + ProxmoxSharp.Api packages must grant this repo read access:
-# each package → Package settings → Manage Actions access → add ChrisonSimtian/Homelab (Read).
+# each package → Package settings → Manage Actions access → add Chrison-dev/Homelab (Read).
 #
 # Required repository secrets:
 #   PROXMOX_BASE_URL     https://proxmox.chrison.dev/api2/json
