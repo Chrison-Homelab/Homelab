@@ -43,6 +43,17 @@ public sealed class ShapeLoader
         member.Cores ??= defaults.Cores;
         member.Memory ??= defaults.Memory;
         member.Disk ??= defaults.Disk;
+        member.Os ??= defaults.Os;
+        member.OsVersion ??= defaults.OsVersion;
+        member.Unprivileged ??= defaults.Unprivileged;
+        member.Storage ??= defaults.Storage;
+        member.TemplateStorage ??= defaults.TemplateStorage;
+        member.Nameserver ??= defaults.Nameserver;
+        member.Searchdomain ??= defaults.Searchdomain;
+        member.Network ??= defaults.Network;
+        member.Features ??= defaults.Features;
+        if (defaults.Tags.Count > 0)
+            member.Tags = defaults.Tags.Concat(member.Tags).Distinct().ToList();
 
         if (member.Source is null) member.Source = defaults.Source;
         else if (defaults.Source is not null)

@@ -71,6 +71,8 @@ public sealed class ConvergeRunner
         var byName = ordered.ToDictionary(s => s.Metadata.Name, StringComparer.Ordinal);
         var deriver = new SecretDeriver(_env, exec, byName);
         var ctx = new ConvergeContext(exec, _env, byName, deriver);
+        var creator = new CommunityScriptsCreator(exec);
+        var ct = CancellationToken.None;
 
         var stackName = loaded.Stack?.Metadata.Name ?? Path.GetFileName(_stackDir);
         Console.WriteLine($"Converge APPLY — stack '{stackName}'  ({ordered.Count} member(s), dependency order)\n");
@@ -81,14 +83,25 @@ public sealed class ConvergeRunner
             var sp = s.Spec;
             Console.WriteLine($"▸ {s.Metadata.Name}  (ctid {sp.Ctid}, app '{sp.App}', node {sp.Node})");
 
-            // Guard: CT must exist (we don't create here).
+            // Lifecycle: ensure the CT exists (create via community-scripts if absent).
             if (sp.Node is { } node && sp.Ctid is { } ctid)
             {
-                var status = await exec.OnNodeAsync(node, $"pct status {ctid}");
-                if (!status.Ok)
+                if (await creator.ExistsAsync(node, ctid, ct))
                 {
-                    Console.WriteLine($"    FAILED: CT {ctid} not found on {node} (create via the renderer first)");
-                    failed++; Console.WriteLine(); continue;
+                    Console.WriteLine($"    CT {ctid} exists");
+                }
+                else
+                {
+                    IReadOnlyDictionary<string, string>? extra = null;
+                    if (sp.App == "forgejo-runner")
+                    {
+                        try { extra = await ForgejoRunnerCreateVarsAsync(s, ctx, ct); }
+                        catch (Exception ex) { Console.WriteLine($"    FAILED: create vars — {ex.Message}"); failed++; Console.WriteLine(); continue; }
+                    }
+                    var created = await creator.EnsureAsync(s, extra, ct);
+                    Console.WriteLine($"    CREATE {created.Outcome.ToString().ToUpperInvariant()}: {created.Message}");
+                    if (created.Outcome == ApplyOutcome.Failed) { failed++; Console.WriteLine(); continue; }
+                    if (created.Outcome == ApplyOutcome.Applied) applied++;
                 }
             }
 
@@ -122,5 +135,31 @@ public sealed class ConvergeRunner
 
         Console.WriteLine($"Apply summary — {applied} applied, {nochange} no-change, {skipped} skipped, {failed} failed.");
         return failed == 0 ? 0 : 1;
+    }
+
+    // The forgejo-runner DEV script registers AT create time, so it needs the
+    // instance URL + a derived runner token (+ uuid + labels) as create vars.
+    // Only computed when the CT is absent (avoids minting an unused token).
+    private static async Task<IReadOnlyDictionary<string, string>> ForgejoRunnerCreateVarsAsync(
+        Shapes.Shape s, ConvergeContext ctx, CancellationToken ct)
+    {
+        var depName = s.Spec.DependsOn.FirstOrDefault() ?? "forgejo";
+        if (!ctx.ByName.TryGetValue(depName, out var dep) || dep.Spec.Node is not { } dn || dep.Spec.Ctid is not { } dc)
+            throw new InvalidOperationException($"dependency '{depName}' not resolvable");
+        var ip = await ctx.Exec.InContainerAsync(dn, dc, "hostname -I | awk '{print $1}'", ct);
+        if (!ip.Ok || ip.Stdout.Length == 0) throw new InvalidOperationException("could not resolve forgejo address");
+
+        var sec = s.Spec.Secrets.FirstOrDefault(x => x.ValueFrom.Service is not null)
+            ?? throw new InvalidOperationException("no service-derived runner token declared");
+        var token = await ctx.Deriver.ResolveAsync(sec.ValueFrom, ct);
+        var labels = s.Spec.Config.TryGetValue("runnerLabels", out var l) ? ConfigExt.Describe(l) : "homelab";
+
+        return new Dictionary<string, string>
+        {
+            ["var_forgejo_instance"] = $"http://{ip.Stdout.Trim()}:3000",
+            ["var_forgejo_runner_token"] = token,
+            ["var_forgejo_runner_uuid"] = Guid.NewGuid().ToString(),
+            ["var_runner_labels"] = labels,
+        };
     }
 }
