@@ -74,7 +74,8 @@ Properties: **idempotent**, **secret-free in git** (only `env:` names + `action:
 2. **Reference shapes** — `stacks/DevOps/*` annotated with the real post-create wiring. ✅
 3. **Plan** — this doc.
 4. **Engine scaffold** — `Infrastructure/engine` now has: shape models + YAML loader (stack-defaults merge), `secrets.env` reader, topological `dependsOn` ordering, a `SecretResolver` (env-presence + derived descriptors), an app-keyed `ProvisionerRegistry` (Forgejo/ForgejoRunner/GithubRunner/Cloudflared), and a **`converge <stack>` dry-run** command that prints the ordered post-create plan. ✅
-5. **Live apply** (next increment): provisioner `ApplyAsync` (the by-hand steps as code) + secret *derivation* (Forgejo CLI token, GitHub/Cloudflare provider tokens) + ProxmoxSharp CT lifecycle; `converge --apply`. ⏳
+5. **Apply framework + first provisioner** — `converge --apply` with `NodeExec` (SSH → `pct exec`), guards (CT must exist; required env secrets present), and an **idempotent `ForgejoProvisioner.ApplyAsync`** (reads `ROOT_URL`, rewrites + restarts only if changed). The runner/cloudflared provisioners report **Skipped** until their idempotency checks land (re-registering a live runner or re-creating the tunnel would churn the working stack). ✅
+6. **Remaining apply** (next): idempotency checks + `ApplyAsync` for ForgejoRunner/GithubRunner/Cloudflared, secret *derivation* (Forgejo CLI token, GitHub/Cloudflare provider tokens), and ProxmoxSharp CT create/lifecycle. ⏳
 
 ## Out of scope
 

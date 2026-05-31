@@ -23,13 +23,13 @@ switch (command)
     case "discover":
         return await DiscoverAsync();
     case "converge":
-        return RunConverge(args);
+        return await RunConverge(args);
     default:
         Console.Error.WriteLine($"Unknown command '{command}'. Supported: discover, converge");
         return 1;
 }
 
-static int RunConverge(string[] args)
+static async Task<int> RunConverge(string[] args)
 {
     if (args.Length < 2)
     {
@@ -37,14 +37,12 @@ static int RunConverge(string[] args)
         return 2;
     }
     var stackDir = Path.GetFullPath(args[1]);
-    if (args.Contains("--apply"))
-    {
-        Console.Error.WriteLine("converge --apply is not implemented yet (BL-010 next increment); showing the plan instead.\n");
-    }
+    var apply = args.Contains("--apply");
 
     var secretsPath = FindUp("secrets.env", Directory.GetCurrentDirectory());
     var env = SecretsEnv.Load(secretsPath);
-    return new ConvergeRunner(stackDir, env).Plan();
+    var runner = new ConvergeRunner(stackDir, env);
+    return apply ? await runner.ApplyAsync() : runner.Plan();
 }
 
 // Walk up from start looking for a file; returns null if not found.
