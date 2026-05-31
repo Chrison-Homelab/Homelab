@@ -6,6 +6,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Personal homelab infrastructure-as-code repository managing Proxmox hypervisors, Synology NAS devices, and associated monitoring/networking. The core philosophy: **infrastructure-as-code first, modular, idempotent, reversible, and minimal UI reliance**. Always assume multi-node and multi-NAS environments.
 
+## ⚠️ Shared external accounts — add-only, never disturb existing setup
+
+Several external accounts/services are **shared with pre-existing, hand-managed
+setup that is NOT in this repo** — most notably **Cloudflare** (account + the
+**`chrison.dev`** zone) and the GitHub account. When operating on these:
+
+- **Only create/manage resources that *we* add.** Treat everything you did not
+  create as read-only and off-limits.
+- **NEVER modify, delete, or repurpose existing resources** (DNS records,
+  tunnels, zones, firewall/page rules, access apps, API tokens, etc.). Before
+  adding anything, **read the current state first** and confirm your new resource
+  doesn't collide with an existing one (e.g. check a hostname/record doesn't
+  already exist).
+- **If the task cannot be done without touching existing config, STOP.** Do not
+  proceed. Come back to the user with: (1) clear reasoning, (2) exactly what you'd
+  need to change and why, (3) the safest alternative. Wait for explicit approval.
+- **Scope credentials minimally.** Request/expect API tokens scoped to only what
+  the task needs (e.g. a Cloudflare token limited to the `chrison.dev` zone's DNS
+  edit + Tunnel edit), never account-wide. Tokens live in the gitignored
+  `secrets.env`, never committed or echoed.
+- **Prefer self-contained, removable additions** (e.g. a dedicated cloudflared
+  tunnel + LXC for a stack, rather than extending an existing one).
+
 ## Proxmox access: prefer the `proxmoxsharp` CLI
 
 For Proxmox read/discovery tasks, **use our own `proxmoxsharp` CLI first** (our
