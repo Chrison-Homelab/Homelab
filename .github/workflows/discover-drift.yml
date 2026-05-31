@@ -4,11 +4,13 @@ name: discover-drift
 # (which consumes the ProxmoxSharp package) against the live cluster, refreshes
 # docs/discovered-state.json, and opens a PR when it drifts from what's committed.
 #
+# Package restore uses the built-in GITHUB_TOKEN — no PAT needed, BUT the
+# ProxmoxSharp + ProxmoxSharp.Api packages must grant this repo read access:
+# each package → Package settings → Manage Actions access → add ChrisonSimtian/Homelab (Read).
+#
 # Required repository secrets:
-#   GITHUB_PACKAGES_PAT  PAT with read:packages — restores ProxmoxSharp from GitHub Packages
-#                        (or grant this repo read access to the package and use GITHUB_TOKEN)
 #   PROXMOX_BASE_URL     https://proxmox.chrison.dev/api2/json
-#   PROXMOX_TOKEN_ID     a read-only PVE token, e.g. root@pam!discovery
+#   PROXMOX_TOKEN_ID     a read-only PVE token, e.g. root@pam!claude-mcp
 #   PROXMOX_TOKEN_SECRET the token secret
 
 on:
@@ -19,6 +21,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  packages: read
 
 jobs:
   discover:
@@ -32,7 +35,9 @@ jobs:
 
       - name: Discover live state
         env:
-          GITHUB_PACKAGES_PAT: ${{ secrets.GITHUB_PACKAGES_PAT }}
+          # nuget.config reads this for the GitHub Packages feed; the built-in
+          # token works once the packages grant this repo read access.
+          GITHUB_PACKAGES_PAT: ${{ secrets.GITHUB_TOKEN }}
           PROXMOX_BASE_URL: ${{ secrets.PROXMOX_BASE_URL }}
           PROXMOX_TOKEN_ID: ${{ secrets.PROXMOX_TOKEN_ID }}
           PROXMOX_TOKEN_SECRET: ${{ secrets.PROXMOX_TOKEN_SECRET }}
