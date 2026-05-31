@@ -1,6 +1,9 @@
 # MCP secrets
 .mcp.env
 
+# Claude Code transient state (settings.json is tracked; the lock is not)
+.claude/scheduled_tasks.lock
+
 # macOS
 .DS_Store
 
