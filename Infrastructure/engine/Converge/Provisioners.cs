@@ -1,3 +1,4 @@
+using System.Text;
 using Homelab.Infrastructure.Shapes;
 
 namespace Homelab.Infrastructure.Converge;
@@ -6,7 +7,8 @@ namespace Homelab.Infrastructure.Converge;
 public sealed record ConvergeContext(
     NodeExec Exec,
     SecretsEnv Secrets,
-    IReadOnlyDictionary<string, Shape> ByName);
+    IReadOnlyDictionary<string, Shape> ByName,
+    SecretDeriver Deriver);
 
 public enum ApplyOutcome { NoChange, Applied, Skipped, Failed }
 
@@ -121,8 +123,36 @@ public sealed class ForgejoRunnerProvisioner : IAppProvisioner
         yield return $"resolve runner instance URL from dependency '{dep}'";
         yield return $"register runner (labels: {labels}) using derived token, then start the daemon";
     }
-    public Task<ApplyResult> ApplyAsync(Shape s, ConvergeContext ctx) =>
-        Task.FromResult(ApplyResult.Skipped("live apply deferred (needs 'is runner already registered?' check)"));
+
+    public async Task<ApplyResult> ApplyAsync(Shape s, ConvergeContext ctx)
+    {
+        if (s.Spec.Node is not { } node || s.Spec.Ctid is not { } ctid) return ApplyResult.Failed("missing node/ctid");
+
+        // Idempotency: if the runner daemon is already active, leave it alone.
+        var active = await ctx.Exec.InContainerAsync(node, ctid, "systemctl is-active forgejo-runner");
+        if (active.Stdout.Trim() == "active") return ApplyResult.NoChange("forgejo-runner already active");
+
+        var depName = s.Spec.DependsOn.FirstOrDefault() ?? "forgejo";
+        if (!ctx.ByName.TryGetValue(depName, out var dep) || dep.Spec.Node is not { } dn || dep.Spec.Ctid is not { } dc)
+            return ApplyResult.Failed($"dependency '{depName}' not resolvable");
+        var ip = await ctx.Exec.InContainerAsync(dn, dc, "hostname -I | awk '{print $1}'");
+        if (!ip.Ok || ip.Stdout.Length == 0) return ApplyResult.Failed("could not resolve forgejo address");
+        var instance = $"http://{ip.Stdout.Trim()}:3000";
+
+        var sec = s.Spec.Secrets.FirstOrDefault(x => x.ValueFrom.Service is not null);
+        if (sec is null) return ApplyResult.Failed("no service-derived runner token declared");
+        var token = await ctx.Deriver.ResolveAsync(sec.ValueFrom);
+        var labels = s.Spec.Config.TryGetValue("runnerLabels", out var l) ? ConfigExt.Describe(l) : "homelab";
+
+        // Mirrors the manual fix: classic register → default config → restart.
+        var cmd =
+            $"systemctl stop forgejo-runner; cd /root && forgejo-runner register --no-interactive " +
+            $"--instance {instance} --token {token} --name forgejo-runner --labels {labels} && " +
+            "forgejo-runner generate-config > /etc/forgejo-runner/config.yaml && systemctl restart forgejo-runner";
+        var res = await ctx.Exec.InContainerAsync(node, ctid, cmd);
+        return res.Ok ? ApplyResult.Applied($"registered + started ({instance}, labels {labels})")
+                      : ApplyResult.Failed($"register failed: {res.Stderr}");
+    }
 }
 
 public sealed class GithubRunnerProvisioner : IAppProvisioner
@@ -134,8 +164,31 @@ public sealed class GithubRunnerProvisioner : IAppProvisioner
         yield return $"mint org registration token (provider github, org {org})";
         yield return $"run config.sh against https://github.com/{org}, start actions-runner";
     }
-    public Task<ApplyResult> ApplyAsync(Shape s, ConvergeContext ctx) =>
-        Task.FromResult(ApplyResult.Skipped("live apply deferred (needs 'is runner already online in org?' check)"));
+
+    public async Task<ApplyResult> ApplyAsync(Shape s, ConvergeContext ctx)
+    {
+        if (s.Spec.Node is not { } node || s.Spec.Ctid is not { } ctid) return ApplyResult.Failed("missing node/ctid");
+        if (s.Spec.Config.Str("githubOrg") is not { } org) return ApplyResult.Failed("no githubOrg in config");
+        var name = s.Spec.Config.Str("runnerName") ?? $"homelab-{node}";
+
+        var sec = s.Spec.Secrets.FirstOrDefault(x => x.ValueFrom.Provider?.Name == "github");
+        if (sec?.ValueFrom.Provider?.Auth is not { } authSrc) return ApplyResult.Failed("no github provider secret declared");
+        var pat = await ctx.Deriver.ResolveAsync(authSrc);
+        var gh = new GithubApi(pat);
+
+        // Idempotency: a runner of this name already online → leave it alone.
+        if (await gh.IsOrgRunnerOnlineAsync(org, name, CancellationToken.None))
+            return ApplyResult.NoChange($"runner '{name}' already online in {org}");
+
+        var token = await ctx.Deriver.ResolveAsync(sec.ValueFrom);   // mint org registration token
+        var cmd =
+            $"systemctl stop actions-runner 2>/dev/null; cd /opt/actions-runner && " +
+            $"runuser -u runner -- ./config.sh --unattended --replace --url https://github.com/{org} " +
+            $"--token {token} --name {name} --labels homelab --runnergroup Default && systemctl start actions-runner";
+        var res = await ctx.Exec.InContainerAsync(node, ctid, cmd);
+        return res.Ok ? ApplyResult.Applied($"registered '{name}' to {org}")
+                      : ApplyResult.Failed($"config.sh failed: {res.Stderr}");
+    }
 }
 
 public sealed class CloudflaredProvisioner : IAppProvisioner
@@ -148,6 +201,66 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
         yield return $"ensure tunnel '{tunnel}' + DNS exist (ADD-ONLY — never touch existing; CLAUDE.md)";
         yield return $"apply {ingressCount} ingress rule(s); install tunnel token; start cloudflared";
     }
-    public Task<ApplyResult> ApplyAsync(Shape s, ConvergeContext ctx) =>
-        Task.FromResult(ApplyResult.Skipped("live apply deferred (add-only: needs 'does tunnel/DNS already exist?' check)"));
+
+    public async Task<ApplyResult> ApplyAsync(Shape s, ConvergeContext ctx)
+    {
+        if (s.Spec.Node is not { } node || s.Spec.Ctid is not { } ctid) return ApplyResult.Failed("missing node/ctid");
+        if (s.Spec.Config.Str("tunnel") is not { } tunnelName) return ApplyResult.Failed("no tunnel in config");
+        var ingress = ParseIngress(s.Spec.Config);
+        if (ingress.Count == 0) return ApplyResult.Failed("no ingress in config");
+
+        var sec = s.Spec.Secrets.FirstOrDefault(x => x.ValueFrom.Provider?.Name == "cloudflare");
+        if (sec?.ValueFrom.Provider?.Auth is not { } authSrc) return ApplyResult.Failed("no cloudflare provider secret declared");
+        var api = new CloudflareApi(await ctx.Deriver.ResolveAsync(authSrc));
+        var ct = CancellationToken.None;
+
+        var zoneName = string.Join('.', ingress[0].host.Split('.')[^2..]);
+        var zone = await api.GetZoneAsync(zoneName, ct);
+        var tunnelId = await api.FindTunnelIdAsync(zone.AccountId, tunnelName, ct);
+        var svcActive = (await ctx.Exec.InContainerAsync(node, ctid, "systemctl is-active cloudflared")).Stdout.Trim() == "active";
+
+        var dnsPresent = true;
+        foreach (var (host, _) in ingress)
+            if (!await api.DnsExistsAsync(zone.ZoneId, host, ct)) { dnsPresent = false; break; }
+
+        // Idempotency (ADD-ONLY): tunnel + all DNS + active connector → done.
+        if (tunnelId is not null && dnsPresent && svcActive)
+            return ApplyResult.NoChange($"tunnel '{tunnelName}' + DNS present, cloudflared active");
+
+        tunnelId ??= await api.CreateTunnelAsync(zone.AccountId, tunnelName, ct);
+        await api.SetTunnelConfigAsync(zone.AccountId, tunnelId, BuildIngressJson(ingress), ct);
+        var token = await api.GetTunnelTokenAsync(zone.AccountId, tunnelId, ct);
+
+        var install = $"cloudflared service uninstall 2>/dev/null; cloudflared service install {token}";
+        var res = await ctx.Exec.InContainerAsync(node, ctid, install);
+        if (!res.Ok) return ApplyResult.Failed($"cloudflared install failed: {res.Stderr}");
+
+        foreach (var (host, _) in ingress)
+            if (!await api.DnsExistsAsync(zone.ZoneId, host, ct))
+                await api.CreateCnameAsync(zone.ZoneId, host, $"{tunnelId}.cfargotunnel.com", ct);
+
+        return ApplyResult.Applied($"tunnel '{tunnelName}' ensured + token installed ({ingress.Count} ingress)");
+    }
+
+    private static List<(string host, string service)> ParseIngress(Dictionary<string, object?> c)
+    {
+        var list = new List<(string, string)>();
+        if (c.TryGetValue("ingress", out var v) && v is IEnumerable<object> items)
+            foreach (var it in items)
+                if (it is System.Collections.IDictionary d)
+                    list.Add((d["hostname"]?.ToString() ?? "", d["service"]?.ToString() ?? ""));
+        return list;
+    }
+
+    // NOTE: service is taken from config as-is (e.g. http://forgejo:3000). A live
+    // create should resolve the logical host to the CT IP first; this branch only
+    // runs when the tunnel is absent (never on the already-provisioned stack).
+    private static string BuildIngressJson(List<(string host, string service)> ingress)
+    {
+        var sb = new StringBuilder("[");
+        foreach (var (host, service) in ingress)
+            sb.Append($"{{\"hostname\":\"{host}\",\"service\":\"{service}\"}},");
+        sb.Append("{\"service\":\"http_status:404\"}]");
+        return sb.ToString();
+    }
 }

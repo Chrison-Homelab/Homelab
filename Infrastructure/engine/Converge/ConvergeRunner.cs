@@ -69,7 +69,8 @@ public sealed class ConvergeRunner
         var registry = ProvisionerRegistry.Default();
         var exec = new NodeExec();
         var byName = ordered.ToDictionary(s => s.Metadata.Name, StringComparer.Ordinal);
-        var ctx = new ConvergeContext(exec, _env, byName);
+        var deriver = new SecretDeriver(_env, exec, byName);
+        var ctx = new ConvergeContext(exec, _env, byName, deriver);
 
         var stackName = loaded.Stack?.Metadata.Name ?? Path.GetFileName(_stackDir);
         Console.WriteLine($"Converge APPLY — stack '{stackName}'  ({ordered.Count} member(s), dependency order)\n");
