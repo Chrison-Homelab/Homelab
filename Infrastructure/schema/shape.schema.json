@@ -232,6 +232,54 @@
       }
     },
 
+    "secret": {
+      "type": "object",
+      "required": ["name", "valueFrom"],
+      "additionalProperties": false,
+      "description": "A secret the converge engine resolves at provision time and feeds to the app's post-create step. NEVER inline a secret value — only references/derivation verbs are committed.",
+      "properties": {
+        "name": { "type": "string", "description": "Logical name the provisioner expects (e.g. 'runnerToken', 'tunnelToken')." },
+        "valueFrom": { "$ref": "#/$defs/secretSource" }
+      }
+    },
+
+    "secretSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Exactly ONE of: env (pre-existing secret from secrets.env), service (derived from another shape at provision time), or provider (derived from an external API).",
+      "oneOf": [
+        { "required": ["env"] },
+        { "required": ["service"] },
+        { "required": ["provider"] }
+      ],
+      "properties": {
+        "env": { "type": "string", "description": "(a) Pre-existing — resolve from the gitignored secrets.env by this env var name (e.g. 'GH_RUNNER_PAT', 'CF_API_TOKEN')." },
+        "service": {
+          "type": "object",
+          "required": ["ref", "action"],
+          "additionalProperties": false,
+          "description": "(b) Derived — mint by invoking an action on another shape in the stack (e.g. Forgejo CLI 'generate-runner-token').",
+          "properties": {
+            "ref": { "type": "string", "description": "Name of the providing shape (should also appear in spec.dependsOn)." },
+            "action": { "type": "string", "description": "Provisioner verb on that service (e.g. 'generate-runner-token')." },
+            "with": { "type": "object", "description": "Optional action arguments.", "additionalProperties": true }
+          }
+        },
+        "provider": {
+          "type": "object",
+          "required": ["name", "action"],
+          "additionalProperties": false,
+          "description": "(c) Derived — mint from an external provider API (e.g. GitHub org runner token, Cloudflare tunnel token).",
+          "properties": {
+            "name": { "type": "string", "description": "Provider key the engine knows (e.g. 'github', 'cloudflare')." },
+            "action": { "type": "string", "description": "Provider verb (e.g. 'org-runner-token', 'tunnel-token')." },
+            "with": { "type": "object", "description": "Action arguments (e.g. { org: Chrison-dev }).", "additionalProperties": true },
+            "auth": { "$ref": "#/$defs/secretSource", "description": "How to authenticate to the provider — typically { env: <PAT name> }." }
+          }
+        }
+      }
+    },
+
     "lxcSpec": {
       "type": "object",
       "additionalProperties": false,
@@ -293,6 +341,22 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Labels merged into metadata.tags (→ var_tags). Mainly used in a Stack's spec.defaults to apply common labels to every member; a member normally uses metadata.tags."
+        },
+
+        "dependsOn": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Names of shapes that must converge first. Converge-only (BL-010): the engine topologically orders by this, and a dependency's resolved attributes (e.g. URL/IP) become available to this shape's config/secrets."
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "App-specific post-create settings the converge engine's provisioner applies (e.g. forgejo { rootUrl }, github-runner { githubOrg }, cloudflared { tunnel, ingress }). NOT touched by the community-scripts create path."
+        },
+        "secrets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/secret" },
+          "description": "Secrets the converge engine resolves at provision time (from secrets.env, another service, or a provider) and feeds to the post-create step. Converge-only; never provisioned by community-scripts."
         }
       }
     },
