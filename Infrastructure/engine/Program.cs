@@ -1,11 +1,14 @@
 using System.Text.Json;
 using ProxmoxSharp;
+using Homelab.Infrastructure.Converge;
+using Homelab.Infrastructure.Shapes;
 
 // Homelab.Infrastructure engine — the hub's first consumer of the ProxmoxSharp
 // package. Reads live Proxmox state via the generated client.
 //
 // Usage:
-//   homelab-infra discover        # dump a structured ClusterSnapshot as JSON
+//   homelab-infra discover               # dump a structured ClusterSnapshot as JSON
+//   homelab-infra converge <stack-dir>   # plan post-create converge for a stack (dry run)
 //
 // PVE config comes from environment variables:
 //   PROXMOX_BASE_URL   e.g. https://192.168.179.3:8006/api2/json
@@ -19,9 +22,42 @@ switch (command)
 {
     case "discover":
         return await DiscoverAsync();
+    case "converge":
+        return RunConverge(args);
     default:
-        Console.Error.WriteLine($"Unknown command '{command}'. Supported: discover");
+        Console.Error.WriteLine($"Unknown command '{command}'. Supported: discover, converge");
         return 1;
+}
+
+static int RunConverge(string[] args)
+{
+    if (args.Length < 2)
+    {
+        Console.Error.WriteLine("usage: homelab-infra converge <stack-dir> [--apply]");
+        return 2;
+    }
+    var stackDir = Path.GetFullPath(args[1]);
+    if (args.Contains("--apply"))
+    {
+        Console.Error.WriteLine("converge --apply is not implemented yet (BL-010 next increment); showing the plan instead.\n");
+    }
+
+    var secretsPath = FindUp("secrets.env", Directory.GetCurrentDirectory());
+    var env = SecretsEnv.Load(secretsPath);
+    return new ConvergeRunner(stackDir, env).Plan();
+}
+
+// Walk up from start looking for a file; returns null if not found.
+static string? FindUp(string fileName, string start)
+{
+    var dir = new DirectoryInfo(start);
+    while (dir is not null)
+    {
+        var candidate = Path.Combine(dir.FullName, fileName);
+        if (File.Exists(candidate)) return candidate;
+        dir = dir.Parent;
+    }
+    return null;
 }
 
 static async Task<int> DiscoverAsync()
