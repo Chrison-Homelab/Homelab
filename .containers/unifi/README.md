@@ -5,7 +5,7 @@ A local **UniFi OS Server** — a **safe test target for
 current self-hosted UniFi OS (via the community
 [toquanghieu/unifi-os-server-docker](https://github.com/toquanghieu/unifi-os-server-docker)
 image, which downloads the official installer), so its **Integration API behaves
-exactly like the live Cloud Gateway** — same `/proxy/network/integration/v1`
+exactly like the live Cloud Gateway** — same `/proxy/network/integration`
 path — **without touching the live network**.
 
 > Replaces the old standalone *UniFi Network Application* (now deprecated by
@@ -26,13 +26,13 @@ Then create an API key for UnifiSharp:
 ## Point UnifiSharp at it
 
 ```bash
-export UNIFI_BASE_URL="https://localhost:11443/proxy/network/integration/v1"
+export UNIFI_BASE_URL="https://localhost:11443/proxy/network/integration"
 export UNIFI_API_KEY="<the key you created>"
 export UNIFI_VERIFY_TLS=false    # self-signed cert
 unifisharp discover              # or run UnifiSharp's integration tests
 ```
 
-The base URL matches the **live Cloud Gateway** (`/proxy/network/integration/v1`),
+The base URL matches the **live Cloud Gateway** (`/proxy/network/integration`),
 so config carries over between the container and production.
 
 ## Notes
