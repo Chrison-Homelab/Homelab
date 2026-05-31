@@ -14,8 +14,13 @@ name: discover-drift
 #   PROXMOX_TOKEN_SECRET the token secret
 
 on:
-  schedule:
-    - cron: '0 6 * * *'   # daily at 06:00 UTC
+  # NOTE: disabled until this runs on a self-hosted runner inside the homelab.
+  # GitHub-hosted runners are blocked by Cloudflare (403) on proxmox.chrison.dev
+  # (residential IPs pass; datacenter/runner IPs are WAF-blocked). The fix is a
+  # self-hosted runner on the LAN hitting the cluster directly — tracked in the
+  # backlog. Manual dispatch kept for testing once that runner exists.
+  # schedule:
+  #   - cron: '0 6 * * *'   # daily at 06:00 UTC
   workflow_dispatch:
 
 permissions:
