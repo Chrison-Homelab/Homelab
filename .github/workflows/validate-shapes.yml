@@ -1,0 +1,14 @@
+name: validate-shapes
+on:
+  pull_request:
+    paths: ['Infrastructure/**', 'stacks/**', 'tools/validate-shapes.py', '.github/workflows/validate-shapes.yml']
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: [self-hosted, homelab]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.x' }
+      - run: pip install --quiet pyyaml jsonschema
+      - run: python tools/validate-shapes.py
