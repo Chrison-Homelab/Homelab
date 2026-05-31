@@ -13,6 +13,6 @@ jobs:
       GITHUB_PACKAGES_PAT: ${{ secrets.GITHUB_TOKEN }}   # NuGet org feed auth (nuget.config)
       DOTNET_ROOT: /usr/local/dotnet                      # .NET SDK pre-installed on the runner
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: dotnet restore Infrastructure/engine/Homelab.Infrastructure.csproj
       - run: dotnet build Infrastructure/engine/Homelab.Infrastructure.csproj -c Release --no-restore

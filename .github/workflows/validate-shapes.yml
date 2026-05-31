@@ -7,6 +7,6 @@ jobs:
   validate:
     runs-on: [self-hosted, homelab]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       # python3 + python3-yaml + python3-jsonschema are pre-installed on the runner
       - run: python3 tools/validate-shapes.py
