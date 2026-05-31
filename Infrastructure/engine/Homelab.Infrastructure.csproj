@@ -14,6 +14,8 @@
          Float to the latest prerelease (published on every push to main);
          pin to a stable version when one is tagged. -->
     <PackageReference Include="ProxmoxSharp" Version="0.1.0-preview.*" />
+    <!-- YAML parsing for homelab/v1 shapes (BL-010 converge). -->
+    <PackageReference Include="YamlDotNet" Version="16.*" />
   </ItemGroup>
 
 </Project>

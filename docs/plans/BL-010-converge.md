@@ -73,7 +73,8 @@ Properties: **idempotent**, **secret-free in git** (only `env:` names + `action:
 1. **Schema** — `dependsOn`, `config`, `secrets` + the `secret`/`secretSource` `$defs`. ✅ Landed + validated (positive/negative).
 2. **Reference shapes** — `stacks/DevOps/*` annotated with the real post-create wiring. ✅
 3. **Plan** — this doc.
-4. **Engine** (next, BL-010 proper): `converge` command + provisioner/provider registry + `secrets.env` resolver. ⏳
+4. **Engine scaffold** — `Infrastructure/engine` now has: shape models + YAML loader (stack-defaults merge), `secrets.env` reader, topological `dependsOn` ordering, a `SecretResolver` (env-presence + derived descriptors), an app-keyed `ProvisionerRegistry` (Forgejo/ForgejoRunner/GithubRunner/Cloudflared), and a **`converge <stack>` dry-run** command that prints the ordered post-create plan. ✅
+5. **Live apply** (next increment): provisioner `ApplyAsync` (the by-hand steps as code) + secret *derivation* (Forgejo CLI token, GitHub/Cloudflare provider tokens) + ProxmoxSharp CT lifecycle; `converge --apply`. ⏳
 
 ## Out of scope
 
