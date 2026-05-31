@@ -6,6 +6,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Personal homelab infrastructure-as-code repository managing Proxmox hypervisors, Synology NAS devices, and associated monitoring/networking. The core philosophy: **infrastructure-as-code first, modular, idempotent, reversible, and minimal UI reliance**. Always assume multi-node and multi-NAS environments.
 
+## Proxmox access: prefer the `proxmoxsharp` CLI
+
+For Proxmox read/discovery tasks, **use our own `proxmoxsharp` CLI first** (our
+dogfooded client, `vendor/ProxmoxSharp` → installed via `dotnet tool install -g ProxmoxSharp.Cli`).
+The `pve` MCP is a **fallback** (use it if the CLI is unavailable or for an
+endpoint the CLI doesn't expose yet).
+
+```bash
+# CLI reads PVE config from the environment; source the gitignored secrets first:
+set -a && . ./secrets.env && set +a          # PROXMOX_BASE_URL / _TOKEN_ID / _TOKEN_SECRET / _VERIFY_TLS
+proxmoxsharp discover    # structured ClusterSnapshot (JSON)
+proxmoxsharp nodes       # list nodes
+proxmoxsharp version     # PVE version
+```
+
+Public endpoint (valid TLS): `https://proxmox.chrison.dev/api2/json`. The legacy
+node IP `192.168.179.3:8006` uses a self-signed cert (`PROXMOX_VERIFY_TLS=false`).
+
 ## Key Commands
 
 ### Testing Scripts Locally (Debian test container)
