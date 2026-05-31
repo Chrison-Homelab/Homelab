@@ -34,7 +34,7 @@ jobs:
     environment: homelab     # records this snapshot as a deployment to the umbrella env
     steps:
       - name: Checkout (with private submodules)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           submodules: recursive
