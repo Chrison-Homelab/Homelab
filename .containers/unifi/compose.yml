@@ -1,0 +1,51 @@
+# Local UniFi Network Application — a safe test target for UnifiSharp.
+# Runs the same controller software as the live console, so the official
+# Integration API (X-API-KEY) behaves the same — WITHOUT touching the live network.
+#
+# Quick start:
+#   docker compose up -d
+#   open https://localhost:8443  → first-run wizard (create a local admin)
+#   Settings → Integrations → create an API key for UnifiSharp
+#
+# See README.md.
+
+services:
+  unifi-db:
+    image: docker.io/mongo:7.0
+    container_name: unifi-db
+    volumes:
+      - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+      - unifi-db-data:/data/db
+    restart: unless-stopped
+    networks: [unifi]
+
+  unifi-network-application:
+    image: lscr.io/linuxserver/unifi-network-application:latest
+    container_name: unifi-network-application
+    depends_on:
+      - unifi-db
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Pacific/Auckland
+      - MONGO_USER=unifi
+      - MONGO_PASS=unifi-dev          # local dev DB password only
+      - MONGO_HOST=unifi-db
+      - MONGO_PORT=27017
+      - MONGO_DBNAME=unifi
+    volumes:
+      - unifi-config:/config
+    ports:
+      - "8443:8443"        # web UI + API (https, self-signed)
+      - "3478:3478/udp"    # STUN
+      - "8080:8080"        # device inform (not needed without real devices)
+    restart: unless-stopped
+    networks: [unifi]
+
+networks:
+  unifi:
+    driver: bridge
+
+volumes:
+  unifi-db-data:
+  unifi-config:
