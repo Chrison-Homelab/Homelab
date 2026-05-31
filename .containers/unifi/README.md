@@ -1,7 +1,7 @@
 # UniFi OS Server (test container)
 
 A local **UniFi OS Server** — a **safe test target for
-[UnifiSharp](https://github.com/ChrisonSimtian/UnifiSharp)**. It runs Ubiquiti's
+[UnifiSharp](https://github.com/Chrison-dev/UnifiSharp)**. It runs Ubiquiti's
 current self-hosted UniFi OS (via the community
 [toquanghieu/unifi-os-server-docker](https://github.com/toquanghieu/unifi-os-server-docker)
 image, which downloads the official installer), so its **Integration API behaves

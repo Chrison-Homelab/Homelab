@@ -5,7 +5,7 @@
 # Collects hardware information in Markdown format with comprehensive error handling
 # 
 # Usage: 
-#   Direct execution: pwsh -c "Invoke-Expression (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ChrisonSimtian/Homelab/main/src/Proxmox/inventory.ps1' -UseBasicParsing).Content"
+#   Direct execution: pwsh -c "Invoke-Expression (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/Chrison-dev/Homelab/main/src/Proxmox/inventory.ps1' -UseBasicParsing).Content"
 #   Local execution: pwsh ./inventory.ps1
 #
 # Output: Markdown-formatted hardware inventory including CPU, memory, storage, network, PCI devices, and Proxmox version

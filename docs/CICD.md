@@ -1,6 +1,6 @@
 # CI/CD
 
-GitOps for the homelab hub. **[Fallout](https://github.com/ChrisonSimtian/Fallout)**
+GitOps for the homelab hub. **[Fallout](https://github.com/Fallout-build/Fallout)**
 (the C#/.NET build system) drives CI; **GitHub Environments** and **GitHub
 Releases** track the state of the lab.
 
