@@ -1,0 +1,344 @@
+{
+  "nodes": [
+    {
+      "node": "nuc-01",
+      "status": "Online",
+      "maxMem": 16693035008,
+      "uptime": 401093,
+      "lxc": [
+        {
+          "vmId": 2007,
+          "name": "traefik",
+          "status": "Running",
+          "maxMem": 536870912
+        },
+        {
+          "vmId": 2003,
+          "name": "pve-scripts-local",
+          "status": "Running",
+          "maxMem": 4294967296
+        },
+        {
+          "vmId": 5005,
+          "name": "flaresolverr",
+          "status": "Running",
+          "maxMem": 2147483648
+        },
+        {
+          "vmId": 9906,
+          "name": "obsidian-livesync",
+          "status": "Running",
+          "maxMem": 536870912
+        },
+        {
+          "vmId": 9966,
+          "name": "cookbook",
+          "status": "Running",
+          "maxMem": 536870912
+        },
+        {
+          "vmId": 5006,
+          "name": "bazarr",
+          "status": "Running",
+          "maxMem": 1073741824
+        },
+        {
+          "vmId": 2002,
+          "name": "proxmox-datacenter-manager",
+          "status": "Running",
+          "maxMem": 2147483648
+        },
+        {
+          "vmId": 9904,
+          "name": "teleport",
+          "status": "Running",
+          "maxMem": 1073741824
+        },
+        {
+          "vmId": 5009,
+          "name": "tautulli",
+          "status": "Running",
+          "maxMem": 1073741824
+        }
+      ],
+      "qemu": [],
+      "storage": [
+        {
+          "storage": "ds1813-nfs-volume-2",
+          "type": "nfs",
+          "active": null,
+          "content": "vztmpl,images,backup,rootdir,iso,import,snippets"
+        },
+        {
+          "storage": "ds1813-nfs-volume-3",
+          "type": "nfs",
+          "active": null,
+          "content": "images,backup,vztmpl,snippets,rootdir,import,iso"
+        },
+        {
+          "storage": "local-lvm",
+          "type": "lvmthin",
+          "active": null,
+          "content": "images,rootdir"
+        },
+        {
+          "storage": "local",
+          "type": "dir",
+          "active": null,
+          "content": "iso,vztmpl,backup"
+        },
+        {
+          "storage": "ds1813-nfs-volume-1",
+          "type": "nfs",
+          "active": null,
+          "content": "vztmpl,images,backup,rootdir,import,iso,snippets"
+        }
+      ],
+      "network": [
+        {
+          "iface": "vmbr0",
+          "type": "Bridge",
+          "address": "192.168.179.1"
+        },
+        {
+          "iface": "eno1",
+          "type": "Eth",
+          "address": null
+        }
+      ]
+    },
+    {
+      "node": "desktop-01",
+      "status": "Online",
+      "maxMem": 16707616768,
+      "uptime": 404231,
+      "lxc": [
+        {
+          "vmId": 9905,
+          "name": "openwebui",
+          "status": "Running",
+          "maxMem": 8589934592
+        },
+        {
+          "vmId": 2004,
+          "name": "searxng",
+          "status": "Running",
+          "maxMem": 2147483648
+        },
+        {
+          "vmId": 2006,
+          "name": "asp-dev",
+          "status": "Stopped",
+          "maxMem": 3145728000
+        },
+        {
+          "vmId": 2008,
+          "name": "erp-for-factory-games",
+          "status": "Running",
+          "maxMem": 4294967296
+        }
+      ],
+      "qemu": [
+        {
+          "vmId": 1003,
+          "name": "gaming-vm-02",
+          "status": "Stopped",
+          "maxMem": 12884901888
+        },
+        {
+          "vmId": 1001,
+          "name": "Plex-VM",
+          "status": "Stopped",
+          "maxMem": 4294967296
+        },
+        {
+          "vmId": 1002,
+          "name": "gaming-vm-01",
+          "status": "Stopped",
+          "maxMem": 12884901888
+        }
+      ],
+      "storage": [
+        {
+          "storage": "ds1813-nfs-volume-2",
+          "type": "nfs",
+          "active": null,
+          "content": "images,rootdir,iso,snippets,import,backup,vztmpl"
+        },
+        {
+          "storage": "ds1813-nfs-volume-1",
+          "type": "nfs",
+          "active": null,
+          "content": "snippets,iso,images,rootdir,vztmpl,backup,import"
+        },
+        {
+          "storage": "local",
+          "type": "dir",
+          "active": null,
+          "content": "vztmpl,backup,iso"
+        },
+        {
+          "storage": "local-lvm",
+          "type": "lvmthin",
+          "active": null,
+          "content": "images,rootdir"
+        },
+        {
+          "storage": "ds1813-nfs-volume-3",
+          "type": "nfs",
+          "active": null,
+          "content": "snippets,iso,images,rootdir,vztmpl,backup,import"
+        }
+      ],
+      "network": [
+        {
+          "iface": "wlp8s0",
+          "type": "Unknown",
+          "address": null
+        },
+        {
+          "iface": "vmbr0",
+          "type": "Bridge",
+          "address": "192.168.179.2"
+        },
+        {
+          "iface": "eno1",
+          "type": "Eth",
+          "address": null
+        }
+      ]
+    },
+    {
+      "node": "hpe-01",
+      "status": "Online",
+      "maxMem": 16642457600,
+      "uptime": 403024,
+      "lxc": [
+        {
+          "vmId": 5011,
+          "name": "seerr",
+          "status": "Running",
+          "maxMem": 4294967296
+        },
+        {
+          "vmId": 2001,
+          "name": "cloudflared-01",
+          "status": "Running",
+          "maxMem": 536870912
+        },
+        {
+          "vmId": 5007,
+          "name": "qbittorrent",
+          "status": "Running",
+          "maxMem": 2147483648
+        },
+        {
+          "vmId": 5014,
+          "name": "audiobookshelf",
+          "status": "Running",
+          "maxMem": 2147483648
+        },
+        {
+          "vmId": 2005,
+          "name": "github-runner",
+          "status": "Running",
+          "maxMem": 2147483648
+        },
+        {
+          "vmId": 5002,
+          "name": "prowlarr",
+          "status": "Running",
+          "maxMem": 1073741824
+        },
+        {
+          "vmId": 5013,
+          "name": "tracearr",
+          "status": "Running",
+          "maxMem": 2147483648
+        },
+        {
+          "vmId": 5008,
+          "name": "plex",
+          "status": "Running",
+          "maxMem": 2147483648
+        },
+        {
+          "vmId": 5003,
+          "name": "sonarr",
+          "status": "Running",
+          "maxMem": 1073741824
+        },
+        {
+          "vmId": 5004,
+          "name": "radarr",
+          "status": "Running",
+          "maxMem": 1073741824
+        },
+        {
+          "vmId": 5015,
+          "name": "shelfmark",
+          "status": "Running",
+          "maxMem": 2147483648
+        },
+        {
+          "vmId": 5012,
+          "name": "romm",
+          "status": "Running",
+          "maxMem": 4294967296
+        }
+      ],
+      "qemu": [
+        {
+          "vmId": 2000,
+          "name": "homeassistant",
+          "status": "Running",
+          "maxMem": 2147483648
+        }
+      ],
+      "storage": [
+        {
+          "storage": "local",
+          "type": "dir",
+          "active": null,
+          "content": "iso,vztmpl,backup"
+        },
+        {
+          "storage": "ds1813-nfs-volume-1",
+          "type": "nfs",
+          "active": null,
+          "content": "vztmpl,backup,import,iso,rootdir,snippets,images"
+        },
+        {
+          "storage": "ds1813-nfs-volume-3",
+          "type": "nfs",
+          "active": null,
+          "content": "snippets,images,iso,rootdir,import,backup,vztmpl"
+        },
+        {
+          "storage": "local-lvm",
+          "type": "lvmthin",
+          "active": null,
+          "content": "images,rootdir"
+        },
+        {
+          "storage": "ds1813-nfs-volume-2",
+          "type": "nfs",
+          "active": null,
+          "content": "snippets,images,iso,rootdir,backup,import,vztmpl"
+        }
+      ],
+      "network": [
+        {
+          "iface": "eno1",
+          "type": "Eth",
+          "address": null
+        },
+        {
+          "iface": "vmbr0",
+          "type": "Bridge",
+          "address": "192.168.179.3"
+        }
+      ]
+    }
+  ]
+}

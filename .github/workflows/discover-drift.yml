@@ -1,0 +1,61 @@
+name: discover-drift
+
+# Auto-detects Proxmox cluster changes and documents them: runs the hub engine
+# (which consumes the ProxmoxSharp package) against the live cluster, refreshes
+# docs/discovered-state.json, and opens a PR when it drifts from what's committed.
+#
+# Package restore uses the built-in GITHUB_TOKEN — no PAT needed, BUT the
+# ProxmoxSharp + ProxmoxSharp.Api packages must grant this repo read access:
+# each package → Package settings → Manage Actions access → add ChrisonSimtian/Homelab (Read).
+#
+# Required repository secrets:
+#   PROXMOX_BASE_URL     https://proxmox.chrison.dev/api2/json
+#   PROXMOX_TOKEN_ID     a read-only PVE token, e.g. root@pam!claude-mcp
+#   PROXMOX_TOKEN_SECRET the token secret
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # daily at 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Discover live state
+        env:
+          # nuget.config reads this for the GitHub Packages feed; the built-in
+          # token works once the packages grant this repo read access.
+          GITHUB_PACKAGES_PAT: ${{ secrets.GITHUB_TOKEN }}
+          PROXMOX_BASE_URL: ${{ secrets.PROXMOX_BASE_URL }}
+          PROXMOX_TOKEN_ID: ${{ secrets.PROXMOX_TOKEN_ID }}
+          PROXMOX_TOKEN_SECRET: ${{ secrets.PROXMOX_TOKEN_SECRET }}
+          # Public endpoint has a valid cert — verify TLS.
+          PROXMOX_VERIFY_TLS: 'true'
+        run: |
+          dotnet run --project Infrastructure/engine -c Release -v quiet -- discover \
+            > docs/discovered-state.json
+
+      - name: Open PR on drift
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/discovered-state
+          title: 'chore: refresh discovered Proxmox state'
+          commit-message: 'chore: refresh docs/discovered-state.json from live cluster'
+          body: |
+            Automated discovery against the live cluster (`proxmox.chrison.dev`)
+            detected drift. Review the diff in `docs/discovered-state.json` to see
+            what changed (nodes, LXCs/VMs, storage, network).
+          add-paths: docs/discovered-state.json
+          delete-branch: true
