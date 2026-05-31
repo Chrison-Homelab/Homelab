@@ -8,7 +8,5 @@ jobs:
     runs-on: [self-hosted, homelab]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: '3.x' }
-      - run: pip install --quiet pyyaml jsonschema
-      - run: python tools/validate-shapes.py
+      # python3 + python3-yaml + python3-jsonschema are pre-installed on the runner
+      - run: python3 tools/validate-shapes.py
