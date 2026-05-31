@@ -10,11 +10,9 @@ jobs:
   build:
     runs-on: [self-hosted, homelab]
     env:
-      # NuGet (nuget.config) reads the org GitHub Packages feed via this var.
-      GITHUB_PACKAGES_PAT: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_PACKAGES_PAT: ${{ secrets.GITHUB_TOKEN }}   # NuGet org feed auth (nuget.config)
+      DOTNET_ROOT: /usr/local/dotnet                      # .NET SDK pre-installed on the runner
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with: { dotnet-version: '10.0.x' }
       - run: dotnet restore Infrastructure/engine/Homelab.Infrastructure.csproj
       - run: dotnet build Infrastructure/engine/Homelab.Infrastructure.csproj -c Release --no-restore
