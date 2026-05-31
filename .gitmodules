@@ -9,7 +9,7 @@
 	url = https://github.com/Chrison-dev/Homelab.Stacks.DevOps.git
 [submodule "stacks/ErpForFactoryGames"]
 	path = stacks/ErpForFactoryGames
-	url = https://github.com/ChrisonSimtian/Homelab.Stacks.ErpForFactoryGames.git
+	url = https://github.com/Chrison-dev/Homelab.Stacks.ErpForFactoryGames.git
 [submodule "vendor/ProxmoxSharp"]
 	path = vendor/ProxmoxSharp
 	url = https://github.com/Chrison-dev/ProxmoxSharp.git
