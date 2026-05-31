@@ -1,0 +1,19 @@
+# Smoke test for the self-hosted org runner (homelab-desktop-01).
+# Manual only — proves the runner picks up and executes jobs.
+name: runner-smoke
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: [self-hosted, homelab]
+    steps:
+      - name: Report runner environment
+        run: |
+          echo "Running on: $(hostname)"
+          echo "User: $(whoami)"
+          echo "OS: $(. /etc/os-release && echo "$PRETTY_NAME")"
+          echo "Arch: $(uname -m)"
+          echo "Docker: $(command -v docker >/dev/null && docker --version 2>/dev/null || echo 'not installed')"
+          echo "Podman: $(command -v podman >/dev/null && podman --version 2>/dev/null || echo 'not installed')"
+          echo "✅ self-hosted runner executed this job"
