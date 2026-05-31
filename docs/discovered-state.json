@@ -4,19 +4,31 @@
       "node": "nuc-01",
       "status": "Online",
       "maxMem": 16693035008,
-      "uptime": 401093,
+      "uptime": 442023,
       "lxc": [
         {
-          "vmId": 2007,
-          "name": "traefik",
+          "vmId": 5009,
+          "name": "tautulli",
           "status": "Running",
-          "maxMem": 536870912
+          "maxMem": 1073741824
         },
         {
-          "vmId": 2003,
-          "name": "pve-scripts-local",
+          "vmId": 9904,
+          "name": "teleport",
           "status": "Running",
-          "maxMem": 4294967296
+          "maxMem": 1073741824
+        },
+        {
+          "vmId": 2002,
+          "name": "proxmox-datacenter-manager",
+          "status": "Running",
+          "maxMem": 2147483648
+        },
+        {
+          "vmId": 5006,
+          "name": "bazarr",
+          "status": "Running",
+          "maxMem": 1073741824
         },
         {
           "vmId": 5005,
@@ -37,73 +49,61 @@
           "maxMem": 536870912
         },
         {
-          "vmId": 5006,
-          "name": "bazarr",
+          "vmId": 2007,
+          "name": "traefik",
           "status": "Running",
-          "maxMem": 1073741824
+          "maxMem": 536870912
         },
         {
-          "vmId": 2002,
-          "name": "proxmox-datacenter-manager",
+          "vmId": 2003,
+          "name": "pve-scripts-local",
           "status": "Running",
-          "maxMem": 2147483648
-        },
-        {
-          "vmId": 9904,
-          "name": "teleport",
-          "status": "Running",
-          "maxMem": 1073741824
-        },
-        {
-          "vmId": 5009,
-          "name": "tautulli",
-          "status": "Running",
-          "maxMem": 1073741824
+          "maxMem": 4294967296
         }
       ],
       "qemu": [],
       "storage": [
         {
-          "storage": "ds1813-nfs-volume-2",
-          "type": "nfs",
-          "active": null,
-          "content": "vztmpl,images,backup,rootdir,iso,import,snippets"
-        },
-        {
           "storage": "ds1813-nfs-volume-3",
           "type": "nfs",
           "active": null,
-          "content": "images,backup,vztmpl,snippets,rootdir,import,iso"
+          "content": "vztmpl,backup,images,rootdir,iso,import,snippets"
+        },
+        {
+          "storage": "ds1813-nfs-volume-2",
+          "type": "nfs",
+          "active": null,
+          "content": "rootdir,import,iso,snippets,vztmpl,backup,images"
         },
         {
           "storage": "local-lvm",
           "type": "lvmthin",
           "active": null,
-          "content": "images,rootdir"
+          "content": "rootdir,images"
         },
         {
           "storage": "local",
           "type": "dir",
           "active": null,
-          "content": "iso,vztmpl,backup"
+          "content": "backup,iso,vztmpl"
         },
         {
           "storage": "ds1813-nfs-volume-1",
           "type": "nfs",
           "active": null,
-          "content": "vztmpl,images,backup,rootdir,import,iso,snippets"
+          "content": "images,backup,vztmpl,snippets,iso,import,rootdir"
         }
       ],
       "network": [
         {
-          "iface": "vmbr0",
-          "type": "Bridge",
-          "address": "192.168.179.1"
-        },
-        {
           "iface": "eno1",
           "type": "Eth",
           "address": null
+        },
+        {
+          "iface": "vmbr0",
+          "type": "Bridge",
+          "address": "192.168.179.1"
         }
       ]
     },
@@ -111,8 +111,32 @@
       "node": "desktop-01",
       "status": "Online",
       "maxMem": 16707616768,
-      "uptime": 404231,
+      "uptime": 445161,
       "lxc": [
+        {
+          "vmId": 2008,
+          "name": "erp-for-factory-games",
+          "status": "Running",
+          "maxMem": 4294967296
+        },
+        {
+          "vmId": 2006,
+          "name": "asp-dev",
+          "status": "Stopped",
+          "maxMem": 3145728000
+        },
+        {
+          "vmId": 3002,
+          "name": "github-runner",
+          "status": "Running",
+          "maxMem": 4294967296
+        },
+        {
+          "vmId": 3000,
+          "name": "forgejo",
+          "status": "Running",
+          "maxMem": 2147483648
+        },
         {
           "vmId": 9905,
           "name": "openwebui",
@@ -126,19 +150,25 @@
           "maxMem": 2147483648
         },
         {
-          "vmId": 2006,
-          "name": "asp-dev",
-          "status": "Stopped",
-          "maxMem": 3145728000
-        },
-        {
-          "vmId": 2008,
-          "name": "erp-for-factory-games",
+          "vmId": 3001,
+          "name": "forgejo-runner",
           "status": "Running",
           "maxMem": 4294967296
+        },
+        {
+          "vmId": 3004,
+          "name": "cloudflared",
+          "status": "Running",
+          "maxMem": 536870912
         }
       ],
       "qemu": [
+        {
+          "vmId": 1002,
+          "name": "gaming-vm-01",
+          "status": "Stopped",
+          "maxMem": 12884901888
+        },
         {
           "vmId": 1003,
           "name": "gaming-vm-02",
@@ -150,27 +180,9 @@
           "name": "Plex-VM",
           "status": "Stopped",
           "maxMem": 4294967296
-        },
-        {
-          "vmId": 1002,
-          "name": "gaming-vm-01",
-          "status": "Stopped",
-          "maxMem": 12884901888
         }
       ],
       "storage": [
-        {
-          "storage": "ds1813-nfs-volume-2",
-          "type": "nfs",
-          "active": null,
-          "content": "images,rootdir,iso,snippets,import,backup,vztmpl"
-        },
-        {
-          "storage": "ds1813-nfs-volume-1",
-          "type": "nfs",
-          "active": null,
-          "content": "snippets,iso,images,rootdir,vztmpl,backup,import"
-        },
         {
           "storage": "local",
           "type": "dir",
@@ -187,13 +199,25 @@
           "storage": "ds1813-nfs-volume-3",
           "type": "nfs",
           "active": null,
-          "content": "snippets,iso,images,rootdir,vztmpl,backup,import"
+          "content": "backup,import,vztmpl,iso,rootdir,images,snippets"
+        },
+        {
+          "storage": "ds1813-nfs-volume-1",
+          "type": "nfs",
+          "active": null,
+          "content": "iso,rootdir,images,snippets,backup,import,vztmpl"
+        },
+        {
+          "storage": "ds1813-nfs-volume-2",
+          "type": "nfs",
+          "active": null,
+          "content": "backup,import,vztmpl,iso,images,rootdir,snippets"
         }
       ],
       "network": [
         {
-          "iface": "wlp8s0",
-          "type": "Unknown",
+          "iface": "eno1",
+          "type": "Eth",
           "address": null
         },
         {
@@ -202,8 +226,8 @@
           "address": "192.168.179.2"
         },
         {
-          "iface": "eno1",
-          "type": "Eth",
+          "iface": "wlp8s0",
+          "type": "Unknown",
           "address": null
         }
       ]
@@ -212,7 +236,7 @@
       "node": "hpe-01",
       "status": "Online",
       "maxMem": 16642457600,
-      "uptime": 403024,
+      "uptime": 443944,
       "lxc": [
         {
           "vmId": 5011,
@@ -233,10 +257,10 @@
           "maxMem": 2147483648
         },
         {
-          "vmId": 5014,
-          "name": "audiobookshelf",
+          "vmId": 5002,
+          "name": "prowlarr",
           "status": "Running",
-          "maxMem": 2147483648
+          "maxMem": 1073741824
         },
         {
           "vmId": 2005,
@@ -245,14 +269,8 @@
           "maxMem": 2147483648
         },
         {
-          "vmId": 5002,
-          "name": "prowlarr",
-          "status": "Running",
-          "maxMem": 1073741824
-        },
-        {
-          "vmId": 5013,
-          "name": "tracearr",
+          "vmId": 5014,
+          "name": "audiobookshelf",
           "status": "Running",
           "maxMem": 2147483648
         },
@@ -263,10 +281,22 @@
           "maxMem": 2147483648
         },
         {
+          "vmId": 5013,
+          "name": "tracearr",
+          "status": "Running",
+          "maxMem": 2147483648
+        },
+        {
           "vmId": 5003,
           "name": "sonarr",
           "status": "Running",
           "maxMem": 1073741824
+        },
+        {
+          "vmId": 5012,
+          "name": "romm",
+          "status": "Running",
+          "maxMem": 4294967296
         },
         {
           "vmId": 5004,
@@ -279,12 +309,6 @@
           "name": "shelfmark",
           "status": "Running",
           "maxMem": 2147483648
-        },
-        {
-          "vmId": 5012,
-          "name": "romm",
-          "status": "Running",
-          "maxMem": 4294967296
         }
       ],
       "qemu": [
@@ -297,22 +321,22 @@
       ],
       "storage": [
         {
+          "storage": "ds1813-nfs-volume-3",
+          "type": "nfs",
+          "active": null,
+          "content": "snippets,images,rootdir,iso,backup,import,vztmpl"
+        },
+        {
           "storage": "local",
           "type": "dir",
           "active": null,
-          "content": "iso,vztmpl,backup"
+          "content": "vztmpl,iso,backup"
         },
         {
           "storage": "ds1813-nfs-volume-1",
           "type": "nfs",
           "active": null,
-          "content": "vztmpl,backup,import,iso,rootdir,snippets,images"
-        },
-        {
-          "storage": "ds1813-nfs-volume-3",
-          "type": "nfs",
-          "active": null,
-          "content": "snippets,images,iso,rootdir,import,backup,vztmpl"
+          "content": "backup,import,vztmpl,images,snippets,rootdir,iso"
         },
         {
           "storage": "local-lvm",
@@ -324,19 +348,19 @@
           "storage": "ds1813-nfs-volume-2",
           "type": "nfs",
           "active": null,
-          "content": "snippets,images,iso,rootdir,backup,import,vztmpl"
+          "content": "vztmpl,import,backup,rootdir,iso,snippets,images"
         }
       ],
       "network": [
         {
-          "iface": "eno1",
-          "type": "Eth",
-          "address": null
-        },
-        {
           "iface": "vmbr0",
           "type": "Bridge",
           "address": "192.168.179.3"
+        },
+        {
+          "iface": "eno1",
+          "type": "Eth",
+          "address": null
         }
       ]
     }
