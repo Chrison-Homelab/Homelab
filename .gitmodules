@@ -13,3 +13,6 @@
 [submodule "vendor/ProxmoxSharp"]
 	path = vendor/ProxmoxSharp
 	url = https://github.com/ChrisonSimtian/ProxmoxSharp.git
+[submodule "vendor/UnifiSharp"]
+	path = vendor/UnifiSharp
+	url = https://github.com/ChrisonSimtian/UnifiSharp.git
