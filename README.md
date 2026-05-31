@@ -14,17 +14,17 @@ from Git. If it isn't in the repo, it doesn't exist.
 ![Snapshot updated](https://img.shields.io/badge/snapshot_updated-2026--05--31-2ea44f)
 ![Cluster](https://img.shields.io/badge/cluster-3_nodes_%7C_29_LXC_%7C_4_VM-blue)
 ![NAS](https://img.shields.io/badge/NAS-DS1813%2B_%7C_9_shares-orange)
-![Network](https://img.shields.io/badge/network-Cloud_Gateway_Ultra_%7C_46_clients-8b5cf6)
+![Network](https://img.shields.io/badge/network-Cloud_Gateway_Ultra_%7C_7_devices_%7C_25_clients-8b5cf6)
 
-A live snapshot of the lab — discovered with our own clients (`proxmoxsharp` /
-`synosharp`) and the UniFi gateway. Full machine-readable inventory:
+A live snapshot of the lab — discovered entirely with our own clients
+(`proxmoxsharp` / `synosharp` / `unifisharp`). Full machine-readable inventory:
 [`docs/environment-snapshot.json`](docs/environment-snapshot.json).
 
 ```mermaid
 graph TB
   Internet([🌐 Internet]) --> CF["☁️ Cloudflare<br/>chrison.dev"]
 
-  subgraph NET["📡 UniFi · Cloud Gateway Ultra · 46 active clients"]
+  subgraph NET["📡 UniFi · Cloud Gateway Ultra · 7 devices · 25 clients"]
     direction LR
     GW["🛡️ Cloud Gateway Ultra<br/>UDRULT · 192.168.178.1"] --- SW["🔌 US-24-PoE<br/>+ 2× Flex Mini"] --- AP["📶 3× U7LR APs"]
   end
@@ -58,10 +58,11 @@ graph TB
   class NET,GW,SW,AP edge;
 ```
 
-> **VLANs:** Homelab `10.10/16` · Consumer `10.20/16` · IoT `10.40/16` · Net devices
-> `10.0/16` · legacy `192.168.178/23` (deprecating). Generated manually for now
-> (`proxmoxsharp` / `synosharp` discover + UniFi MCP) — **CI will refresh it on a
-> schedule**; the badge date tracks the last update.
+> **Networks (live from UniFi):** Homelab `10.10/16` · Consumer `10.20/16` · IOT
+> `10.40/16` · Network Devices `10.0/16` · Old Network `192.168.178/23` (legacy).
+> Generated manually for now via our own clients (`proxmoxsharp` / `synosharp` /
+> `unifisharp` discover) — **CI will refresh it on a schedule**; the badge date
+> tracks the last update.
 
 ## 🎯 Mission
 
