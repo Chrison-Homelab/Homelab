@@ -7,7 +7,8 @@
     "nasModel": "DS1813+",
     "nasShares": 9,
     "unifiGateway": "Cloud Gateway Ultra",
-    "activeClients": 46
+    "activeClients": 25,
+    "unifiDevices": 7
   },
   "proxmox": {
     "nodes": [
@@ -408,7 +409,7 @@
       "model": "UDRULT",
       "ip": "192.168.178.1"
     },
-    "activeClients": 46,
+    "activeClients": 25,
     "devices": [
       {
         "name": "Cloud Gateway Ultra",
@@ -453,26 +454,29 @@
         "online": true
       }
     ],
-    "vlans": [
+    "source": "unifisharp (live gateway, UniFi Network Integration API)",
+    "site": "Default",
+    "deviceCount": 7,
+    "networks": [
       {
-        "name": "Homelab",
-        "cidr": "10.10.0.0/16"
-      },
-      {
-        "name": "Consumer",
-        "cidr": "10.20.0.0/16"
-      },
-      {
-        "name": "IoT",
-        "cidr": "10.40.0.0/16"
+        "name": "Old Network",
+        "cidr": "192.168.178.0/23 (legacy)"
       },
       {
         "name": "Network Devices",
         "cidr": "10.0.0.0/16"
       },
       {
-        "name": "Legacy (deprecating)",
-        "cidr": "192.168.178.0/23"
+        "name": "Homelab",
+        "cidr": "10.10.0.0/16"
+      },
+      {
+        "name": "IOT",
+        "cidr": "10.40.0.0/16"
+      },
+      {
+        "name": "Consumer",
+        "cidr": "10.20.0.0/16"
       }
     ]
   }
