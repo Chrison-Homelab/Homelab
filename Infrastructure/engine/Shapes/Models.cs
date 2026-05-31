@@ -29,10 +29,37 @@ public sealed class LxcSpec
     public int? Memory { get; set; }
     public int? Disk { get; set; }
 
+    // Create-relevant (community-scripts var_*) — mostly inherited from the stack:
+    public string? Os { get; set; }
+    public string? OsVersion { get; set; }
+    public bool? Unprivileged { get; set; }
+    public string? Storage { get; set; }
+    public string? TemplateStorage { get; set; }
+    public string? Nameserver { get; set; }
+    public string? Searchdomain { get; set; }
+    public NetworkSpec? Network { get; set; }
+    public FeaturesSpec? Features { get; set; }
+    public List<string> Tags { get; set; } = new();
+
     // Post-create contract (converge-only):
     public List<string> DependsOn { get; set; } = new();
     public Dictionary<string, object?> Config { get; set; } = new();
     public List<Secret> Secrets { get; set; } = new();
+}
+
+public sealed class NetworkSpec
+{
+    public string? Bridge { get; set; }
+    public int? Vlan { get; set; }
+    public string? Ipv4 { get; set; }
+    public string? Ipv6 { get; set; }
+    public int? Mtu { get; set; }
+}
+
+public sealed class FeaturesSpec
+{
+    public bool? Nesting { get; set; }
+    public bool? Fuse { get; set; }
 }
 
 public sealed class SourceSpec
