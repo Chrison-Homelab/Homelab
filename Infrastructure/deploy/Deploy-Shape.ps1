@@ -53,7 +53,9 @@ param(
 
     [string]$SshUser = 'root',
 
-    [string]$BaseUrl = 'https://github.com/community-scripts/ProxmoxVE/raw/main'
+    # Optional hard override of the script base URL. When omitted, the URL is
+    # derived from spec.source (channel/repo/ref) — see resolution below.
+    [string]$BaseUrl
 )
 
 $ErrorActionPreference = 'Stop'
@@ -66,6 +68,20 @@ Import-Module powershell-yaml
 
 if (-not (Test-Path $ShapePath)) { throw "Shape not found: $ShapePath" }
 
+# Recursively merge $override over $base (member wins). Nested dictionaries are
+# merged key-by-key; scalars/arrays from $override replace $base wholesale.
+function Merge-Defaults($base, $override) {
+    if ($null -eq $base)     { return $override }
+    if ($null -eq $override) { return $base }
+    if (($base -isnot [System.Collections.IDictionary]) -or ($override -isnot [System.Collections.IDictionary])) {
+        return $override
+    }
+    $merged = [ordered]@{}
+    foreach ($k in $base.Keys)     { $merged[$k] = $base[$k] }
+    foreach ($k in $override.Keys) { $merged[$k] = Merge-Defaults $base[$k] $override[$k] }
+    return $merged
+}
+
 # --- parse + validate -----------------------------------------------------
 $shape = (Get-Content -Raw -Path $ShapePath) | ConvertFrom-Yaml
 
@@ -75,8 +91,42 @@ if ($shape.kind -ne 'LXC') { throw "Deploy-Shape only handles kind: LXC (got '$(
 $spec = $shape.spec
 $meta = $shape.metadata
 if (-not $meta.name) { throw 'metadata.name is required.' }
+
+# --- inherit stack defaults ------------------------------------------------
+# If the member belongs to a stack, merge that stack's spec.defaults underneath
+# (member wins). The stack file is the sibling stack.yaml in the same folder.
+$stack = $null
+if ($meta.stack) {
+    $stackPath = Join-Path (Split-Path -Parent (Resolve-Path $ShapePath)) 'stack.yaml'
+    if (Test-Path $stackPath) {
+        $stack = (Get-Content -Raw -Path $stackPath) | ConvertFrom-Yaml
+        if ($stack.kind -ne 'Stack') { throw "$stackPath is not kind: Stack." }
+        if ($stack.metadata.name -ne $meta.stack) {
+            throw "Member declares stack '$($meta.stack)' but $stackPath is stack '$($stack.metadata.name)'."
+        }
+        $spec = Merge-Defaults $stack.spec.defaults $spec
+        Write-Host "Inherited defaults from stack '$($meta.stack)' ($stackPath)." -ForegroundColor DarkGray
+    } else {
+        Write-Warning "Member references stack '$($meta.stack)' but no stack.yaml found at $stackPath — proceeding without inherited defaults."
+    }
+}
+
+# --- required fields (post-merge) ------------------------------------------
 foreach ($req in 'app', 'node', 'ctid') {
-    if (-not $spec.$req) { throw "spec.$req is required for an LXC deploy." }
+    if (-not $spec.$req) { throw "spec.$req is required for an LXC deploy (not set on the member or inherited from the stack)." }
+}
+
+# --- ctid policy: explicit only on this path -------------------------------
+if ("$($spec.ctid)" -eq 'auto') {
+    throw "spec.ctid is 'auto'. The community-scripts create path requires an explicit CTID; auto-allocation is an engine (ProxmoxSharp / BL-010) concern. Set a concrete ctid."
+}
+if ($spec.ctid -notmatch '^\d+$') { throw "spec.ctid must be an integer (got '$($spec.ctid)')." }
+# guard rail: explicit ctid must sit inside the owning stack's reserved range
+if ($stack -and $stack.spec.ctidRange) {
+    $r = $stack.spec.ctidRange
+    if ([int]$spec.ctid -lt [int]$r.start -or [int]$spec.ctid -gt [int]$r.end) {
+        throw "CTID $($spec.ctid) is outside stack '$($meta.stack)' range $($r.start)-$($r.end)."
+    }
 }
 
 $targetNode = if ($Node) { $Node } else { $spec.node }
@@ -99,12 +149,25 @@ if ($spec.osVersion)          { $vars['var_version'] = $spec.osVersion }
 if ($spec.storage)            { $vars['var_container_storage'] = $spec.storage }
 if ($spec.templateStorage)    { $vars['var_template_storage'] = $spec.templateStorage }
 if ($spec.network) {
+    if ($spec.network.bridge)  { $vars['var_brg'] = $spec.network.bridge }
     if ($spec.network.vlan)    { $vars['var_vlan'] = $spec.network.vlan }
     if ($spec.network.ipv4)    { $vars['var_net'] = $spec.network.ipv4 }
     if ($spec.network.gateway) { $vars['var_gateway'] = $spec.network.gateway }
     if ($spec.network.ipv6)    { $vars['var_ipv6_method'] = $spec.network.ipv6 }
+    if ($spec.network.mtu)     { $vars['var_mtu'] = $spec.network.mtu }
 }
-if ($meta.tags) { $vars['var_tags'] = ($meta.tags -join ';') }
+if ($spec.nameserver)   { $vars['var_ns'] = $spec.nameserver }
+if ($spec.searchdomain) { $vars['var_searchdomain'] = $spec.searchdomain }
+if ($spec.features) {
+    if ($null -ne $spec.features.nesting) { $vars['var_nesting'] = [int][bool]$spec.features.nesting }
+    if ($null -ne $spec.features.fuse)    { $vars['var_fuse']    = [int][bool]$spec.features.fuse }
+}
+# Tags: stack-default tags (spec.tags, from the merge) + member metadata.tags, deduped.
+$allTags = @()
+if ($spec.tags) { $allTags += $spec.tags }
+if ($meta.tags) { $allTags += $meta.tags }
+$allTags = $allTags | Select-Object -Unique
+if ($allTags) { $vars['var_tags'] = ($allTags -join ';') }
 
 # Render assignments. Quote any value containing shell-significant chars.
 $assignments = foreach ($k in $vars.Keys) {
@@ -112,7 +175,27 @@ $assignments = foreach ($k in $vars.Keys) {
     if ($v -match "[;\s]") { "$k='$v'" } else { "$k=$v" }
 }
 $varString  = $assignments -join ' '
-$scriptUrl  = "$BaseUrl/ct/$($spec.app).sh"
+
+# --- resolve script source (channel/repo/ref) ------------------------------
+# Precedence: -BaseUrl override > spec.source.repo > spec.source.channel > stable.
+if ($BaseUrl) {
+    $scriptUrl = "$BaseUrl/ct/$($spec.app).sh"
+} else {
+    $src     = $spec.source
+    $channel = if ($src -and $src.channel) { $src.channel } else { 'stable' }
+    $repo    = if ($src -and $src.repo) {
+        $src.repo
+    } else {
+        switch ($channel) {
+            'stable' { 'community-scripts/ProxmoxVE' }
+            'dev'    { 'community-scripts/ProxmoxVED' }
+            default  { throw "Unknown source.channel '$channel' (expected 'stable' or 'dev')." }
+        }
+    }
+    $ref       = if ($src -and $src.ref) { $src.ref } else { 'main' }
+    $scriptUrl = "https://raw.githubusercontent.com/$repo/$ref/ct/$($spec.app).sh"
+    Write-Host "Source  : $repo@$ref  (channel '$channel')" -ForegroundColor DarkGray
+}
 # TERM=xterm: the community-scripts call `clear`, which fails ("TERM not set")
 # over an SSH session with no TTY. Setting it keeps the run fully non-interactive.
 $remoteCmd  = "TERM=xterm mode=generated $varString bash -c `"`$(curl -fsSL $scriptUrl)`""
