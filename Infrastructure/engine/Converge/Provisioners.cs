@@ -40,6 +40,12 @@ public sealed class ProvisionerRegistry
     public IAppProvisioner For(string? app) =>
         app is not null && _byApp.TryGetValue(app, out var p) ? p : _default;
 
+    // The app slugs with a dedicated (non-default) provisioner. Exposed read-only
+    // so the catalogue drift-guard test can assert each one exists in
+    // app-catalogue.yaml without reaching into private state. Does not affect
+    // dispatch — additive accessor only.
+    public IReadOnlyCollection<string> RegisteredApps => _byApp.Keys;
+
     public static ProvisionerRegistry Default() => new(new IAppProvisioner[]
     {
         new ForgejoProvisioner(),
