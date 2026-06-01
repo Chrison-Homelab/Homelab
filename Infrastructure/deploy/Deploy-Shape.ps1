@@ -34,6 +34,11 @@
 .PARAMETER BaseUrl
     community-scripts raw base URL. Default: the upstream main branch.
 
+.PARAMETER Strict
+    Turn the unknown-app-slug warning into a terminating error. By default an
+    app slug not in schema/app-catalogue.yaml only warns (ad-hoc slugs still
+    deploy — the allowlist is guidance, not a hard gate).
+
 .EXAMPLE
     ./Deploy-Shape.ps1 -ShapePath ../examples/servarr.lxc.yaml
     # dry-run: prints the rendered command
@@ -55,7 +60,9 @@ param(
 
     # Optional hard override of the script base URL. When omitted, the URL is
     # derived from spec.source (channel/repo/ref) — see resolution below.
-    [string]$BaseUrl
+    [string]$BaseUrl,
+
+    [switch]$Strict
 )
 
 $ErrorActionPreference = 'Stop'
@@ -114,6 +121,33 @@ if ($meta.stack) {
 # --- required fields (post-merge) ------------------------------------------
 foreach ($req in 'app', 'node', 'ctid') {
     if (-not $spec.$req) { throw "spec.$req is required for an LXC deploy (not set on the member or inherited from the stack)." }
+}
+
+# --- app-catalogue soft validation -----------------------------------------
+# Cross-check spec.app against the curated allowlist in schema/app-catalogue.yaml
+# (the same source-of-truth the C# engine's provisioner drift guard uses). An
+# unknown slug is a WARNING by default — community-scripts ships hundreds of
+# ct/<app>.sh scripts, so ad-hoc slugs must still deploy (escape hatch). With
+# -Strict the warning becomes terminating. Catalogue parse failures never block
+# a deploy: we warn and continue.
+$cataloguePath = Join-Path (Split-Path -Parent $PSScriptRoot) 'schema/app-catalogue.yaml'
+$knownApps = $null
+try {
+    if (Test-Path $cataloguePath) {
+        $catalogue = (Get-Content -Raw -Path $cataloguePath) | ConvertFrom-Yaml
+        if ($catalogue.apps) { $knownApps = @($catalogue.apps.Keys) }
+        else { Write-Warning "app-catalogue.yaml has no 'apps' map ($cataloguePath) — skipping app validation." }
+    } else {
+        Write-Warning "app-catalogue.yaml not found at $cataloguePath — skipping app validation."
+    }
+} catch {
+    Write-Warning "Could not parse app-catalogue.yaml ($cataloguePath): $($_.Exception.Message) — skipping app validation."
+}
+if ($knownApps -and ($knownApps -notcontains $spec.app)) {
+    $msg = "spec.app '$($spec.app)' is not in the app catalogue. Known slugs: $($knownApps -join ', '). " +
+           "If this is a valid community-scripts ct/$($spec.app).sh, add it to schema/app-catalogue.yaml."
+    if ($Strict) { throw "$msg (failing because -Strict was set)." }
+    else { Write-Warning $msg }
 }
 
 # --- ctid policy: explicit only on this path -------------------------------

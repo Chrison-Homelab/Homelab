@@ -1,0 +1,58 @@
+# app-catalogue.yaml — the hand-curated allowlist of known community-scripts apps.
+#
+# This is the language-neutral source-of-truth that maps each KNOWN `spec.app`
+# slug to its community-scripts metadata. It is consumed by BOTH sides of the
+# BL-013 create path:
+#
+#   * the PowerShell renderer (Deploy-Shape.ps1) — SOFT validation: an unknown
+#     slug warns (and only errors under -Strict). Ad-hoc slugs still deploy:
+#     this is an allowlist for guidance, not a hard gate — the escape hatch is
+#     deliberate (community-scripts ships hundreds of ct/<app>.sh scripts).
+#
+#   * the C# converge engine (Infrastructure/engine) — provisioner dispatch +
+#     drift guard. A test (AppCatalogueTests) asserts every app slug hardcoded
+#     in ProvisionerRegistry.Default() appears here, keeping the two in sync.
+#
+# Field reference (per entry):
+#   key            the `spec.app` value authored in a shape.
+#   script         the community-scripts ct/<script>.sh slug (usually == key).
+#   channel        optional default source channel: 'stable' (ProxmoxVE) or
+#                  'dev' (ProxmoxVED). Omit to let the shape/renderer default
+#                  to 'stable'. A shape's own spec.source still overrides this.
+#   repo           optional explicit repo override (e.g. a fork). Omit to derive
+#                  from channel (stable→community-scripts/ProxmoxVE,
+#                  dev→community-scripts/ProxmoxVED).
+#   ref            optional git ref. Omit to default to 'main'.
+#   provisioner    optional post-create provisioner name (matches IAppProvisioner
+#                  .App in the engine). Omit/null = no post-create config; the
+#                  engine's DefaultProvisioner handles it (create only).
+#
+# Keep entries minimal and accurate — only add a slug once it is actually used
+# by a committed shape or known to the engine. Do not invent slugs.
+
+apps:
+  # Generic Docker host — used by the ServArr example shape (ct/docker.sh).
+  # No post-create provisioner: community-scripts installs Docker, the stack's
+  # compose is layered on separately.
+  docker:
+    script: docker
+
+  # Forgejo (Git forge) — has a post-create provisioner that sets ROOT_URL.
+  forgejo:
+    script: forgejo
+    provisioner: forgejo
+
+  # Forgejo Actions runner — registers against a forgejo dependency post-create.
+  forgejo-runner:
+    script: forgejo-runner
+    provisioner: forgejo-runner
+
+  # GitHub Actions self-hosted runner — registers to a GitHub org post-create.
+  github-runner:
+    script: github-runner
+    provisioner: github-runner
+
+  # Cloudflare Tunnel connector — ensures tunnel + DNS (ADD-ONLY) post-create.
+  cloudflared:
+    script: cloudflared
+    provisioner: cloudflared
