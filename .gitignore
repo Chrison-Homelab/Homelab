@@ -15,3 +15,8 @@ artifacts/
 # Local secrets (PVE tokens etc.)
 *.env
 !.mcp.env.example
+
+# Ruflo / claude-flow runtime state (config under .claude-flow/ is tracked;
+# .claude-flow/.gitignore already excludes its data/logs/sessions/neural)
+ruvector.db
+.swarm/
