@@ -5,7 +5,7 @@ namespace Homelab.Infrastructure.Converge;
 
 // Context handed to provisioners at apply time.
 public sealed record ConvergeContext(
-    NodeExec Exec,
+    INodeExec Exec,
     SecretsEnv Secrets,
     IReadOnlyDictionary<string, Shape> ByName,
     SecretDeriver Deriver);
