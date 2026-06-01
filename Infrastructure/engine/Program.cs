@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ProxmoxSharp;
+using UnifiSharp;
 using Homelab.Infrastructure.Converge;
 using Homelab.Infrastructure.Shapes;
 
@@ -8,6 +9,7 @@ using Homelab.Infrastructure.Shapes;
 //
 // Usage:
 //   homelab-infra discover               # dump a structured ClusterSnapshot as JSON
+//   homelab-infra discover-unifi         # dump a UniFi network snapshot as JSON
 //   homelab-infra converge <stack-dir>   # plan post-create converge for a stack (dry run)
 //   homelab-infra validate <path>        # validate a shape file / stack dir / nodes dir
 //                                         #   against shape.schema.json (CI plan gate)
@@ -24,12 +26,14 @@ switch (command)
 {
     case "discover":
         return await DiscoverAsync();
+    case "discover-unifi":
+        return await DiscoverUnifiAsync();
     case "converge":
         return await RunConverge(args);
     case "validate":
         return RunValidate(args);
     default:
-        Console.Error.WriteLine($"Unknown command '{command}'. Supported: discover, converge, validate");
+        Console.Error.WriteLine($"Unknown command '{command}'. Supported: discover, discover-unifi, converge, validate");
         return 1;
 }
 
@@ -129,6 +133,28 @@ static async Task<int> DiscoverAsync()
 
     var client = ProxmoxApi.Create(options);
     var snapshot = await new ProxmoxDiscovery(client).DiscoverAsync();
+
+    Console.WriteLine(JsonSerializer.Serialize(snapshot, new JsonSerializerOptions
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    }));
+    return 0;
+}
+
+static async Task<int> DiscoverUnifiAsync()
+{
+    var options = UnifiClientOptions.TryFromEnvironment();
+    if (options is null)
+    {
+        Console.Error.WriteLine(
+            "Missing UniFi config. Set UNIFI_BASE_URL and UNIFI_API_KEY " +
+            "(and optionally UNIFI_VERIFY_TLS=false for self-signed consoles).");
+        return 2;
+    }
+
+    var client = UnifiApi.Create(options);
+    var snapshot = await new UnifiDiscovery(client).DiscoverAsync();
 
     Console.WriteLine(JsonSerializer.Serialize(snapshot, new JsonSerializerOptions
     {
