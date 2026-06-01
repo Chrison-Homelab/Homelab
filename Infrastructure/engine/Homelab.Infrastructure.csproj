@@ -16,6 +16,16 @@
     <PackageReference Include="ProxmoxSharp" Version="0.1.0-preview.*" />
     <!-- YAML parsing for homelab/v1 shapes (BL-010 converge). -->
     <PackageReference Include="YamlDotNet" Version="16.*" />
+    <!-- JSON Schema (draft-2020-12) validation of homelab/v1 shapes against
+         the canonical Infrastructure/schema/shape.schema.json (#43). -->
+    <PackageReference Include="JsonSchema.Net" Version="9.2.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The canonical shape contract. Copied next to the engine so the validator
+         can resolve it at runtime regardless of the working directory. -->
+    <None Include="..\schema\shape.schema.json" Link="schema\shape.schema.json"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
