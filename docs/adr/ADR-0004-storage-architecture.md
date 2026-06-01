@@ -1,6 +1,6 @@
 # ADR-0004 — Storage architecture: Synology as block-SAN, mergerfs gateway as the NAS
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-06-01
 - **Deciders:** Chris
 - **Relates to:** [ADR-0001](ADR-0001-iac-tooling.md), [BL-016 NFS hardening](../plans/BL-016-nfs-hardening.md),
