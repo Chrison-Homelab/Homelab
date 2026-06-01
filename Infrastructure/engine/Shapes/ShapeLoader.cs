@@ -28,6 +28,12 @@ public sealed class ShapeLoader
         var members = new List<Shape>();
         foreach (var file in Directory.EnumerateFiles(stackDir, "*.lxc.yaml").OrderBy(f => f))
         {
+            // Schema validation on the load path is advisory (WARNING) so a shape
+            // that doesn't satisfy the canonical contract can't silently change
+            // converge/discover behaviour — the strict gate is the `validate`
+            // command (#43). Never fatal here.
+            WarnIfInvalid(file);
+
             var shape = Yaml.Deserialize<Shape>(File.ReadAllText(file));
             if (!string.Equals(shape.Kind, "LXC", StringComparison.Ordinal)) continue;
             if (stack?.Spec.Defaults is { } d) Merge(d, shape.Spec);
@@ -36,22 +42,61 @@ public sealed class ShapeLoader
         return new LoadedStack(stack, members);
     }
 
+    private static void WarnIfInvalid(string file)
+    {
+        try
+        {
+            var result = ShapeValidator.ValidateFile(file);
+            if (result.Valid) return;
+            Console.Error.WriteLine($"warning: shape '{file}' does not satisfy shape.schema.json:");
+            foreach (var f in result.Failures)
+                Console.Error.WriteLine(f.ToString());
+        }
+        catch (Exception ex)
+        {
+            // Validation itself must never break the load path.
+            Console.Error.WriteLine($"warning: could not validate '{file}': {ex.Message}");
+        }
+    }
+
     // Fill member spec from stack defaults where the member left it unset.
     private static void Merge(LxcSpec defaults, LxcSpec member)
     {
         member.Node ??= defaults.Node;
+        member.Hostname ??= defaults.Hostname;
+        member.Arch ??= defaults.Arch;
         member.Cores ??= defaults.Cores;
+        member.Cpulimit ??= defaults.Cpulimit;
+        member.Cpuunits ??= defaults.Cpuunits;
         member.Memory ??= defaults.Memory;
+        member.Swap ??= defaults.Swap;
         member.Disk ??= defaults.Disk;
         member.Os ??= defaults.Os;
         member.OsVersion ??= defaults.OsVersion;
         member.Unprivileged ??= defaults.Unprivileged;
+        member.Protection ??= defaults.Protection;
+        member.Onboot ??= defaults.Onboot;
+        member.Startup ??= defaults.Startup;
         member.Storage ??= defaults.Storage;
         member.TemplateStorage ??= defaults.TemplateStorage;
+        member.RootfsOptions ??= defaults.RootfsOptions;
         member.Nameserver ??= defaults.Nameserver;
         member.Searchdomain ??= defaults.Searchdomain;
         member.Network ??= defaults.Network;
         member.Features ??= defaults.Features;
+        member.Timezone ??= defaults.Timezone;
+        member.Console ??= defaults.Console;
+        member.Pool ??= defaults.Pool;
+        member.Hookscript ??= defaults.Hookscript;
+        member.SshAuthorizedKey ??= defaults.SshAuthorizedKey;
+        if (member.Networks.Count == 0 && defaults.Networks.Count > 0)
+            member.Networks = defaults.Networks;
+        if (member.Mounts.Count == 0 && defaults.Mounts.Count > 0)
+            member.Mounts = defaults.Mounts;
+        if (member.Devices.Count == 0 && defaults.Devices.Count > 0)
+            member.Devices = defaults.Devices;
+        if (member.LxcRaw.Count == 0 && defaults.LxcRaw.Count > 0)
+            member.LxcRaw = defaults.LxcRaw;
         if (defaults.Tags.Count > 0)
             member.Tags = defaults.Tags.Concat(member.Tags).Distinct().ToList();
 

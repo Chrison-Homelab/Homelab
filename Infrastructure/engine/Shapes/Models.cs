@@ -17,6 +17,7 @@ public sealed class ShapeMetadata
     public string Name { get; set; } = "";
     public string? Stack { get; set; }
     public List<string> Tags { get; set; } = new();
+    public string? Description { get; set; }
 }
 
 public sealed class LxcSpec
@@ -25,20 +26,40 @@ public sealed class LxcSpec
     public string? App { get; set; }
     public SourceSpec? Source { get; set; }
     public string? Ctid { get; set; }            // int or the literal "auto"
+
+    public string? Hostname { get; set; }
+    public string? Arch { get; set; }
+
     public int? Cores { get; set; }
+    public double? Cpulimit { get; set; }
+    public int? Cpuunits { get; set; }
     public int? Memory { get; set; }
+    public int? Swap { get; set; }
     public int? Disk { get; set; }
 
     // Create-relevant (community-scripts var_*) — mostly inherited from the stack:
     public string? Os { get; set; }
     public string? OsVersion { get; set; }
     public bool? Unprivileged { get; set; }
+    public bool? Protection { get; set; }
+    public bool? Onboot { get; set; }
+    public StartupSpec? Startup { get; set; }
     public string? Storage { get; set; }
     public string? TemplateStorage { get; set; }
+    public RootfsOptionsSpec? RootfsOptions { get; set; }
     public string? Nameserver { get; set; }
     public string? Searchdomain { get; set; }
     public NetworkSpec? Network { get; set; }
+    public List<NetworkInterfaceSpec> Networks { get; set; } = new();
     public FeaturesSpec? Features { get; set; }
+    public List<MountSpec> Mounts { get; set; } = new();
+    public List<DeviceSpec> Devices { get; set; } = new();
+    public string? Timezone { get; set; }
+    public ConsoleSpec? Console { get; set; }
+    public string? Pool { get; set; }
+    public string? Hookscript { get; set; }
+    public List<LxcRawEntry> LxcRaw { get; set; } = new();
+    public string? SshAuthorizedKey { get; set; }
     public List<string> Tags { get; set; } = new();
 
     // Post-create contract (converge-only):
@@ -47,19 +68,105 @@ public sealed class LxcSpec
     public List<Secret> Secrets { get; set; } = new();
 }
 
+// Primary NIC sugar (spec.network) — the community-scripts create path.
 public sealed class NetworkSpec
 {
     public string? Bridge { get; set; }
     public int? Vlan { get; set; }
     public string? Ipv4 { get; set; }
+    public string? Gateway { get; set; }
     public string? Ipv6 { get; set; }
     public int? Mtu { get; set; }
+    public string? Hwaddr { get; set; }
+    public bool? Firewall { get; set; }
+}
+
+// A single full Proxmox netX interface (spec.networks[]) — converge-only.
+public sealed class NetworkInterfaceSpec
+{
+    public string? Name { get; set; }
+    public string? Bridge { get; set; }
+    public int? Tag { get; set; }
+    public string? Trunks { get; set; }
+    public bool? Firewall { get; set; }
+    public string? Ip { get; set; }
+    public string? Gw { get; set; }
+    public string? Ip6 { get; set; }
+    public string? Gw6 { get; set; }
+    public string? Hwaddr { get; set; }
+    public int? Mtu { get; set; }
+    public double? Rate { get; set; }
+    public bool? LinkDown { get; set; }
 }
 
 public sealed class FeaturesSpec
 {
     public bool? Nesting { get; set; }
+    public bool? Keyctl { get; set; }
     public bool? Fuse { get; set; }
+    public bool? Mknod { get; set; }
+    public List<string> Mount { get; set; } = new();
+    public bool? ForceRwSys { get; set; }
+}
+
+// A storage mount (Proxmox mpX). Modeled for #52/BL-016; NOT applied here.
+public sealed class MountSpec
+{
+    public string Type { get; set; } = "";   // nfs | bind | volume | device
+    public string? Storage { get; set; }
+    public string? Source { get; set; }
+    public string? Target { get; set; }
+    public string? Size { get; set; }
+    public bool? Ro { get; set; }
+    public bool? Backup { get; set; }
+    public bool? Acl { get; set; }
+    public bool? Shared { get; set; }
+    public bool? Replicate { get; set; }
+    public bool? Quota { get; set; }
+    public string? Mountoptions { get; set; }
+}
+
+// Host device passthrough (Proxmox devX) — converge.
+public sealed class DeviceSpec
+{
+    public string Path { get; set; } = "";
+    public int? Uid { get; set; }
+    public int? Gid { get; set; }
+    public string? Mode { get; set; }
+    public bool? DenyWrite { get; set; }
+}
+
+// Boot order/delays (Proxmox startup=order=,up=,down=).
+public sealed class StartupSpec
+{
+    public int? Order { get; set; }
+    public int? Up { get; set; }
+    public int? Down { get; set; }
+}
+
+// Extra root-volume options (rootfs).
+public sealed class RootfsOptionsSpec
+{
+    public bool? Ro { get; set; }
+    public bool? Acl { get; set; }
+    public bool? Quota { get; set; }
+    public bool? Replicate { get; set; }
+    public string? Mountoptions { get; set; }
+}
+
+// Console attachment (Proxmox console/cmode/tty).
+public sealed class ConsoleSpec
+{
+    public bool? Enabled { get; set; }
+    public string? Mode { get; set; }
+    public int? Tty { get; set; }
+}
+
+// Escape hatch: raw lxc.* config lines emitted verbatim.
+public sealed class LxcRawEntry
+{
+    public string Key { get; set; } = "";
+    public string Value { get; set; } = "";
 }
 
 public sealed class SourceSpec
