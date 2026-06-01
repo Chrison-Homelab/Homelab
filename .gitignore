@@ -20,3 +20,5 @@ artifacts/
 # .claude-flow/.gitignore already excludes its data/logs/sessions/neural)
 ruvector.db
 .swarm/
+agentdb.rvf
+agentdb.rvf.lock
