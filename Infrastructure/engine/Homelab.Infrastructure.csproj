@@ -14,6 +14,8 @@
          Float to the latest prerelease (published on every push to main);
          pin to a stable version when one is tagged. -->
     <PackageReference Include="ProxmoxSharp" Version="0.1.0-preview.*" />
+    <!-- UniFi discover surface (sites/networks/firewall/devices/clients). -->
+    <PackageReference Include="UnifiSharp" Version="0.1.0-preview.*" />
     <!-- YAML parsing for homelab/v1 shapes (BL-010 converge). -->
     <PackageReference Include="YamlDotNet" Version="16.*" />
     <!-- JSON Schema (draft-2020-12) validation of homelab/v1 shapes against
