@@ -2,7 +2,9 @@
 
 **Issue:** [#52](https://github.com/Chrison-dev/Homelab/issues/52) (Project #7 "Homelab Backlog") ·
 **Relates to:** [BL-010 Converge](iac-csharp-native.md), [BL-013 community-scripts deploy](BL-013-community-scripts-deploy.md), `CLAUDE.md` (NFS-at-host convention)
-**Status:** Planned — 2026-05-31. Pattern decided; no cluster changes (CT 5007 recut is an opt-in later step).
+**Status:** In progress — first application landed. Pattern decided 2026-05-31;
+**Forgejo (CT 3000) migrated + verified live 2026-06-01** (see "Applied: Forgejo" below).
+The qBittorrent CT 5007 recut remains an opt-in later step.
 
 ## Problem
 
@@ -81,6 +83,32 @@ rendered as a storage-backed `mpN`** — never an in-guest mount. Schema updated
   the path-bind fallback for shared exports.
 - The community-scripts create path (BL-013) still **warns-and-skips** mounts; the
   storage-backed `mpN` is applied by ProxmoxSharp converge (BL-010) or by hand.
+
+## Applied: Forgejo (CT 3000) — 2026-06-01
+
+First real application of the pattern, chosen as a low-stakes pilot. Forgejo stores
+repos, LFS, attachments **and** a SQLite DB intermingled under `/var/lib/forgejo/data`,
+so the move had to be **selective** — repos+LFS to the NAS, DB stays local.
+
+What landed (captured as code in `stacks/DevOps/forgejo.lxc.yaml` → `spec.mounts`):
+1. **vzdump** snapshot of CT 3000 → `ds1813-nfs-volume-3` (rollback point).
+2. **Gated volume:** `pct set 3000 -mp0 ds1813-nfs-volume-3:50,mp=/mnt/forgejo-data,backup=0`
+   → a 50G ext4 raw image on the NFS storage, loop-mounted at `/mnt/forgejo-data`.
+3. Stop forgejo → copy `forgejo-repositories` + `lfs` to the volume → `chown git:git`
+   → repoint `app.ini` `[repository] ROOT` and `[lfs] PATH` → park originals as `*.old`
+   → start.
+4. **Verified:** a new repo (`csimon/nfs-test.git`) materialised on the NAS volume;
+   rootfs stayed flat; `[database] PATH` (SQLite `forgejo.db`) untouched on local rootfs.
+
+**Lessons (fold into the converge mount-apply, #101):**
+- **The Forgejo CT has no `rsync`** (minimal Debian image) — use `cp -a` (preserves
+  owner/perms) or install rsync first. Don't assume rsync in community-scripts CTs.
+- **`chown -R` on the mount root fails on ext4 `lost+found`** (root-owned, unreadable by
+  the unprivileged CT's mapped root). `cp -a` already preserves ownership; chown only the
+  **data subdirs**, never the mountpoint root.
+- The mp is a **raw image loop-mounted** (file-based NFS storage), not a subvol — fine,
+  and still storage-gated.
+- Keep originals as `*.old` until verified, then reclaim rootfs.
 
 ## qBittorrent CT 5007 recut — runbook (opt-in, NOT executed)
 
