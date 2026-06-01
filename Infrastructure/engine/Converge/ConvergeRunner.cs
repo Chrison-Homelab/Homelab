@@ -9,14 +9,21 @@ public sealed class ConvergeRunner
 {
     private readonly string _stackDir;
     private readonly SecretsEnv _env;
+    private readonly IClusterStateProvider? _stateProvider;
 
-    public ConvergeRunner(string stackDir, SecretsEnv env)
+    public ConvergeRunner(string stackDir, SecretsEnv env, IClusterStateProvider? stateProvider = null)
     {
         _stackDir = stackDir;
         _env = env;
+        _stateProvider = stateProvider;
     }
 
-    public int Plan()
+    // State-diff PLAN (issue #45). For each desired shape, report the per-member
+    // state vs live cluster: create (CT absent), up-to-date (exists, matches),
+    // or drift (exists, listing the differing fields). Live state is best-effort:
+    // if discovery can't connect, degrade to the intent-only plan with a warning.
+    // Always READ-ONLY.
+    public async Task<int> PlanAsync(CancellationToken ct = default)
     {
         var loaded = ShapeLoader.LoadStack(_stackDir);
         var ordered = TopologicalSorter.Order(loaded.Members);
@@ -26,7 +33,18 @@ public sealed class ConvergeRunner
         var stackName = loaded.Stack?.Metadata.Name ?? Path.GetFileName(_stackDir);
         Console.WriteLine($"Converge plan — stack '{stackName}'  ({ordered.Count} member(s), dependency order)\n");
 
+        // Best-effort live cluster state. Null → degrade to intent-only.
+        ClusterState? state = _stateProvider is null ? null : await _stateProvider.TryGetAsync(ct);
+        if (_stateProvider is null)
+            Console.WriteLine("(intent-only plan — no live cluster state provider configured)\n");
+        else if (state is null)
+            Console.WriteLine("⚠ live cluster state unavailable (no PVE creds / unreachable / discovery error)\n" +
+                              "  → falling back to intent-only plan; per-shape state (create/drift) NOT computed.\n");
+        else
+            Console.WriteLine($"(diffing against live cluster state — {state.Count} container(s) discovered)\n");
+
         var blocked = 0;
+        int toCreate = 0, drifted = 0, upToDate = 0;
         foreach (var s in ordered)
         {
             var sp = s.Spec;
@@ -37,6 +55,32 @@ public sealed class ConvergeRunner
 
             if (sp.Config.Count > 0)
                 Console.WriteLine($"    config:    {string.Join(", ", sp.Config.Keys)}");
+
+            // State line — only when we have live state.
+            if (state is not null)
+            {
+                var diff = StateDiffer.Diff(s, state);
+                switch (diff.Status)
+                {
+                    case ShapeDiffStatus.Create:
+                        toCreate++;
+                        Console.WriteLine("    state:     CREATE (CT absent on cluster)");
+                        break;
+                    case ShapeDiffStatus.UpToDate:
+                        upToDate++;
+                        Console.WriteLine("    state:     UP-TO-DATE (CT exists, comparable config matches)");
+                        break;
+                    case ShapeDiffStatus.Drift:
+                        drifted++;
+                        Console.WriteLine($"    state:     DRIFT (CT exists; {diff.Fields.Count} field(s) differ)");
+                        foreach (var f in diff.Fields)
+                            Console.WriteLine($"      drift:   {f.Field}: desired {f.Desired} ≠ live {f.Live}");
+                        break;
+                    default:
+                        Console.WriteLine("    state:     UNKNOWN (ctid not numeric — cannot correlate to live state)");
+                        break;
+                }
+            }
 
             var secrets = resolver.Plan(sp);
             foreach (var r in secrets)
@@ -51,6 +95,9 @@ public sealed class ConvergeRunner
 
             Console.WriteLine();
         }
+
+        if (state is not null)
+            Console.WriteLine($"State summary — {toCreate} to create, {drifted} drifted, {upToDate} up-to-date.");
 
         Console.WriteLine(blocked == 0
             ? "Plan OK — all declared secrets resolvable. (Run with --apply to converge.)"

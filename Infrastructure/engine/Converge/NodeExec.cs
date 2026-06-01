@@ -7,9 +7,18 @@ public sealed record ExecResult(int ExitCode, string Stdout, string Stderr)
     public bool Ok => ExitCode == 0;
 }
 
+// Command execution seam (issue #45). Lets provisioner idempotency be unit-tested
+// with a fake exec — no live cluster / SSH needed. Additive: NodeExec is the
+// real implementation; ConvergeContext.Exec is typed as this interface.
+public interface INodeExec
+{
+    Task<ExecResult> OnNodeAsync(string node, string command, CancellationToken ct = default);
+    Task<ExecResult> InContainerAsync(string node, string ctid, string command, CancellationToken ct = default);
+}
+
 // Runs commands on a Proxmox node over SSH (root@<node>, like the BL-013
 // renderer), and inside a CT via `pct exec`. Used by provisioners at apply time.
-public sealed class NodeExec
+public sealed class NodeExec : INodeExec
 {
     private readonly string _sshUser;
     public NodeExec(string sshUser = "root") => _sshUser = sshUser;

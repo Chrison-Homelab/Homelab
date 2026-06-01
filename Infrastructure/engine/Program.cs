@@ -94,8 +94,13 @@ static async Task<int> RunConverge(string[] args)
 
     var secretsPath = FindUp("secrets.env", Directory.GetCurrentDirectory());
     var env = SecretsEnv.Load(secretsPath);
-    var runner = new ConvergeRunner(stackDir, env);
-    return apply ? await runner.ApplyAsync() : runner.Plan();
+    if (apply)
+        return await new ConvergeRunner(stackDir, env).ApplyAsync();
+
+    // Plan diffs against live cluster state (best-effort; degrades to intent-only
+    // if PVE creds are missing or the cluster is unreachable).
+    var stateProvider = new ProxmoxClusterStateProvider(LoadOptions);
+    return await new ConvergeRunner(stackDir, env, stateProvider).PlanAsync();
 }
 
 // Walk up from start looking for a file; returns null if not found.
