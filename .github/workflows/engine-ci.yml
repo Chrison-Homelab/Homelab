@@ -15,9 +15,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       # The engine floats to ProxmoxSharp 0.1.0-preview.* (republished on every
-      # push to main). The self-hosted runner's NuGet caches otherwise pin the
-      # float to an already-downloaded older preview, so clear them first to
-      # guarantee the newest published version is fetched from the feed.
+      # push to main). The self-hosted runner reuses its workspace + NuGet cache,
+      # which otherwise pins the float to a stale older preview. Clear the caches
+      # AND wipe obj/bin so restore re-resolves the newest published version and
+      # the build can't compile against a stale extracted package.
       - run: dotnet nuget locals all --clear
+      - run: rm -rf Infrastructure/engine/obj Infrastructure/engine/bin Infrastructure/engine.Tests/obj Infrastructure/engine.Tests/bin
       - run: dotnet restore Infrastructure/engine/Homelab.Infrastructure.csproj --no-http-cache
+      - run: dotnet list Infrastructure/engine/Homelab.Infrastructure.csproj package   # diagnostic: resolved versions
       - run: dotnet build Infrastructure/engine/Homelab.Infrastructure.csproj -c Release --no-restore
