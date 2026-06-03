@@ -14,5 +14,8 @@ jobs:
       DOTNET_ROOT: /usr/local/dotnet                      # .NET SDK pre-installed on the runner
     steps:
       - uses: actions/checkout@v6
-      - run: dotnet restore Infrastructure/engine/Homelab.Infrastructure.csproj
+      # --no-http-cache so floating prerelease deps (e.g. ProxmoxSharp
+      # 0.1.0-preview.*, republished on every push to main) resolve to the
+      # newest version instead of a stale runner-cached feed index.
+      - run: dotnet restore Infrastructure/engine/Homelab.Infrastructure.csproj --no-http-cache
       - run: dotnet build Infrastructure/engine/Homelab.Infrastructure.csproj -c Release --no-restore
