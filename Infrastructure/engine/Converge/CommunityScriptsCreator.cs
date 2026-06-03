@@ -9,11 +9,32 @@ namespace Homelab.Infrastructure.Converge;
 // owns reads/discovery).
 public sealed class CommunityScriptsCreator
 {
-    private readonly NodeExec _exec;
-    public CommunityScriptsCreator(NodeExec exec) => _exec = exec;
+    private readonly INodeExec _exec;
+    public CommunityScriptsCreator(INodeExec exec) => _exec = exec;
 
     public async Task<bool> ExistsAsync(string node, string ctid, CancellationToken ct) =>
         (await _exec.OnNodeAsync(node, $"pct status {ctid}", ct)).Ok;
+
+    // Teardown half of the lifecycle (issue #101): stop (if running) then destroy
+    // a CT we manage. Idempotent: a CT that's already absent is a no-op. Scoped to
+    // a single CT by ctid — the ADD-ONLY guardrail (CLAUDE.md) means the caller
+    // only ever passes ctids declared in our stack, never arbitrary cluster CTs.
+    public async Task<ApplyResult> DestroyAsync(string node, string ctid, CancellationToken ct)
+    {
+        var status = await _exec.OnNodeAsync(node, $"pct status {ctid}", ct);
+        if (!status.Ok) return ApplyResult.NoChange($"CT {ctid} absent");
+
+        if (status.Stdout.Contains("running", StringComparison.OrdinalIgnoreCase))
+        {
+            var stop = await _exec.OnNodeAsync(node, $"pct stop {ctid}", ct);
+            if (!stop.Ok) return ApplyResult.Failed($"stop failed: {stop.Stderr}");
+        }
+
+        var res = await _exec.OnNodeAsync(node, $"pct destroy {ctid}", ct);
+        return res.Ok
+            ? ApplyResult.Applied($"destroyed CT {ctid}")
+            : ApplyResult.Failed($"destroy failed: {res.Stderr}");
+    }
 
     public async Task<ApplyResult> EnsureAsync(Shape s, IReadOnlyDictionary<string, string>? extraVars, CancellationToken ct)
     {
