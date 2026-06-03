@@ -10,7 +10,10 @@ using Homelab.Infrastructure.Shapes;
 // Usage:
 //   homelab-infra discover               # dump a structured ClusterSnapshot as JSON
 //   homelab-infra discover-unifi         # dump a UniFi network snapshot as JSON
-//   homelab-infra converge <stack-dir>   # plan post-create converge for a stack (dry run)
+//   homelab-infra converge <stack-dir>            # state-diff plan (dry run, read-only)
+//   homelab-infra converge <stack-dir> --apply    # create + reconcile config + provision
+//   homelab-infra converge <stack-dir> --destroy           # destroy plan (read-only)
+//   homelab-infra converge <stack-dir> --destroy --yes     # stop + destroy the stack's CTs
 //   homelab-infra validate <path>        # validate a shape file / stack dir / nodes dir
 //                                         #   against shape.schema.json (CI plan gate)
 //
@@ -90,14 +93,19 @@ static async Task<int> RunConverge(string[] args)
 {
     if (args.Length < 2)
     {
-        Console.Error.WriteLine("usage: homelab-infra converge <stack-dir> [--apply]");
+        Console.Error.WriteLine("usage: homelab-infra converge <stack-dir> [--apply | --destroy [--yes]]");
         return 2;
     }
     var stackDir = Path.GetFullPath(args[1]);
     var apply = args.Contains("--apply");
+    var destroy = args.Contains("--destroy");
+    var confirmed = args.Contains("--yes");
 
     var secretsPath = FindUp("secrets.env", Directory.GetCurrentDirectory());
     var env = SecretsEnv.Load(secretsPath);
+
+    if (destroy)
+        return await new ConvergeRunner(stackDir, env).DestroyAsync(confirmed);
     if (apply)
         return await new ConvergeRunner(stackDir, env).ApplyAsync();
 

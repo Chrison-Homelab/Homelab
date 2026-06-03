@@ -13,7 +13,7 @@
     <!-- Consume the published ProxmoxSharp package from GitHub Packages.
          Float to the latest prerelease (published on every push to main);
          pin to a stable version when one is tagged. -->
-    <PackageReference Include="ProxmoxSharp" Version="0.1.0-preview.*" />
+    <PackageReference Include="ProxmoxSharp" Version="0.2.0-preview.*" />
     <!-- UniFi discover surface (sites/networks/firewall/devices/clients). -->
     <PackageReference Include="UnifiSharp" Version="0.1.0-preview.*" />
     <!-- YAML parsing for homelab/v1 shapes (BL-010 converge). -->

@@ -10,12 +10,15 @@ public sealed class ConvergeRunner
     private readonly string _stackDir;
     private readonly SecretsEnv _env;
     private readonly IClusterStateProvider? _stateProvider;
+    private readonly INodeExec _exec;
 
-    public ConvergeRunner(string stackDir, SecretsEnv env, IClusterStateProvider? stateProvider = null)
+    public ConvergeRunner(string stackDir, SecretsEnv env,
+        IClusterStateProvider? stateProvider = null, INodeExec? exec = null)
     {
         _stackDir = stackDir;
         _env = env;
         _stateProvider = stateProvider;
+        _exec = exec ?? new NodeExec();
     }
 
     // State-diff PLAN (issue #45). For each desired shape, report the per-member
@@ -114,11 +117,12 @@ public sealed class ConvergeRunner
         var ordered = TopologicalSorter.Order(loaded.Members);
         var resolver = new SecretResolver(_env);
         var registry = ProvisionerRegistry.Default();
-        var exec = new NodeExec();
+        var exec = _exec;
         var byName = ordered.ToDictionary(s => s.Metadata.Name, StringComparer.Ordinal);
         var deriver = new SecretDeriver(_env, exec, byName);
         var ctx = new ConvergeContext(exec, _env, byName, deriver);
         var creator = new CommunityScriptsCreator(exec);
+        var reconciler = new CtConfigReconciler(exec);
         var ct = CancellationToken.None;
 
         var stackName = loaded.Stack?.Metadata.Name ?? Path.GetFileName(_stackDir);
@@ -152,6 +156,26 @@ public sealed class ConvergeRunner
                 }
             }
 
+            // Update reconciliation: bring host-level CT config (cores/memory/tags)
+            // in line with the shape, in place. Idempotent — no-op when matched.
+            if (sp.Node is not null && sp.Ctid is not null)
+            {
+                try
+                {
+                    var cfg = await reconciler.ReconcileAsync(s, ct);
+                    switch (cfg.Outcome)
+                    {
+                        case ApplyOutcome.Applied:
+                            applied++; Console.WriteLine($"    config APPLIED: {cfg.Message}"); break;
+                        case ApplyOutcome.Failed:
+                            failed++; Console.WriteLine($"    config FAILED: {cfg.Message}"); Console.WriteLine(); continue;
+                        default:
+                            Console.WriteLine($"    config: {cfg.Message}"); break;
+                    }
+                }
+                catch (Exception ex) { Console.WriteLine($"    config FAILED: {ex.Message}"); failed++; Console.WriteLine(); continue; }
+            }
+
             // Guard: required env secrets must be present.
             var missing = resolver.Plan(sp).Where(r => !r.Ready).ToList();
             if (missing.Count > 0)
@@ -181,6 +205,66 @@ public sealed class ConvergeRunner
         }
 
         Console.WriteLine($"Apply summary — {applied} applied, {nochange} no-change, {skipped} skipped, {failed} failed.");
+        return failed == 0 ? 0 : 1;
+    }
+
+    // Destroy lifecycle (issue #101). Tears down the stack's CTs in REVERSE
+    // dependency order (dependents before their dependencies). Gated: without
+    // `confirmed` it's a read-only destroy PLAN (what exists, what would go);
+    // with `confirmed` it stops + destroys each CT.
+    //
+    // ADD-ONLY guardrail (CLAUDE.md): destroy is CT-scoped only. It NEVER removes
+    // shared external resources — Cloudflare tunnels/DNS, GitHub/Forgejo runner
+    // registrations — even though converge creates them. Those are torn down by
+    // hand if ever needed.
+    public async Task<int> DestroyAsync(bool confirmed, CancellationToken ct = default)
+    {
+        var loaded = ShapeLoader.LoadStack(_stackDir);
+        var ordered = TopologicalSorter.Order(loaded.Members);
+        var teardown = Enumerable.Reverse(ordered).ToList(); // dependents first
+        var creator = new CommunityScriptsCreator(_exec);
+
+        var stackName = loaded.Stack?.Metadata.Name ?? Path.GetFileName(_stackDir);
+        Console.WriteLine($"Converge DESTROY — stack '{stackName}'  ({teardown.Count} member(s), reverse dependency order)\n");
+        if (!confirmed)
+            Console.WriteLine("(dry-run destroy plan — re-run with --yes to actually stop + destroy)\n");
+        Console.WriteLine("Note: external resources (Cloudflare tunnels/DNS, runner registrations) are\n" +
+                          "shared + ADD-ONLY — destroy does NOT remove them. CT teardown only.\n");
+
+        int destroyed = 0, absent = 0, failed = 0, planned = 0;
+        foreach (var s in teardown)
+        {
+            var sp = s.Spec;
+            if (sp.Node is not { } node || sp.Ctid is not { } ctid)
+            {
+                Console.WriteLine($"▸ {s.Metadata.Name}: SKIP (no node/ctid)");
+                continue;
+            }
+
+            if (!confirmed)
+            {
+                var exists = await creator.ExistsAsync(node, ctid, ct);
+                Console.WriteLine($"▸ {s.Metadata.Name}  (ctid {ctid}, node {node}): " +
+                                  (exists ? "would STOP + DESTROY" : "absent — nothing to do"));
+                if (exists) planned++; else absent++;
+                continue;
+            }
+
+            var res = await creator.DestroyAsync(node, ctid, ct);
+            Console.WriteLine($"▸ {s.Metadata.Name}  (ctid {ctid}, node {node}): " +
+                              $"{res.Outcome.ToString().ToUpperInvariant()} — {res.Message}");
+            switch (res.Outcome)
+            {
+                case ApplyOutcome.Applied: destroyed++; break;
+                case ApplyOutcome.NoChange: absent++; break;
+                default: failed++; break;
+            }
+        }
+
+        Console.WriteLine();
+        Console.WriteLine(confirmed
+            ? $"Destroy summary — {destroyed} destroyed, {absent} absent, {failed} failed."
+            : $"Destroy plan — {planned} to destroy, {absent} absent. (Re-run with --yes to apply.)");
         return failed == 0 ? 0 : 1;
     }
 
