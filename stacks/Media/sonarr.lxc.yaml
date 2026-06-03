@@ -1,0 +1,33 @@
+# Sonarr — TV series automation.
+#
+# community-scripts: ct/sonarr.sh (stable). Inherits node/os/network/storage/
+# timezone from ./stack.yaml. Binds the shared /data export (TRaSH hardlinks).
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: sonarr
+  stack: Media
+  tags: [tv]
+
+spec:
+  app: sonarr
+  ctid: 5101
+  cores: 2
+  memory: 1024           # MB
+  disk: 8                # GB — app DB only; media lives on /data
+  dependsOn: [prowlarr, qbittorrent]   # indexers + download client first
+
+  # Shared media library + downloads on volume4, host-level + gated (BL-016).
+  # Path-bind of the ONE shared export at /data so torrents/ and media/ are on the
+  # same filesystem → instant hardlink-moves. Identical mount in every *arr CT.
+  mounts:
+    - type: nfs
+      storage: ds1813-nfs-volume-4   # references the storage → ordered on activation
+      source: data                   # subpath under /mnt/pve/ds1813-nfs-volume-4 (path-bind)
+      target: /data
+      acl: true                      # honor the export's setgid + default group ACLs
+      backup: false                  # data lives on the NAS; keep out of vzdump
+  hookscript: local:snippets/ensure-data-mount.sh   # pre-start guard: NAS mounted or refuse to start

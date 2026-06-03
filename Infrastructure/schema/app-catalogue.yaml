@@ -56,3 +56,35 @@ apps:
   cloudflared:
     script: cloudflared
     provisioner: cloudflared
+
+  # ── Media stack (#105) — *arr automation. No converge provisioners yet: the
+  #    DefaultProvisioner handles create-only; app config (indexers, profiles,
+  #    save paths) is applied at cutover. See stacks/Media/. ──
+
+  # Prowlarr — indexer hub (syncs indexers to Sonarr/Radarr).
+  prowlarr:
+    script: prowlarr
+
+  # Sonarr — TV series automation.
+  sonarr:
+    script: sonarr
+
+  # Radarr — movie automation.
+  radarr:
+    script: radarr
+
+  # Bazarr — subtitle automation for Sonarr/Radarr.
+  bazarr:
+    script: bazarr
+
+  # qBittorrent — download client (BL-016 recut; downloads on the shared /data).
+  qbittorrent:
+    script: qbittorrent
+
+  # Seerr — unified request/discovery UI (Overseerr/Jellyseerr successor).
+  seerr:
+    script: seerr
+
+  # FlareSolverr — Cloudflare-challenge solver for Prowlarr indexers.
+  flaresolverr:
+    script: flaresolverr

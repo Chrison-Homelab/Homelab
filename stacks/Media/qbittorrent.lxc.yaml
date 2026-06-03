@@ -1,0 +1,33 @@
+# qBittorrent — download client (the BL-016 recut of the old in-guest-NFS CT 5007).
+#
+# community-scripts: ct/qbittorrent.sh (stable). Inherits node/os/network/storage/
+# timezone from ./stack.yaml. Writes downloads under /data/torrents on the SAME
+# shared export the *arr apps import from → hardlink + instant-move, and never an
+# in-guest mount (the CT 5007 rootfs-fill race is designed out here).
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: qbittorrent
+  stack: Media
+  tags: [downloads]
+
+spec:
+  app: qbittorrent
+  ctid: 5104
+  cores: 2
+  memory: 2048           # MB — verification/hashing is the heaviest member
+  disk: 8                # GB — app config only; downloads live on /data/torrents
+
+  # Categories tv-sonarr / radarr and save paths under /data/torrents are app-level
+  # config applied at cutover (no converge provisioner) — see ./README.md.
+  mounts:
+    - type: nfs
+      storage: ds1813-nfs-volume-4
+      source: data
+      target: /data
+      acl: true
+      backup: false
+  hookscript: local:snippets/ensure-data-mount.sh

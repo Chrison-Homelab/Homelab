@@ -1,0 +1,22 @@
+# Seerr — media request + discovery UI (the unified Overseerr/Jellyseerr successor,
+# Plex-native). https://community-scripts.org/scripts/seerr
+#
+# community-scripts: ct/seerr.sh (stable). Inherits node/os/network/storage/
+# timezone from ./stack.yaml. No /data — talks to Sonarr/Radarr + Plex over HTTP.
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: seerr
+  stack: Media
+  tags: [requests]
+
+spec:
+  app: seerr
+  ctid: 5105
+  cores: 2
+  memory: 1024           # MB
+  disk: 8                # GB
+  dependsOn: [sonarr, radarr]

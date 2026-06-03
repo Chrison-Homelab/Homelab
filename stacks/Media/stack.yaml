@@ -1,0 +1,45 @@
+# Media stack — *arr media automation, NFS-hardened (issue #105).
+#
+# Owns CTID block 5100–5199 and the defaults every member inherits. Built as a
+# FRESH 5100 block in parallel with the live hand-built 5000s CTs (prowlarr 5002,
+# qbittorrent 5007, plex 5008, seerr 5011, …) → validate → cutover → retire old.
+#
+# Load-bearing constraint (TRaSH hardlinks): every file-touching member binds the
+# SAME volume4 export at the SAME path `/data`, with `torrents/` and `media/` as
+# subfolders — never split. See ./README.md, docs/plans/105-arr-declarative-stack.md,
+# and docs/runbooks/volume4-data-export.md (the volume4 prerequisite).
+#
+# Deployed via community-scripts over SSH (Deploy-Shape.ps1 / converge).
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+#
+# CTID allocation policy: members set ctid EXPLICITLY (omission is an error).
+
+apiVersion: homelab/v1
+kind: Stack
+
+metadata:
+  name: Media
+  tags: [media, arr]
+
+spec:
+  ctidRange:
+    start: 5100           # guard rail: a member ctid outside this block is rejected
+    end: 5199
+  defaults:
+    node: hpe-01          # co-located with Plex (CT 5008) reading the same library
+    source:
+      channel: stable     # → community-scripts/ProxmoxVE (override per-member if needed)
+      ref: main
+    os: debian
+    osVersion: 13
+    unprivileged: true
+    storage: local-lvm
+    templateStorage: local
+    onboot: true
+    network:
+      bridge: vmbr0
+      vlan: 1010          # Homelab — 10.10.0.0/16
+      ipv4: dhcp
+      ipv6: none
+    timezone: Pacific/Auckland
+    tags: [media, arr, community-script]
