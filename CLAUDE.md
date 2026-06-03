@@ -96,7 +96,6 @@ docker compose up -d
 - **`.containers/dsm/`** — Virtual DSM container (Synology) for local testing, exposed on port 5000.
 - **`docs/`** — Network architecture, device inventory, and script documentation.
 - **`.devcontainer/`** — VS Code Dev Container (Ubuntu base) with PowerShell, Ansible, Terraform, and Docker extensions pre-configured.
-- **`.github/agents/`** — Agent persona definitions for AI-assisted development workflows.
 
 ### Network Architecture
 
