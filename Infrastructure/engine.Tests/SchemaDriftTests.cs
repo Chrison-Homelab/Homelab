@@ -64,4 +64,33 @@ public sealed class SchemaDriftTests
             missing.Count == 0,
             $"MountSpec is missing model properties for schema mount fields: {string.Join(", ", missing)}");
     }
+
+    // Same tripwire for the VM contract (#115): vmSpec + hostPci must each have a
+    // 1:1 C# model so the ProxmoxSharp write path can't drift from the schema.
+    [Theory]
+    [InlineData("vmSpec", typeof(VmSpec))]
+    [InlineData("hostPci", typeof(HostPciSpec))]
+    [InlineData("vmDisk", typeof(VmDiskSpec))]
+    public void Model_CoversSchemaDef(string defName, Type modelType)
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllText(SchemaPath));
+        var props = doc.RootElement
+            .GetProperty("$defs")
+            .GetProperty(defName)
+            .GetProperty("properties");
+
+        var modelProps = modelType
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Select(p => p.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var missing = props.EnumerateObject()
+            .Where(p => !modelProps.Contains(p.Name))
+            .Select(p => p.Name)
+            .ToList();
+
+        Assert.True(
+            missing.Count == 0,
+            $"{modelType.Name} is missing model properties for schema {defName} fields: {string.Join(", ", missing)}");
+    }
 }

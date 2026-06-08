@@ -233,3 +233,103 @@ public sealed class CtidRange
     public int Start { get; set; }
     public int End { get; set; }
 }
+
+// kind: VM — a Proxmox QEMU/KVM VM, provisioned by the ProxmoxSharp VM write
+// path (#115), NOT the community-scripts (LXC) create path. Mirrors $defs.vmSpec
+// 1:1 (enforced by SchemaDriftTests). Reuses StartupSpec/NetworkSpec/
+// NetworkInterfaceSpec/Secret from the LXC side.
+public sealed class VmSpec
+{
+    public string? Node { get; set; }
+    public string? Vmid { get; set; }              // int or the literal "auto"
+    public string? Name { get; set; }
+
+    public string? Machine { get; set; }
+    public string? Bios { get; set; }              // seabios | ovmf
+    public string? Cpu { get; set; }
+    public int? Cores { get; set; }
+    public int? Sockets { get; set; }
+    public int? Memory { get; set; }
+    public bool? Numa { get; set; }
+    public string? Ostype { get; set; }
+    public bool? Agent { get; set; }
+    public bool? Onboot { get; set; }
+    public bool? Protection { get; set; }
+    public StartupSpec? Startup { get; set; }
+
+    public string? Scsihw { get; set; }
+    public string? Vga { get; set; }
+    public List<VmDiskSpec> Disks { get; set; } = new();
+    public VmEfiDiskSpec? Efidisk { get; set; }
+    public VmTpmStateSpec? Tpmstate { get; set; }
+    public VmCdromSpec? Cdrom { get; set; }
+
+    public NetworkSpec? Network { get; set; }
+    public List<NetworkInterfaceSpec> Networks { get; set; } = new();
+    public List<HostPciSpec> Hostpci { get; set; } = new();
+    public VmBootSpec? Boot { get; set; }
+
+    public string? Pool { get; set; }
+    public List<string> Tags { get; set; } = new();
+
+    // Post-create contract (converge-only):
+    public List<string> DependsOn { get; set; } = new();
+    public Dictionary<string, object?> Config { get; set; } = new();
+    public List<Secret> Secrets { get; set; } = new();
+}
+
+// A QEMU disk (Proxmox scsiN/virtioN/sataN).
+public sealed class VmDiskSpec
+{
+    public string Id { get; set; } = "";          // e.g. "scsi0"
+    public string? Storage { get; set; }
+    public string? Source { get; set; }           // adopt an existing volume
+    public int? Size { get; set; }                // GB (fresh allocation)
+    public bool? Ssd { get; set; }
+    public bool? Iothread { get; set; }
+    public bool? Discard { get; set; }
+    public string? Cache { get; set; }
+    public bool? Backup { get; set; }
+}
+
+// UEFI vars disk (Proxmox efidisk0) — required for bios: ovmf.
+public sealed class VmEfiDiskSpec
+{
+    public string? Storage { get; set; }
+    public string? Source { get; set; }
+    public string? Efitype { get; set; }          // 2m | 4m
+    public bool? PreEnrolledKeys { get; set; }
+}
+
+// vTPM state disk (Proxmox tpmstate0).
+public sealed class VmTpmStateSpec
+{
+    public string? Storage { get; set; }
+    public string? Source { get; set; }
+    public string? Version { get; set; }          // v1.2 | v2.0
+}
+
+// Install/boot ISO (Proxmox ideN media=cdrom).
+public sealed class VmCdromSpec
+{
+    public string? Storage { get; set; }
+    public string? Iso { get; set; }
+    public string? Source { get; set; }
+}
+
+// PCI(e) passthrough device (Proxmox hostpciN) — the gaming shape's GPU line.
+public sealed class HostPciSpec
+{
+    public string Id { get; set; } = "";          // e.g. "0000:09:00"
+    public bool? Pcie { get; set; }
+    public bool? XVga { get; set; }
+    public bool? Rombar { get; set; }
+    public string? Romfile { get; set; }
+    public string? Mdev { get; set; }
+}
+
+// Boot device order (Proxmox boot=order=...).
+public sealed class VmBootSpec
+{
+    public List<string> Order { get; set; } = new();
+}
