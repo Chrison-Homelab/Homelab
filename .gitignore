@@ -16,8 +16,9 @@ artifacts/
 *.env
 !.mcp.env.example
 
-# Ruflo / claude-flow runtime state (config under .claude-flow/ is tracked;
-# .claude-flow/.gitignore already excludes its data/logs/sessions/neural)
+# Ruflo / claude-flow leftovers (tooling removed from this repo — keep any
+# stray runtime state out of git)
+.claude-flow/
 ruvector.db
 .swarm/
 agentdb.rvf
