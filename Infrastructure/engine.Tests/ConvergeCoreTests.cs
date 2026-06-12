@@ -148,6 +148,147 @@ public sealed class ConvergeCoreTests
         Assert.Equal(ShapeDiffStatus.Unknown, diff.Status);
     }
 
+    [Fact]
+    public void StateDiffer_ReportsDrift_OnCores()
+    {
+        var shape = Lxc("forgejo", "5001");
+        shape.Spec.Cores = 4;                 // desired 4
+        var live = new LiveCt(5001, "pve1", "forgejo", "running", null, Cores: 2);
+        var state = new ClusterState(new[] { live });
+
+        var diff = StateDiffer.Diff(shape, state);
+        Assert.Equal(ShapeDiffStatus.Drift, diff.Status);
+        var f = Assert.Single(diff.Fields, x => x.Field == "cores");
+        Assert.Equal("4", f.Desired);
+        Assert.Equal("2", f.Live);
+    }
+
+    [Fact]
+    public void StateDiffer_TagsUpToDate_WhenSetMatchesRegardlessOfOrder()
+    {
+        var shape = Lxc("forgejo", "5001");
+        shape.Spec.Tags = new() { "iac", "media" };
+        var live = new LiveCt(5001, "pve1", "forgejo", "running", null, Tags: "media;iac");
+        var state = new ClusterState(new[] { live });
+
+        var diff = StateDiffer.Diff(shape, state);
+        Assert.Equal(ShapeDiffStatus.UpToDate, diff.Status);
+    }
+
+    [Fact]
+    public void StateDiffer_ReportsDrift_OnTags()
+    {
+        var shape = Lxc("forgejo", "5001");
+        shape.Spec.Tags = new() { "iac", "media" };
+        var live = new LiveCt(5001, "pve1", "forgejo", "running", null, Tags: "iac");
+        var state = new ClusterState(new[] { live });
+
+        var diff = StateDiffer.Diff(shape, state);
+        Assert.Equal(ShapeDiffStatus.Drift, diff.Status);
+        Assert.Contains(diff.Fields, f => f.Field == "tags");
+    }
+
+    [Fact]
+    public void StateDiffer_IgnoresTags_WhenShapeDeclaresNone()
+    {
+        // Shape claims no tag ownership → live tags must not register as drift.
+        var shape = Lxc("forgejo", "5001");
+        var live = new LiveCt(5001, "pve1", "forgejo", "running", null, Tags: "manual;adhoc");
+        var state = new ClusterState(new[] { live });
+
+        var diff = StateDiffer.Diff(shape, state);
+        Assert.Equal(ShapeDiffStatus.UpToDate, diff.Status);
+    }
+
+    // ---- CtConfigReconciler (update lifecycle) ----------------------------
+
+    [Fact]
+    public async Task CtConfigReconciler_NoChange_WhenCoresMemoryTagsMatch()
+    {
+        var shape = Lxc("forgejo", "5001");
+        shape.Spec.Node = "pve1";
+        shape.Spec.Cores = 2;
+        shape.Spec.Memory = 2048;
+        shape.Spec.Tags = new() { "iac" };
+
+        // Only `pct config` is allowed to run — any `pct set` means a false change.
+        var exec = new FakeNodeExec(cmd =>
+            cmd.Contains("pct config")
+                ? new ExecResult(0, "cores: 2\nmemory: 2048\ntags: iac\nhostname: forgejo", "")
+                : throw new InvalidOperationException($"unexpected mutating command: {cmd}"));
+
+        var result = await new CtConfigReconciler(exec).ReconcileAsync(shape);
+
+        Assert.Equal(ApplyOutcome.NoChange, result.Outcome);
+        Assert.Single(exec.Commands); // only the read-back
+    }
+
+    [Fact]
+    public async Task CtConfigReconciler_SetsOnlyDifferingFields()
+    {
+        var shape = Lxc("forgejo", "5001");
+        shape.Spec.Node = "pve1";
+        shape.Spec.Cores = 4;       // differs (live 2)
+        shape.Spec.Memory = 2048;   // matches live → must NOT be set
+
+        var exec = new FakeNodeExec(cmd =>
+            cmd.Contains("pct config")
+                ? new ExecResult(0, "cores: 2\nmemory: 2048", "")
+                : new ExecResult(0, "", "")); // pct set succeeds
+
+        var result = await new CtConfigReconciler(exec).ReconcileAsync(shape);
+
+        Assert.Equal(ApplyOutcome.Applied, result.Outcome);
+        var set = Assert.Single(exec.Commands, c => c.Contains("pct set"));
+        Assert.Contains("--cores 4", set);
+        Assert.DoesNotContain("--memory", set);
+    }
+
+    // ---- Destroy lifecycle ------------------------------------------------
+
+    [Fact]
+    public async Task CommunityScriptsCreator_Destroy_NoChange_WhenAbsent()
+    {
+        // `pct status` non-zero → CT absent → no stop/destroy issued.
+        var exec = new FakeNodeExec(cmd =>
+            cmd.Contains("pct status")
+                ? new ExecResult(2, "", "Configuration file does not exist")
+                : throw new InvalidOperationException($"unexpected command on absent CT: {cmd}"));
+
+        var result = await new CommunityScriptsCreator(exec).DestroyAsync("pve1", "5001", default);
+
+        Assert.Equal(ApplyOutcome.NoChange, result.Outcome);
+        Assert.Single(exec.Commands);
+    }
+
+    [Fact]
+    public async Task CommunityScriptsCreator_Destroy_StopsRunning_ThenDestroys()
+    {
+        var exec = new FakeNodeExec(cmd =>
+            cmd.Contains("pct status") ? new ExecResult(0, "status: running", "")
+                                       : new ExecResult(0, "", ""));
+
+        var result = await new CommunityScriptsCreator(exec).DestroyAsync("pve1", "5001", default);
+
+        Assert.Equal(ApplyOutcome.Applied, result.Outcome);
+        Assert.Contains(exec.Commands, c => c.Contains("pct stop 5001"));
+        Assert.Contains(exec.Commands, c => c.Contains("pct destroy 5001"));
+    }
+
+    [Fact]
+    public async Task CommunityScriptsCreator_Destroy_SkipsStop_WhenStopped()
+    {
+        var exec = new FakeNodeExec(cmd =>
+            cmd.Contains("pct status") ? new ExecResult(0, "status: stopped", "")
+                                       : new ExecResult(0, "", ""));
+
+        var result = await new CommunityScriptsCreator(exec).DestroyAsync("pve1", "5001", default);
+
+        Assert.Equal(ApplyOutcome.Applied, result.Outcome);
+        Assert.DoesNotContain(exec.Commands, c => c.Contains("pct stop"));
+        Assert.Contains(exec.Commands, c => c.Contains("pct destroy 5001"));
+    }
+
     // ---- Provisioner idempotency (faked INodeExec seam) -------------------
 
     // Records pct-exec commands and replies from a scripted map. Lets us assert a

@@ -117,8 +117,7 @@ as the reference):
 
 ## 🧭 Principles
 
-Inherited from the [Overseer agent](.github/agents/global-agent.md) and applied
-to everything in this repo:
+Applied to everything in this repo:
 
 - **IaC-first** — declarative over imperative; UIs are a last resort.
 - **Idempotent** — running the same thing twice changes nothing the second time.
@@ -135,7 +134,6 @@ to everything in this repo:
 | `docs/` | [Network](docs/Network.md), [devices](docs/Devices.md), [services](docs/Services.md), [backlog](docs/Backlog.md), [ADRs](docs/adr), and plans. |
 | `src/Proxmox/` | Bash + PowerShell scripts for node bootstrap & inventory. |
 | `.containers/` | Local dev/test environments (Proxmox, DSM, Debian). |
-| `.github/agents/` | AI agent personas that enforce repo conventions. |
 | `stacks/` | Stacks — mostly submodules (one self-contained stack per repo); also the in-repo `monitoring/` stack. Each declares its `shape`. |
 | `vendor/` | Vendored dependencies as submodules — our own libraries we dogfood: [`ProxmoxSharp`](https://github.com/Chrison-dev/ProxmoxSharp) (C# Proxmox client). |
 

@@ -10,10 +10,10 @@ namespace Homelab.Infrastructure.Converge;
 public sealed class SecretDeriver
 {
     private readonly SecretsEnv _env;
-    private readonly NodeExec _exec;
+    private readonly INodeExec _exec;
     private readonly IReadOnlyDictionary<string, Shape> _byName;
 
-    public SecretDeriver(SecretsEnv env, NodeExec exec, IReadOnlyDictionary<string, Shape> byName)
+    public SecretDeriver(SecretsEnv env, INodeExec exec, IReadOnlyDictionary<string, Shape> byName)
     {
         _env = env;
         _exec = exec;
