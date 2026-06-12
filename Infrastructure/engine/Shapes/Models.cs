@@ -320,7 +320,8 @@ public sealed class VmCdromSpec
 // PCI(e) passthrough device (Proxmox hostpciN) — the gaming shape's GPU line.
 public sealed class HostPciSpec
 {
-    public string Id { get; set; } = "";          // e.g. "0000:09:00"
+    public string? Mapping { get; set; }           // PCI resource-mapping name (preferred; token-settable)
+    public string? Id { get; set; }                // raw PCI address, e.g. "0000:09:00" (root@pam only)
     public bool? Pcie { get; set; }
     public bool? XVga { get; set; }
     public bool? Rombar { get; set; }

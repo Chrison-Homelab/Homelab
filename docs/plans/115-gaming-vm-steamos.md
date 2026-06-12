@@ -143,9 +143,15 @@ Adoption-friendly: reconciling against an **existing** VM (1003) must emit only 
   - **✅ Live-verify done (2026-06-08).** Throwaway VM 9990 (seabios, 1 GB, 512 MB, no GPU) taken
     through create→start→stop→delete-purge — every Proxmox task returned OK, VM + disk fully removed,
     no real VM touched. The write path is proven against the live API.
-- **Phase C — adopt + passthrough (mutating; needs go-ahead).** `vm apply` the bazzite spec against
-  1003 → attaches `+hostpci0: 0000:09:00` (+ renames to bazzite). 1003 is currently stopped, so the
-  config set is synchronous. Then boot into Bazzite gaming mode on the Radeon.
+- **Phase C — adopt + passthrough. ✅ DONE (2026-06-13).** VM 1003 renamed `gaming-vm-02 → bazzite`
+  and the Radeon attached: `hostpci0: mapping=AMD_Radeon_RX6600,pcie=1,x-vga=1`. Re-plan is idempotent.
+  - **Key finding:** Proxmox refuses a *raw* `hostpciN` from an API token ("only root can set
+    hostpciN config for non-mapped devices", HTTP 500). The token-settable + node-portable way is a
+    **PCI resource mapping** (we already map the Quadro P400). Created `AMD_Radeon_RX6600` →
+    `0000:09:00` (id 1002:73ff, iommu 18) at `/cluster/mapping/pci` (token has `Mapping.Modify`);
+    attaching it needs only `Mapping.Use`. ProxmoxSharp `hostpci` gained a `mapping=` form
+    (PR ProxmoxSharp#15) and the `kind: VM` schema/shape now model `mapping` (preferred) vs raw `id`.
+  - **Still to do:** boot 1003 into Bazzite on the Radeon (start = claims the GPU; host keeps the P400).
 - **Phase D — streaming + redeploy base.** Sunshine/Moonlight; snapshot the installed VM as the
   re-deployable baseline. Document the one-time install seam.
 - **Phase E — promote stack** to its own submodule repo once stable.

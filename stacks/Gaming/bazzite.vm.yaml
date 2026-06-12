@@ -60,11 +60,14 @@ spec:
     bridge: vmbr0
     # net0 virtio (existing MAC bc:24:11:03:32:13 preserved on adopt)
 
-  # --- the whole point: GPU passthrough, cloned from the working VM 1002 ---
+  # --- the whole point: GPU passthrough via a Proxmox PCI resource mapping ---
+  # Raw `id: 0000:09:00` is root@pam-only ("only root can set hostpciN for non-mapped
+  # devices"); a mapping is settable by our API token (Mapping.Use) and node-portable.
+  # The AMD_Radeon_RX6600 mapping (→ 0000:09:00) is created at /cluster/mapping/pci.
   hostpci:
-    - id: "0000:09:00"
+    - mapping: AMD_Radeon_RX6600
       pcie: true
-      xVga: true            # primary GPU for the guest (host goes headless while running)
+      xVga: true            # primary GPU for the guest (host keeps the Quadro P400 @ 06:00)
 
   boot:
     order: [scsi0, ide2, net0]
