@@ -43,7 +43,7 @@
     },
     "spec": {
       "type": "object",
-      "description": "Kind-specific desired state. Constrained per-kind via the allOf branches below (LXC and Stack are strict; Node/VM/NASShare stay permissive until their contracts are tightened)."
+      "description": "Kind-specific desired state. Constrained per-kind via the allOf branches below (LXC, VM and Stack are strict; Node/NASShare stay permissive until their contracts are tightened)."
     }
   },
   "allOf": [
@@ -56,6 +56,20 @@
             "allOf": [
               { "$ref": "#/$defs/lxcSpec" },
               { "required": ["app", "ctid"], "description": "app + ctid are mandatory for a deployable LXC (ctid omission is an error — no silent allocation). node/os/network may be inherited from the stack, so they are not required on the member itself." }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "VM" } } },
+      "then": {
+        "required": ["spec"],
+        "properties": {
+          "spec": {
+            "allOf": [
+              { "$ref": "#/$defs/vmSpec" },
+              { "required": ["vmid"], "description": "vmid is mandatory for a deployable VM (no silent allocation — mirrors LXC's ctid rule). node may be inherited from the stack, so it is not required on the member itself." }
             ]
           }
         }
@@ -276,6 +290,154 @@
             "with": { "type": "object", "description": "Action arguments (e.g. { org: Chrison-dev }).", "additionalProperties": true },
             "auth": { "$ref": "#/$defs/secretSource", "description": "How to authenticate to the provider — typically { env: <PAT name> }." }
           }
+        }
+      }
+    },
+
+    "vmDisk": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "description": "A QEMU disk (Proxmox scsiN/virtioN/sataN). Provisioned by the ProxmoxSharp VM write path (#115).",
+      "properties": {
+        "id": { "type": "string", "description": "Disk bus+slot, e.g. 'scsi0', 'virtio0'." },
+        "storage": { "type": "string", "description": "Proxmox storage id (e.g. 'local-lvm')." },
+        "source": { "type": "string", "description": "Existing volume id to adopt (e.g. 'vm-1003-disk-1'). Omit to allocate a fresh volume of 'size'." },
+        "size": { "type": "integer", "minimum": 1, "description": "Disk size in GB (for a freshly-allocated volume)." },
+        "ssd": { "type": "boolean", "description": "Emulate an SSD (ssd=1)." },
+        "iothread": { "type": "boolean", "description": "Dedicated I/O thread (needs virtio-scsi-single)." },
+        "discard": { "type": "boolean", "description": "Pass TRIM/discard to the backing store." },
+        "cache": { "type": "string", "description": "Cache mode (e.g. 'none', 'writeback')." },
+        "backup": { "type": "boolean", "description": "Include in vzdump backups." }
+      }
+    },
+
+    "vmEfiDisk": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "UEFI vars disk (Proxmox efidisk0) — required when bios is ovmf.",
+      "properties": {
+        "storage": { "type": "string", "description": "Proxmox storage id for the EFI vars volume." },
+        "source": { "type": "string", "description": "Existing efidisk volume to adopt (e.g. 'vm-1003-disk-0')." },
+        "efitype": { "type": "string", "enum": ["2m", "4m"], "description": "EFI vars size (4m enables Secure Boot key storage)." },
+        "preEnrolledKeys": { "type": "boolean", "description": "Ship Microsoft Secure Boot keys pre-enrolled (pre-enrolled-keys=1)." }
+      }
+    },
+
+    "vmTpmState": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "vTPM state disk (Proxmox tpmstate0) — needed for Windows 11 / Secure Boot guests.",
+      "properties": {
+        "storage": { "type": "string", "description": "Proxmox storage id for the TPM state volume." },
+        "source": { "type": "string", "description": "Existing tpmstate volume to adopt." },
+        "version": { "type": "string", "enum": ["v1.2", "v2.0"], "description": "TPM spec version (v2.0 for Win11)." }
+      }
+    },
+
+    "vmCdrom": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Install/boot ISO attached to a CD-ROM drive (Proxmox ideN media=cdrom). Detach after install.",
+      "properties": {
+        "storage": { "type": "string", "description": "Proxmox storage holding the ISO (e.g. 'local')." },
+        "iso": { "type": "string", "description": "ISO file name within the storage (e.g. 'bazzite-deck-stable-live.iso')." },
+        "source": { "type": "string", "description": "Explicit volume id override (e.g. 'local:iso/<name>'). Takes precedence over storage+iso." }
+      }
+    },
+
+    "hostPci": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "description": "PCI(e) passthrough device (Proxmox hostpciN). The heart of the gaming shape — has no LXC analog. The host's VFIO/IOMMU binding must already be in place (proven on desktop-01 by VM 1002).",
+      "properties": {
+        "id": { "type": "string", "description": "Host PCI address, e.g. '0000:09:00' (function-less = whole device / all functions)." },
+        "pcie": { "type": "boolean", "description": "Expose as PCI Express (pcie=1; requires a q35 machine)." },
+        "xVga": { "type": "boolean", "description": "Mark as the guest's primary VGA (x-vga=1) — host loses the display while the guest runs." },
+        "rombar": { "type": "boolean", "description": "Make the device ROM visible to the guest (rombar=1)." },
+        "romfile": { "type": "string", "description": "Path to a dumped GPU vBIOS, relative to /usr/share/kvm (some GPUs need this to reset cleanly)." },
+        "mdev": { "type": "string", "description": "Mediated-device type for vGPU splitting (rarely applicable to consumer GPUs)." }
+      }
+    },
+
+    "vmBoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Boot device order (Proxmox boot=order=...).",
+      "properties": {
+        "order": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Ordered boot device ids, e.g. ['scsi0','ide2','net0']."
+        }
+      }
+    },
+
+    "vmSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Desired state for a Proxmox QEMU/KVM VM. Provisioned by the ProxmoxSharp VM write path (#115) — NOT by the community-scripts (LXC) create path. Only spec.vmid is strictly required; node may be inherited from the owning stack's defaults.",
+      "properties": {
+        "node": { "type": "string", "description": "Target Proxmox node (e.g. 'desktop-01'). Required to deploy; may be inherited from the stack's defaults." },
+        "vmid": {
+          "description": "VM ID. REQUIRED — omission is an error (no silent allocation; mirrors LXC ctid). An integer (validated to fall within the owning stack's ctidRange), or the literal 'auto' to draw the next free ID from the stack range.",
+          "oneOf": [
+            { "type": "integer", "minimum": 100 },
+            { "const": "auto" }
+          ]
+        },
+        "name": { "type": "string", "description": "VM name (Proxmox 'name'); defaults to metadata.name. Renaming an adopted VM is non-destructive." },
+        "machine": { "type": "string", "description": "QEMU machine type, e.g. 'q35' (required for PCIe passthrough) or a pinned 'pc-q35-10.1'." },
+        "bios": { "type": "string", "enum": ["seabios", "ovmf"], "description": "Firmware. 'ovmf' (UEFI) is required for GPU passthrough + Secure Boot; pairs with an efidisk." },
+        "cpu": { "type": "string", "description": "CPU model (Proxmox 'cpu'), e.g. 'host' to expose the full host feature set (best for gaming)." },
+        "cores": { "type": "integer", "minimum": 1, "description": "vCPU cores per socket." },
+        "sockets": { "type": "integer", "minimum": 1, "description": "CPU sockets (default 1)." },
+        "memory": { "type": "integer", "minimum": 16, "description": "RAM in MB." },
+        "numa": { "type": "boolean", "description": "Enable NUMA topology in the guest." },
+        "ostype": { "type": "string", "description": "Guest OS type hint (Proxmox 'ostype'), e.g. 'l26' (Linux 2.6+), 'win11'." },
+        "agent": { "type": "boolean", "description": "Enable the QEMU guest agent (agent=1)." },
+        "onboot": { "type": "boolean", "description": "Start automatically on host boot. Default false for GPU VMs (single GPU → start on demand)." },
+        "protection": { "type": "boolean", "description": "Protect against destroy/remove operations." },
+        "startup": { "$ref": "#/$defs/startup" },
+        "scsihw": { "type": "string", "description": "SCSI controller model (e.g. 'virtio-scsi-single' — needed for per-disk iothread)." },
+        "vga": { "type": "string", "description": "Display adapter (Proxmox 'vga'), e.g. 'none' when a passed-through GPU drives the display, or 'std'/'virtio'." },
+        "disks": { "type": "array", "items": { "$ref": "#/$defs/vmDisk" }, "description": "QEMU disks (scsiN/virtioN/...)." },
+        "efidisk": { "$ref": "#/$defs/vmEfiDisk" },
+        "tpmstate": { "$ref": "#/$defs/vmTpmState" },
+        "cdrom": { "$ref": "#/$defs/vmCdrom" },
+        "network": { "$ref": "#/$defs/network" },
+        "networks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/networkInterface" },
+          "description": "Full multi-NIC list (net0..netN). Use spec.network for the single-NIC sugar."
+        },
+        "hostpci": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/hostPci" },
+          "description": "PCI(e) passthrough devices (hostpci0..N) — e.g. the GPU. The reconciler should warn if another VM already holds the same device."
+        },
+        "boot": { "$ref": "#/$defs/vmBoot" },
+        "pool": { "type": "string", "description": "Proxmox resource pool to place the VM in." },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Labels (→ Proxmox tags). Mainly used in a Stack's spec.defaults to apply common labels; a member normally uses metadata.tags."
+        },
+        "dependsOn": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Names of shapes that must converge first (converge-only; topological ordering)."
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "App/guest-specific post-create settings the converge engine applies (e.g. install Sunshine). NOT touched by the create path."
+        },
+        "secrets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/secret" },
+          "description": "Secrets the converge engine resolves at provision time and feeds to the post-create step. Converge-only."
         }
       }
     },

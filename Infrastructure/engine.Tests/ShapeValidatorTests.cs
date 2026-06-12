@@ -73,6 +73,91 @@ public sealed class ShapeValidatorTests : IDisposable
     }
 
     [Fact]
+    public void KnownGoodVmShape_Validates()
+    {
+        var path = Write("good.vm.yaml", """
+            apiVersion: homelab/v1
+            kind: VM
+            metadata:
+              name: bazzite
+              stack: Gaming
+              tags: [gaming, passthrough]
+            spec:
+              node: desktop-01
+              vmid: 1003
+              machine: q35
+              bios: ovmf
+              cpu: host
+              cores: 6
+              memory: 12288
+              ostype: l26
+              agent: true
+              scsihw: virtio-scsi-single
+              disks:
+                - id: scsi0
+                  storage: local-lvm
+                  source: vm-1003-disk-1
+                  size: 120
+                  ssd: true
+                  iothread: true
+              efidisk:
+                storage: local-lvm
+                source: vm-1003-disk-0
+                efitype: 4m
+                preEnrolledKeys: true
+              network:
+                bridge: vmbr0
+              hostpci:
+                - id: "0000:09:00"
+                  pcie: true
+                  xVga: true
+              boot:
+                order: [scsi0, ide2, net0]
+            """);
+
+        var result = ShapeValidator.ValidateFile(path);
+        Assert.True(result.Valid, string.Join("\n", result.Failures.Select(f => f.ToString())));
+    }
+
+    [Fact]
+    public void VmShape_MissingVmid_Fails()
+    {
+        var path = Write("no-vmid.vm.yaml", """
+            apiVersion: homelab/v1
+            kind: VM
+            metadata:
+              name: bazzite
+            spec:
+              node: desktop-01
+              cores: 6
+            """);
+
+        var result = ShapeValidator.ValidateFile(path);
+        Assert.False(result.Valid);
+        var text = string.Join("\n", result.Failures.Select(f => f.ToString()));
+        Assert.Contains("/spec", text);
+    }
+
+    [Fact]
+    public void VmShape_UnknownField_IsRejected()
+    {
+        var path = Write("extra.vm.yaml", """
+            apiVersion: homelab/v1
+            kind: VM
+            metadata:
+              name: bazzite
+            spec:
+              vmid: 1003
+              totallyNotAVmField: true
+            """);
+
+        var result = ShapeValidator.ValidateFile(path);
+        Assert.False(result.Valid);
+        var text = string.Join("\n", result.Failures.Select(f => f.ToString()));
+        Assert.Contains("totallyNotAVmField", text);
+    }
+
+    [Fact]
     public void BadShape_MissingRequiredAndBadApiVersion_Fails()
     {
         var path = Write("bad.lxc.yaml", """

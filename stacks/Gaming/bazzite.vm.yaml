@@ -1,0 +1,70 @@
+# Bazzite (SteamOS-style) gaming VM — ADOPTS the existing hand-built VMID 1003
+# (gaming-vm-02) and adds the GPU passthrough it was missing.
+#
+# The passthrough line (hostpci0) is cloned VERBATIM from the proven, working
+# Windows VM 1002 (gaming-vm-01) — the host's VFIO/IOMMU setup is already correct,
+# so adopting just adds `+ hostpci0` (the reconciler must emit ONLY that delta,
+# never recreate the VM). See ../../docs/plans/115-gaming-vm-steamos.md.
+#
+# NOTE: kind: VM is permissive in the schema today (#115 Phase A tightens it into a
+# real vmSpec with a first-class hostpci[] field). The fields below are the proposed
+# contract — they validate loosely now and strictly once Phase A lands.
+
+apiVersion: homelab/v1
+kind: VM
+
+metadata:
+  name: bazzite
+  stack: Gaming
+  tags: [gaming, steamos, passthrough]
+  description: >-
+    Bazzite-deck gaming VM with GPU passthrough; streamed to MacBook via
+    Sunshine/Moonlight. Also the Proton test bed for ErpForFactoryGames.
+
+spec:
+  node: desktop-01
+  vmid: 1003              # ADOPTED — existing gaming-vm-02; do not allocate fresh
+  name: bazzite           # rename from gaming-vm-02 (non-destructive)
+
+  machine: q35
+  bios: ovmf
+  cpu: host
+  cores: 6
+  sockets: 1
+  memory: 12288           # MB — desktop-01 going gaming-only (LXCs migrating off), so 16 GB no longer contends; can raise later
+  numa: false
+  ostype: l26
+  agent: true
+  onboot: false           # GPU is single + shared with Win VM 1002 → start on demand
+
+  scsihw: virtio-scsi-single
+  disks:
+    - id: scsi0
+      storage: local-lvm
+      source: vm-1003-disk-1   # existing disk (adopted)
+      size: 120                # GB
+      ssd: true
+      iothread: true
+  efidisk:
+    storage: local-lvm
+    source: vm-1003-disk-0     # existing efidisk (adopted)
+    efitype: 4m
+    preEnrolledKeys: true
+
+  # First-boot install media (already attached on 1003). Detach post-install.
+  cdrom:
+    storage: local
+    iso: bazzite-deck-stable-live.iso
+
+  network:
+    bridge: vmbr0
+    # net0 virtio (existing MAC bc:24:11:03:32:13 preserved on adopt)
+
+  # --- the whole point: GPU passthrough, cloned from the working VM 1002 ---
+  hostpci:
+    - id: "0000:09:00"
+      pcie: true
+      xVga: true            # primary GPU for the guest (host goes headless while running)
+
+  boot:
+    order: [scsi0, ide2, net0]
