@@ -348,11 +348,15 @@
 
     "hostPci": {
       "type": "object",
-      "required": ["id"],
       "additionalProperties": false,
-      "description": "PCI(e) passthrough device (Proxmox hostpciN). The heart of the gaming shape — has no LXC analog. The host's VFIO/IOMMU binding must already be in place (proven on desktop-01 by VM 1002).",
+      "oneOf": [
+        { "required": ["mapping"] },
+        { "required": ["id"] }
+      ],
+      "description": "PCI(e) passthrough device (Proxmox hostpciN). The heart of the gaming shape — has no LXC analog. Provide EITHER 'mapping' (a Proxmox PCI resource-mapping name — preferred) OR 'id' (a raw PCI address). Proxmox only lets the real root@pam user set a raw hostpciN ('only root can set hostpciN config for non-mapped devices'); a mapped device is settable by any API token with Mapping.Use and is node-portable. The host's VFIO/IOMMU binding must already be in place (proven on desktop-01 by VM 1002).",
       "properties": {
-        "id": { "type": "string", "description": "Host PCI address, e.g. '0000:09:00' (function-less = whole device / all functions)." },
+        "mapping": { "type": "string", "description": "Proxmox PCI resource-mapping name (e.g. 'AMD_Radeon_RX6600'). Preferred — token-settable and node-portable. Create the mapping at /cluster/mapping/pci first." },
+        "id": { "type": "string", "description": "Raw host PCI address, e.g. '0000:09:00' (function-less = whole device / all functions). root@pam only — prefer 'mapping' for token-driven IaC." },
         "pcie": { "type": "boolean", "description": "Expose as PCI Express (pcie=1; requires a q35 machine)." },
         "xVga": { "type": "boolean", "description": "Mark as the guest's primary VGA (x-vga=1) — host loses the display while the guest runs." },
         "rombar": { "type": "boolean", "description": "Make the device ROM visible to the guest (rombar=1)." },
