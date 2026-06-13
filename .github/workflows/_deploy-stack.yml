@@ -23,7 +23,9 @@ jobs:
       cancel-in-progress: false        # never cancel an in-flight converge
     env:
       # Restore (Fallout-build + chrison-dev GitHub Packages — cross-org, needs a real PAT).
-      GITHUB_PACKAGES_PAT: ${{ secrets.GITHUB_PACKAGES_PAT }}
+      # Secret is PACKAGES_PAT (GitHub forbids the GITHUB_ prefix); nuget.config
+      # reads it via %GITHUB_PACKAGES_PAT%.
+      GITHUB_PACKAGES_PAT: ${{ secrets.PACKAGES_PAT }}
       # Cluster read (Preview state-diff) + create/config (Deploy).
       PROXMOX_BASE_URL: ${{ secrets.PROXMOX_BASE_URL }}
       PROXMOX_TOKEN_ID: ${{ secrets.PROXMOX_TOKEN_ID }}

@@ -9,8 +9,10 @@ jobs:
     env:
       # Fallout (Fallout-build feed) + ProxmoxSharp/UnifiSharp (chrison-dev feed)
       # restore both need GitHub Packages read across two orgs — the default
-      # GITHUB_TOKEN can't (cross-org), so a real PAT secret is required.
-      GITHUB_PACKAGES_PAT: ${{ secrets.GITHUB_PACKAGES_PAT }}
+      # GITHUB_TOKEN can't (cross-org), so a real PAT is required. The secret is
+      # PACKAGES_PAT (GitHub forbids the reserved GITHUB_ prefix on secret names);
+      # nuget.config reads it via the %GITHUB_PACKAGES_PAT% env var.
+      GITHUB_PACKAGES_PAT: ${{ secrets.PACKAGES_PAT }}
     steps:
       - uses: actions/checkout@v6
       - name: Fetch stack submodules (shapes live here; vendor/* C# repos skipped)
