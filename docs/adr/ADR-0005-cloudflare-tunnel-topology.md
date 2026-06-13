@@ -1,6 +1,6 @@
 # ADR-0005 — Cloudflare tunnel topology: per-stack tunnels, HA via replicas, Teleport as admin front door
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-06-13
 - **Deciders:** Chris
 - **Relates to:** [ADR-0001](ADR-0001-iac-tooling.md),
