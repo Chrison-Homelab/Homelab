@@ -1,0 +1,55 @@
+# Core tunnel — connector replica #1 (hpe-01). PRIMARY: owns the named tunnel +
+# ingress + token. The nuc-01 replica is a second connector for the SAME tunnel
+# (see cloudflared-nuc-01.lxc.yaml). Per ADR-0005.
+#
+# community-scripts: ct/cloudflared.sh (stable / ProxmoxVE). Deliberately SEPARATE
+# from the monolithic cloudflared CT 2001 (left untouched) — migration off CT 2001
+# is hostname-by-hostname, add-only, and retires CT 2001's ingress LAST (#118).
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: cloudflared-hpe-01
+  stack: Core
+  tags: [network, cloudflare, tunnel, ha-primary]
+
+spec:
+  app: cloudflared
+  ctid: 2010
+  node: hpe-01            # replica pinned here (overrides: Core has no default node)
+  cores: 1
+  memory: 512            # MB
+  disk: 2                # GB
+  # os/network/storage/timezone inherited from the Core stack
+
+  # Post-create wiring (converge / BL-010 — ADD-ONLY on Cloudflare, see CLAUDE.md):
+  config:
+    tunnel: Homelab.Stacks.Core              # NEW named tunnel — never touches existing tunnels / CT 2001
+    # Ingress is a TUNNEL-level property defined ONCE here (the replica omits it).
+    ingress:
+      # Teleport — the SSH + admin-UI SSO front door. Directly unblocks #117.
+      # Target is CT 9904's web UI; ⚠ needs a DHCP reservation (#117) — until then
+      # this IP is the value verified 2026-06-13. noTLSVerify: Teleport self-signs
+      # on :3080, Cloudflare provides the public TLS.
+      - hostname: teleport.chrison.dev
+        service: "https://10.10.229.241:3080"
+        originRequest: { noTLSVerify: true }
+      # ── Break-glass admin UIs (Proxmox node UIs + PDM) — ADDED DURING MIGRATION ──
+      # Gated by Cloudflare Access. Kept commented until we cut `proxmox.chrison.dev`
+      # off the monolith CT 2001 (add-only: no two tunnels may claim one hostname).
+      # - hostname: pve-hpe-01.chrison.dev
+      #   service: "https://hpe-01.homelab.chrison.internal:8006"
+      #   originRequest: { noTLSVerify: true }
+      # - hostname: pve-nuc-01.chrison.dev
+      #   service: "https://nuc-01.homelab.chrison.internal:8006"
+      #   originRequest: { noTLSVerify: true }
+  secrets:
+    - name: tunnelToken
+      valueFrom:
+        provider:
+          name: cloudflare
+          action: tunnel-token               # get-or-create tunnel by name + DNS CNAME (add-only); returns the token
+          with: { tunnel: Homelab.Stacks.Core }
+          auth: { env: CF_API_TOKEN }         # scoped token from secrets.env
