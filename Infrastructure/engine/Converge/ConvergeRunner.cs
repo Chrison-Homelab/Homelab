@@ -1,4 +1,6 @@
 using Homelab.Infrastructure.Shapes;
+using ProxmoxSharp;
+using ProxmoxSharp.Vm;
 
 namespace Homelab.Infrastructure.Converge;
 
@@ -11,14 +13,17 @@ public sealed class ConvergeRunner
     private readonly SecretsEnv _env;
     private readonly IClusterStateProvider? _stateProvider;
     private readonly INodeExec _exec;
+    private readonly ProxmoxClientOptions? _pveOptions;
 
     public ConvergeRunner(string stackDir, SecretsEnv env,
-        IClusterStateProvider? stateProvider = null, INodeExec? exec = null)
+        IClusterStateProvider? stateProvider = null, INodeExec? exec = null,
+        ProxmoxClientOptions? pveOptions = null)
     {
         _stackDir = stackDir;
         _env = env;
         _stateProvider = stateProvider;
         _exec = exec ?? new NodeExec();
+        _pveOptions = pveOptions;
     }
 
     // State-diff PLAN (issue #45). For each desired shape, report the per-member
@@ -101,6 +106,30 @@ public sealed class ConvergeRunner
 
         if (state is not null)
             Console.WriteLine($"State summary — {toCreate} to create, {drifted} drifted, {upToDate} up-to-date.");
+
+        // kind: VM members — planned via ProxmoxSharp (read-only).
+        if (loaded.VmMembers.Count > 0)
+        {
+            Console.WriteLine($"\nVM members ({loaded.VmMembers.Count}) — via ProxmoxSharp:\n");
+            if (_pveOptions is null)
+                Console.WriteLine("  (VM plan skipped — no PVE credentials configured)\n");
+            else
+            {
+                var writer = QemuWriter.Create(_pveOptions);
+                foreach (var vm in loaded.VmMembers)
+                {
+                    try
+                    {
+                        var plan = await VmConverger.PlanAsync(writer, vm, ct);
+                        Console.WriteLine($"▸ {vm.Metadata.Name}  (vmid {vm.Spec.Vmid}, node {vm.Spec.Node}) — {plan.Kind}");
+                        foreach (var c in plan.Changes) Console.WriteLine($"    {c}");
+                        if (!plan.HasChanges) Console.WriteLine("    (desired state already satisfied)");
+                    }
+                    catch (Exception ex) { Console.WriteLine($"▸ {vm.Metadata.Name}: PLAN ERROR — {ex.Message}"); }
+                    Console.WriteLine();
+                }
+            }
+        }
 
         Console.WriteLine(blocked == 0
             ? "Plan OK — all declared secrets resolvable. (Run with --apply to converge.)"
@@ -202,6 +231,35 @@ public sealed class ConvergeRunner
                 failed++;
             }
             Console.WriteLine();
+        }
+
+        // kind: VM members — applied via ProxmoxSharp (create if absent, else set changed keys).
+        if (loaded.VmMembers.Count > 0)
+        {
+            if (_pveOptions is null)
+                Console.WriteLine("VM members: SKIPPED (no PVE credentials configured)\n");
+            else
+            {
+                var writer = QemuWriter.Create(_pveOptions);
+                foreach (var vm in loaded.VmMembers)
+                {
+                    Console.WriteLine($"▸ {vm.Metadata.Name}  (vmid {vm.Spec.Vmid}, node {vm.Spec.Node})");
+                    try
+                    {
+                        var res = await VmConverger.ApplyAsync(writer, vm);
+                        Console.WriteLine($"    {res.Outcome.ToString().ToUpperInvariant()}: {res.Message}");
+                        switch (res.Outcome)
+                        {
+                            case ApplyOutcome.Applied: applied++; break;
+                            case ApplyOutcome.NoChange: nochange++; break;
+                            case ApplyOutcome.Skipped: skipped++; break;
+                            default: failed++; break;
+                        }
+                    }
+                    catch (Exception ex) { Console.WriteLine($"    FAILED: {ex.Message}"); failed++; }
+                    Console.WriteLine();
+                }
+            }
         }
 
         Console.WriteLine($"Apply summary — {applied} applied, {nochange} no-change, {skipped} skipped, {failed} failed.");

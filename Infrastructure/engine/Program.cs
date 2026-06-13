@@ -104,15 +104,19 @@ static async Task<int> RunConverge(string[] args)
     var secretsPath = FindUp("secrets.env", Directory.GetCurrentDirectory());
     var env = SecretsEnv.Load(secretsPath);
 
+    // PVE creds power the kind: VM converge path (ProxmoxSharp); null degrades to
+    // "VM plan/apply skipped" while LXC converge still works.
+    var pve = LoadOptions();
+
     if (destroy)
         return await new ConvergeRunner(stackDir, env).DestroyAsync(confirmed);
     if (apply)
-        return await new ConvergeRunner(stackDir, env).ApplyAsync();
+        return await new ConvergeRunner(stackDir, env, pveOptions: pve).ApplyAsync();
 
     // Plan diffs against live cluster state (best-effort; degrades to intent-only
     // if PVE creds are missing or the cluster is unreachable).
     var stateProvider = new ProxmoxClusterStateProvider(LoadOptions);
-    return await new ConvergeRunner(stackDir, env, stateProvider).PlanAsync();
+    return await new ConvergeRunner(stackDir, env, stateProvider, pveOptions: pve).PlanAsync();
 }
 
 // Walk up from start looking for a file; returns null if not found.

@@ -234,6 +234,16 @@ public sealed class CtidRange
     public int End { get; set; }
 }
 
+// kind: VM document — wraps a VmSpec (parallel to Shape/StackShape). Loaded from
+// *.vm.yaml members and converged via ProxmoxSharp (VmConverger), not community-scripts.
+public sealed class VmShape
+{
+    public string ApiVersion { get; set; } = "";
+    public string Kind { get; set; } = "";
+    public ShapeMetadata Metadata { get; set; } = new();
+    public VmSpec Spec { get; set; } = new();
+}
+
 // kind: VM — a Proxmox QEMU/KVM VM, provisioned by the ProxmoxSharp VM write
 // path (#115), NOT the community-scripts (LXC) create path. Mirrors $defs.vmSpec
 // 1:1 (enforced by SchemaDriftTests). Reuses StartupSpec/NetworkSpec/
