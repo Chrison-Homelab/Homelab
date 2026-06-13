@@ -204,21 +204,47 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
     {
         var tunnel = s.Spec.Config.Str("tunnel") ?? "(tunnel)";
         var ingressCount = s.Spec.Config.TryGetValue("ingress", out var ig) && ig is IEnumerable<object> e ? e.Count() : 0;
-        yield return $"ensure tunnel '{tunnel}' + DNS exist (ADD-ONLY — never touch existing; CLAUDE.md)";
-        yield return $"apply {ingressCount} ingress rule(s); install tunnel token; start cloudflared";
+        if (ingressCount == 0)
+        {
+            yield return $"join existing tunnel '{tunnel}' as a replica connector (ingress + DNS owned by the primary)";
+            yield return "install the shared tunnel token; start cloudflared";
+        }
+        else
+        {
+            yield return $"ensure tunnel '{tunnel}' + DNS exist (ADD-ONLY — never touch existing; CLAUDE.md)";
+            yield return $"apply {ingressCount} ingress rule(s); install tunnel token; start cloudflared";
+        }
     }
 
     public async Task<ApplyResult> ApplyAsync(Shape s, ConvergeContext ctx)
     {
         if (s.Spec.Node is not { } node || s.Spec.Ctid is not { } ctid) return ApplyResult.Failed("missing node/ctid");
         if (s.Spec.Config.Str("tunnel") is not { } tunnelName) return ApplyResult.Failed("no tunnel in config");
-        var ingress = ParseIngress(s.Spec.Config);
-        if (ingress.Count == 0) return ApplyResult.Failed("no ingress in config");
-
         var sec = s.Spec.Secrets.FirstOrDefault(x => x.ValueFrom.Provider?.Name == "cloudflare");
         if (sec?.ValueFrom.Provider?.Auth is not { } authSrc) return ApplyResult.Failed("no cloudflare provider secret declared");
         var api = new CloudflareApi(await ctx.Deriver.ResolveAsync(authSrc));
         var ct = CancellationToken.None;
+        var ingress = ParseIngress(s.Spec.Config);
+
+        // Replica connector (no ingress): join an EXISTING tunnel owned by the
+        // primary — install the shared token + start cloudflared, nothing else.
+        // Cloudflare load-balances multiple connectors on one tunnel; ingress + DNS
+        // are tunnel-level and owned by the primary (the shape's replicaOf).
+        if (ingress.Count == 0)
+        {
+            var acct = Environment.GetEnvironmentVariable("CF_ACCOUNT_ID");
+            if (string.IsNullOrWhiteSpace(acct))
+                return ApplyResult.Failed("replica needs CF_ACCOUNT_ID (env) to locate the shared tunnel");
+            var rid = await api.FindTunnelIdAsync(acct, tunnelName, ct);
+            if (rid is null) return ApplyResult.Failed($"tunnel '{tunnelName}' not found — deploy the primary connector first");
+            if ((await ctx.Exec.InContainerAsync(node, ctid, "systemctl is-active cloudflared")).Stdout.Trim() == "active")
+                return ApplyResult.NoChange($"replica connector already active on tunnel '{tunnelName}'");
+            var rtoken = await api.GetTunnelTokenAsync(acct, rid, ct);
+            var rres = await ctx.Exec.InContainerAsync(node, ctid,
+                $"cloudflared service uninstall 2>/dev/null; cloudflared service install {rtoken}");
+            if (!rres.Ok) return ApplyResult.Failed($"cloudflared install failed: {rres.Stderr}");
+            return ApplyResult.Applied($"replica connector joined tunnel '{tunnelName}' (token installed)");
+        }
 
         var zoneName = string.Join('.', ingress[0].host.Split('.')[^2..]);
         var zone = await api.GetZoneAsync(zoneName, ct);
