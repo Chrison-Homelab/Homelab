@@ -1,0 +1,46 @@
+# Core stack — the homelab's remote-access lifeline.
+#
+# Per ADR-0005 (Cloudflare tunnel topology), the `core` tunnel is the one tunnel
+# that MUST survive a single node loss, so it runs as TWO connector replicas on
+# different nodes (hpe-01 + nuc-01) sharing one named tunnel — Cloudflare
+# load-balances / fails over between them. It fronts the management lifeline:
+# Teleport (SSH + admin-UI SSO front door) and, post-migration, the Proxmox node
+# UIs + PDM as a CF-Access break-glass.
+#
+# Deployed via community-scripts over SSH (ct/cloudflared.sh) — see the renderer
+# at ../../Infrastructure/deploy/Deploy-Shape.ps1. Validate members against
+# ../../Infrastructure/schema/shape.schema.json.
+#
+# CTID allocation policy: members set ctid EXPLICITLY (omission is an error).
+
+apiVersion: homelab/v1
+kind: Stack
+
+metadata:
+  name: Core
+  tags: [core, infra]
+
+spec:
+  ctidRange:
+    start: 2010           # guard rail: a member ctid outside this block is rejected.
+    end: 2099             # 2000–2009 are existing/legacy infra (not Core members).
+  defaults:
+    # NOTE: no default `node` — Core members are pinned to specific nodes for HA,
+    # so each replica sets its own node explicitly.
+    source:
+      channel: stable     # → community-scripts/ProxmoxVE
+      ref: main
+    os: debian
+    osVersion: 13
+    unprivileged: true
+    storage: local-lvm
+    templateStorage: local
+    onboot: true
+    network:
+      bridge: vmbr0
+      vlan: 1010          # Homelab — real tag → interface name=vlan1010,tag=1010
+      ipv4: dhcp          # ⚠ each connector needs a DHCP reservation so the tunnel
+                          #    target is stable across reboots (tracked in #118).
+      ipv6: none
+    timezone: Pacific/Auckland
+    tags: [core, community-script]

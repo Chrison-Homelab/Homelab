@@ -1,0 +1,40 @@
+# Core tunnel — connector replica #2 (nuc-01). HA REPLICA: a second connector for
+# the SAME named tunnel as cloudflared-hpe-01, sharing its token. Cloudflare
+# load-balances / fails over between the two. This replica is what gives Teleport
+# (CT 9904, nuc-01) a node-LOCAL connector instead of hopping cross-node to hpe-01
+# — the root cause of today's flakiness (ADR-0005, #118).
+#
+# Ingress is defined ONCE on the primary (cloudflared-hpe-01); a token-based
+# connector needs only the tunnel token to join. Validate against
+# ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: cloudflared-nuc-01
+  stack: Core
+  tags: [network, cloudflare, tunnel, ha-replica]
+
+spec:
+  app: cloudflared
+  ctid: 2011
+  node: nuc-01           # replica pinned here — local connector for Teleport
+  cores: 1
+  memory: 512            # MB
+  disk: 2                # GB
+  # os/network/storage/timezone inherited from the Core stack
+
+  # Post-create wiring (converge / BL-010 — ADD-ONLY on Cloudflare, see CLAUDE.md):
+  dependsOn: [cloudflared-hpe-01]            # primary creates the tunnel + ingress first
+  config:
+    tunnel: Homelab.Stacks.Core              # same named tunnel → second connector replica
+    replicaOf: cloudflared-hpe-01            # intent hint: ingress lives on the primary, not here
+  secrets:
+    - name: tunnelToken
+      valueFrom:
+        provider:
+          name: cloudflare
+          action: tunnel-token               # idempotent get-by-name → SAME token as the primary
+          with: { tunnel: Homelab.Stacks.Core }
+          auth: { env: CF_API_TOKEN }
