@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Fallout deployment pipeline (ADR-0001: "the engine runs as a Fallout build
+       target today"). Replaces Infrastructure/deploy/Deploy-Shape.ps1. Targets
+       orchestrate the C# engine (Infrastructure/engine) — one deploy per stack.
+
+       Run directly with `dotnet run` on this project (target as the arg), or via
+       ./build.sh / ./build.ps1. Fallout packages come from the Fallout-build edge
+       feed (see ../nuget.config); pinned for reproducibility. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace></RootNamespace>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CS0649;CS0169</NoWarn>
+    <!-- Inline Version="" pins below take effect (no central package management here). -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Pinned to the highest version where ALL of cli+build+common+components
+         exist together (cli tops out at preview.5 while the libs go further);
+         pinning the set avoids tool/lib skew. Bump deliberately. -->
+    <PackageReference Include="Fallout.Build" Version="2026.1.0-preview.5.gd84fad5cd7" />
+    <PackageReference Include="Fallout.Common" Version="2026.1.0-preview.5.gd84fad5cd7" />
+    <PackageReference Include="Fallout.Components" Version="2026.1.0-preview.5.gd84fad5cd7" />
+  </ItemGroup>
+
+</Project>

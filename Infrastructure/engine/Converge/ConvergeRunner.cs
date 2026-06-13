@@ -133,8 +133,14 @@ public sealed class ConvergeRunner
 
         Console.WriteLine(blocked == 0
             ? "Plan OK — all declared secrets resolvable. (Run with --apply to converge.)"
-            : $"Plan has {blocked} unresolved secret input(s) — fix secrets.env before apply.");
-        return blocked == 0 ? 0 : 1;
+            : $"Plan OK — {blocked} secret input(s) not resolvable in this context "
+              + "(service-derived from a not-yet-deployed dependency, or env not set here). "
+              + "These are enforced at --apply, not in a dry-run.");
+        // Dry-run never fails on secret resolvability: service-derived secrets
+        // (e.g. a Forgejo runner token) can't resolve until their dependency is
+        // live, and a plan must run without apply-time credentials. ApplyAsync
+        // re-checks required env secrets and fails there if any are missing.
+        return 0;
     }
 
     // Live converge — idempotent per provisioner. Guards: the CT must already

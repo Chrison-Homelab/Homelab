@@ -1,0 +1,53 @@
+name: _deploy-stack
+# Reusable per-stack deploy pipeline (Fallout). Called by deploy-<stack>.yml —
+# one caller per stack ("one pipeline per stack", DRY). Runs on the homelab
+# self-hosted runner because Preview/Deploy need cluster reach (Proxmox API +
+# SSH to nodes) and the Fallout-build/chrison-dev package feeds.
+on:
+  workflow_call:
+    inputs:
+      stack:
+        description: 'Stack name (directory under stacks/).'
+        required: true
+        type: string
+      apply:
+        description: 'true = live Deploy (converge --apply); false = Preview only.'
+        required: false
+        type: boolean
+        default: false
+jobs:
+  pipeline:
+    runs-on: [self-hosted, homelab]
+    concurrency:
+      group: deploy-${{ inputs.stack }}
+      cancel-in-progress: false        # never cancel an in-flight converge
+    env:
+      # Restore (Fallout-build + chrison-dev GitHub Packages — cross-org, needs a real PAT).
+      # Secret is PACKAGES_PAT (GitHub forbids the GITHUB_ prefix); nuget.config
+      # reads it via %GITHUB_PACKAGES_PAT%.
+      GITHUB_PACKAGES_PAT: ${{ secrets.PACKAGES_PAT }}
+      # Cluster read (Preview state-diff) + create/config (Deploy).
+      PROXMOX_BASE_URL: ${{ secrets.PROXMOX_BASE_URL }}
+      PROXMOX_TOKEN_ID: ${{ secrets.PROXMOX_TOKEN_ID }}
+      PROXMOX_TOKEN_SECRET: ${{ secrets.PROXMOX_TOKEN_SECRET }}
+      PROXMOX_VERIFY_TLS: ${{ secrets.PROXMOX_VERIFY_TLS }}
+      # Cloudflare tunnel-token provider (cloudflared shapes) — ADD-ONLY (CLAUDE.md).
+      CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+      CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+      # NB: SSH to nodes for the community-scripts create path is provided by the
+      # runner host (proven by the BL-013 smoke deploy), not a GH secret.
+    steps:
+      - uses: actions/checkout@v6
+      - name: Fetch stack submodules (shapes live here; vendor/* C# repos skipped)
+        env:
+          TOKEN: ${{ secrets.SUBMODULES_RO_PAT }}
+        run: |
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+          paths=$(git config --file .gitmodules --get-regexp path | awk '{print $2}' | grep '^stacks/')
+          git submodule update --init $paths
+          git config --global --unset-all url."https://x-access-token:${TOKEN}@github.com/".insteadOf || true
+      - name: Preview (dry-run — validate + plan, no mutation)
+        run: ./build.sh Preview --stack ${{ inputs.stack }}
+      - name: Deploy (LIVE apply)
+        if: ${{ inputs.apply }}
+        run: ./build.sh Deploy --stack ${{ inputs.stack }}
