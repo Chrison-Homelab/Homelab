@@ -1,0 +1,26 @@
+name: deploy-core
+# One pipeline per stack (ADR-0005 stacks / ADR-0001 Fallout). PR touching the
+# stack → Preview (dry-run). Manual dispatch with apply=true → live Deploy.
+on:
+  pull_request:
+    paths:
+      - 'stacks/Core/**'
+      - 'Infrastructure/**'
+      - 'build/**'
+      - 'nuget.config'
+      - 'global.json'
+      - '.github/workflows/deploy-core.yml'
+      - '.github/workflows/_deploy-stack.yml'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Live apply (leave unchecked for Preview only).'
+        type: boolean
+        default: false
+jobs:
+  deploy:
+    uses: ./.github/workflows/_deploy-stack.yml
+    with:
+      stack: Core
+      apply: ${{ github.event_name == 'workflow_dispatch' && inputs.apply }}
+    secrets: inherit

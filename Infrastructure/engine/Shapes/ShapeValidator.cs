@@ -112,7 +112,26 @@ public static class ShapeValidator
             .Concat(Directory.EnumerateFiles(dir, "*.yml", opt))
             .Distinct()
             .OrderBy(f => f, StringComparer.Ordinal);
-        return files.Select(ValidateFile).ToList();
+        // Only validate homelab/v1 shapes; skip other YAML (e.g. the app-catalogue,
+        // CI/compose files) — mirrors tools/validate-shapes.py's apiVersion gate.
+        return files.Where(IsHomelabShape).Select(ValidateFile).ToList();
+    }
+
+    // Cheap apiVersion probe: a directory scan validates only documents that
+    // declare `apiVersion: homelab/v1`. Files that fail to parse are kept (so
+    // ValidateFile surfaces the parse error rather than silently skipping a shape).
+    private static bool IsHomelabShape(string path)
+    {
+        try
+        {
+            return YamlToObject.Deserialize<object?>(File.ReadAllText(path)) is IDictionary<object, object> map
+                && map.TryGetValue("apiVersion", out var v)
+                && string.Equals(Convert.ToString(v), "homelab/v1", StringComparison.Ordinal);
+        }
+        catch
+        {
+            return true; // unparseable → let ValidateFile report it
+        }
     }
 
     // --- YAML object graph → System.Text.Json JsonNode ---
