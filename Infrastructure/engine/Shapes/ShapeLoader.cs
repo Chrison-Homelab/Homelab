@@ -13,7 +13,7 @@ public sealed class ShapeLoader
         .IgnoreUnmatchedProperties()   // model only the converge-relevant subset
         .Build();
 
-    public sealed record LoadedStack(StackShape? Stack, IReadOnlyList<Shape> Members);
+    public sealed record LoadedStack(StackShape? Stack, IReadOnlyList<Shape> Members, IReadOnlyList<VmShape> VmMembers);
 
     public static LoadedStack LoadStack(string stackDir)
     {
@@ -39,7 +39,28 @@ public sealed class ShapeLoader
             if (stack?.Spec.Defaults is { } d) Merge(d, shape.Spec);
             members.Add(shape);
         }
-        return new LoadedStack(stack, members);
+
+        // kind: VM members (*.vm.yaml) — converged via ProxmoxSharp, not community-scripts.
+        var vmMembers = new List<VmShape>();
+        foreach (var file in Directory.EnumerateFiles(stackDir, "*.vm.yaml").OrderBy(f => f))
+        {
+            WarnIfInvalid(file);
+            var shape = Yaml.Deserialize<VmShape>(File.ReadAllText(file));
+            if (!string.Equals(shape.Kind, "VM", StringComparison.Ordinal)) continue;
+            if (stack?.Spec.Defaults is { } d) MergeVm(d, shape.Spec);
+            vmMembers.Add(shape);
+        }
+
+        return new LoadedStack(stack, members, vmMembers);
+    }
+
+    // VM members inherit only the stack defaults a VM actually has (node, tags) —
+    // the stack's spec.defaults reuses the LXC shape, so the rest doesn't apply.
+    private static void MergeVm(LxcSpec defaults, VmSpec member)
+    {
+        member.Node ??= defaults.Node;
+        if (defaults.Tags.Count > 0)
+            member.Tags = defaults.Tags.Concat(member.Tags).Distinct().ToList();
     }
 
     private static void WarnIfInvalid(string file)

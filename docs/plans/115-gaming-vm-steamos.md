@@ -3,10 +3,11 @@
 **Issue:** [#115](https://github.com/Chrison-dev/Homelab/issues/115) ·
 **Relates to:** [#57 SynoSharp write path](057-synosharp-write-path.md) (the layered, dry-run-default
 pattern this mirrors), [ADR-0001 shape contract](../adr/), [#113 converge apply](BL-010-converge.md)
-**Status:** Phase A (schema) DONE; **Phase B (ProxmoxSharp write path) DONE** — 2026-06-08. 25 tests
-green; `vm plan` vs live 1003 = `+hostpci0` (+ rename); **full create→start→stop→delete lifecycle
-live-verified on throwaway VM 9990 (all tasks OK, cleaned up).** Next: **Phase C** — apply `+hostpci0`
-to 1003 (needs explicit go-ahead, mutating).
+**Status (2026-06-13):** Phases **A, B, C DONE + L4 DONE**. 1003 (`bazzite`) has the Radeon via
+`hostpci0: mapping=AMD_Radeon_RX6600`, applied through the hub: **`homelab-infra converge
+stacks/Gaming [--apply]`** loads the `*.vm.yaml`, maps it to ProxmoxSharp's `QemuVmSpec`, and
+reconciles idempotently (re-plan = Skip). 43 hub tests green. Remaining = **Phase D** (boot Bazzite
+on the GPU + Sunshine/Moonlight streaming — hands-on) and Phase E (promote the stack to a submodule).
 
 **Decisions (2026-06-08):** desktop-01 will become the **dedicated gaming node** (LXCs migrate
 off) → the 16 GB pressure resolves, VM keeps/raises its 12 GB. One gaming VM at a time is fine
