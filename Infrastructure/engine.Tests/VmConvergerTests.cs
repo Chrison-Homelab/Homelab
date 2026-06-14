@@ -137,4 +137,39 @@ public sealed class VmConvergerTests
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
+
+    private static VmPlan SetConfigPlan(params PlannedChange[] changes) =>
+        new("desktop-01", 1002, VmActionKind.SetConfig, changes, []);
+
+    [Fact]
+    public void RawToMapping_detects_raw_address_to_mapping_transition()
+    {
+        // The 1002 (Windows) adopt: live raw hostpci0 → the AMD_Radeon_RX6600 mapping.
+        var plan = SetConfigPlan(
+            new PlannedChange("hostpci0", "0000:09:00,pcie=1,x-vga=1", "mapping=AMD_Radeon_RX6600,pcie=1,x-vga=1"),
+            new PlannedChange("onboot", null, "0"),
+            new PlannedChange("tags", null, "gaming"));
+
+        Assert.Equal(new[] { "hostpci0" }, VmConverger.RawToMappingTransitions(plan));
+    }
+
+    [Fact]
+    public void RawToMapping_ignores_a_fresh_mapping_add()
+    {
+        // The 1003 (Bazzite) adopt: hostpci0 added fresh (no prior value) — a plain add,
+        // NOT a transition, so it must NOT be dropped-then-set.
+        var plan = SetConfigPlan(
+            new PlannedChange("hostpci0", null, "mapping=AMD_Radeon_RX6600,pcie=1,x-vga=1"));
+
+        Assert.Empty(VmConverger.RawToMappingTransitions(plan));
+    }
+
+    [Fact]
+    public void RawToMapping_ignores_mapping_to_mapping_and_non_hostpci_changes()
+    {
+        var plan = SetConfigPlan(
+            new PlannedChange("hostpci0", "mapping=Old_GPU,pcie=1", "mapping=AMD_Radeon_RX6600,pcie=1"),  // already mapped
+            new PlannedChange("memory", "12288", "16384"));                                               // unrelated key
+        Assert.Empty(VmConverger.RawToMappingTransitions(plan));
+    }
 }
