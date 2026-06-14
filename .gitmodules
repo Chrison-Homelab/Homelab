@@ -19,3 +19,6 @@
 [submodule "vendor/SynoSharp"]
 	path = vendor/SynoSharp
 	url = https://github.com/Chrison-dev/SynoSharp.git
+[submodule "stacks/Azure"]
+	path = stacks/Azure
+	url = https://github.com/Chrison-dev/Homelab.Stacks.Azure.git
