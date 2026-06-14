@@ -36,15 +36,17 @@ spec:
       - hostname: teleport.chrison.dev
         service: "https://10.10.229.241:3080"
         originRequest: { noTLSVerify: true }
-      # ── Break-glass admin UIs (Proxmox node UIs + PDM) — ADDED DURING MIGRATION ──
-      # Gated by Cloudflare Access. Kept commented until we cut `proxmox.chrison.dev`
-      # off the monolith CT 2001 (add-only: no two tunnels may claim one hostname).
-      # - hostname: pve-hpe-01.chrison.dev
-      #   service: "https://hpe-01.homelab.chrison.internal:8006"
-      #   originRequest: { noTLSVerify: true }
-      # - hostname: pve-nuc-01.chrison.dev
-      #   service: "https://nuc-01.homelab.chrison.internal:8006"
-      #   originRequest: { noTLSVerify: true }
+      # ── Break-glass admin: PDM behind Cloudflare Access (ADR-0005, live 2026-06-14) ──
+      # PDM (Proxmox Datacenter Manager — CT 2002 / nuc-01) is the SINGLE admin front
+      # door, gated by a CF Access self-hosted app (identity: One-Time PIN; policy:
+      # allow csimon@chrison.dev). The Proxmox NODE UIs are deliberately NOT exposed
+      # via tunnel (decision 2026-06-14) — the per-node `pve-*` idea is dropped.
+      # ⚠ origin IP is DHCP → pin a reservation so this target is stable (#117-class).
+      - hostname: pdm.chrison.dev
+        service: "https://10.10.208.155:8443"
+        originRequest: { noTLSVerify: true }
+      # NOTE: `proxmox.chrison.dev` stays on the monolith CT 2001 (a port-forward) for
+      # now; migrating/retiring it is a separate follow-up, not part of Core.
   secrets:
     - name: tunnelToken
       valueFrom:
