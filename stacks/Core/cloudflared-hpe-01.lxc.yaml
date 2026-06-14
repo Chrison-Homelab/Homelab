@@ -36,15 +36,24 @@ spec:
       - hostname: teleport.chrison.dev
         service: "https://10.10.229.241:3080"
         originRequest: { noTLSVerify: true }
-      # ── Break-glass admin UIs (Proxmox node UIs + PDM) — ADDED DURING MIGRATION ──
-      # Gated by Cloudflare Access. Kept commented until we cut `proxmox.chrison.dev`
-      # off the monolith CT 2001 (add-only: no two tunnels may claim one hostname).
-      # - hostname: pve-hpe-01.chrison.dev
-      #   service: "https://hpe-01.homelab.chrison.internal:8006"
-      #   originRequest: { noTLSVerify: true }
-      # - hostname: pve-nuc-01.chrison.dev
-      #   service: "https://nuc-01.homelab.chrison.internal:8006"
-      #   originRequest: { noTLSVerify: true }
+      # ── Break-glass admin behind Cloudflare Access (ADR-0005, live 2026-06-14) ──
+      # Two admin front doors, each a CF Access self-hosted app gated by One-Time PIN
+      # (policy: allow csimon@chrison.dev). The per-node `pve-*` hostname idea is dropped.
+      #
+      # PDM (Proxmox Datacenter Manager — CT 2002 / nuc-01): the cluster fleet manager.
+      # ⚠ origin IP is DHCP → pinned via a UniFi reservation (#117-class).
+      - hostname: pdm.chrison.dev
+        service: "https://10.10.208.155:8443"
+        originRequest: { noTLSVerify: true }
+      # proxmox.chrison.dev: a real Proxmox NODE UI (PDM is NOT a drop-in for it), so
+      # this stays a node. Cut over from the monolith CT 2001 on 2026-06-14. Its Access
+      # app has a SECOND, non-identity policy accepting a service token, so the public
+      # /api2/json endpoint still works non-interactively (creds in secrets.env:
+      # CF_ACCESS_PROXMOX_CLIENT_ID / _SECRET). Monolith ingress left as rollback,
+      # retired LAST. Currently targets nuc-01; both Core replicas can reach it.
+      - hostname: proxmox.chrison.dev
+        service: "https://192.168.179.1:8006"
+        originRequest: { noTLSVerify: true }
   secrets:
     - name: tunnelToken
       valueFrom:
