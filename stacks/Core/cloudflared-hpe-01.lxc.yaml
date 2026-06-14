@@ -36,17 +36,24 @@ spec:
       - hostname: teleport.chrison.dev
         service: "https://10.10.229.241:3080"
         originRequest: { noTLSVerify: true }
-      # ── Break-glass admin: PDM behind Cloudflare Access (ADR-0005, live 2026-06-14) ──
-      # PDM (Proxmox Datacenter Manager — CT 2002 / nuc-01) is the SINGLE admin front
-      # door, gated by a CF Access self-hosted app (identity: One-Time PIN; policy:
-      # allow csimon@chrison.dev). The Proxmox NODE UIs are deliberately NOT exposed
-      # via tunnel (decision 2026-06-14) — the per-node `pve-*` idea is dropped.
-      # ⚠ origin IP is DHCP → pin a reservation so this target is stable (#117-class).
+      # ── Break-glass admin behind Cloudflare Access (ADR-0005, live 2026-06-14) ──
+      # Two admin front doors, each a CF Access self-hosted app gated by One-Time PIN
+      # (policy: allow csimon@chrison.dev). The per-node `pve-*` hostname idea is dropped.
+      #
+      # PDM (Proxmox Datacenter Manager — CT 2002 / nuc-01): the cluster fleet manager.
+      # ⚠ origin IP is DHCP → pinned via a UniFi reservation (#117-class).
       - hostname: pdm.chrison.dev
         service: "https://10.10.208.155:8443"
         originRequest: { noTLSVerify: true }
-      # NOTE: `proxmox.chrison.dev` stays on the monolith CT 2001 (a port-forward) for
-      # now; migrating/retiring it is a separate follow-up, not part of Core.
+      # proxmox.chrison.dev: a real Proxmox NODE UI (PDM is NOT a drop-in for it), so
+      # this stays a node. Cut over from the monolith CT 2001 on 2026-06-14. Its Access
+      # app has a SECOND, non-identity policy accepting a service token, so the public
+      # /api2/json endpoint still works non-interactively (creds in secrets.env:
+      # CF_ACCESS_PROXMOX_CLIENT_ID / _SECRET). Monolith ingress left as rollback,
+      # retired LAST. Currently targets nuc-01; both Core replicas can reach it.
+      - hostname: proxmox.chrison.dev
+        service: "https://192.168.179.1:8006"
+        originRequest: { noTLSVerify: true }
   secrets:
     - name: tunnelToken
       valueFrom:
