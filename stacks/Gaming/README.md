@@ -14,12 +14,13 @@ VMID block **1000–1099** (declared in [`stack.yaml`](stack.yaml)).
 
 | VMID | Member | Image | GPU | Status |
 |------|--------|-------|-----|--------|
-| 1003 | [bazzite](bazzite.vm.yaml) | Bazzite-deck (SteamOS-style) | `0000:09:00` passthrough | **adopted** — passthrough to add |
+| 1002 | [windows](windows.vm.yaml) | Windows 11 | `AMD_Radeon_RX6600` mapping | **adopted** — the proven passthrough recipe; ErpForFactoryGames test bed |
+| 1003 | [bazzite](bazzite.vm.yaml) | Bazzite-deck (SteamOS-style) | `AMD_Radeon_RX6600` mapping | **adopted** — passthrough to (re)apply |
 | 1001 | Plex-VM | — | — | **unmanaged** (hand-built) |
-| 1002 | gaming-vm-01 | Windows 11 | `0000:09:00` passthrough | **unmanaged** (the proven passthrough recipe) |
 
-Only **1003** is IaC-managed. 1001/1002 are intentionally left untouched (same
-pattern as CT 2005 in the DevOps stack).
+**1002** and **1003** are IaC-managed (adopted). **1001** (Plex-VM) is intentionally
+left untouched (same pattern as CT 2005 in the DevOps stack). The single Radeon RX
+6600 is **shared** between 1002 and 1003 — only one runs at a time, both `onboot: false`.
 
 ## Hardware reality (desktop-01)
 

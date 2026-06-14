@@ -67,6 +67,29 @@ public static class VmConverger
         };
     }
 
+    // Proxmox refuses to let an API token REWRITE (or delete) a raw hostpciN in place
+    // ("only root can set hostpciN config for non-mapped devices") — but it will let the
+    // token ADD a `mapping=` device fresh (proven: a fresh mapped add succeeds with the
+    // same token). So when a hostpci key transitions from a raw PCI address → a Proxmox
+    // resource mapping, the apply drops the raw entry in a prior PUT, then sets the mapping
+    // — rather than a single in-place rewrite Proxmox would reject.
+    //
+    // CAVEAT: removing the raw entry is ITSELF root-gated, so this delete-then-set only
+    // succeeds for a caller whose token can delete a raw hostpciN. For a minimal-scope
+    // token it still fails the delete; that VM needs a one-time root `qm set <id> --delete
+    // hostpciN`, after which converge ADDS the mapping fresh (no transition needed).
+    // The sequencing here is the correct general-case behaviour and keeps the failure clean.
+    public static IReadOnlyList<string> RawToMappingTransitions(VmPlan plan)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        return plan.Changes
+            .Where(c => c.Key.StartsWith("hostpci", StringComparison.Ordinal)
+                        && c.From is { } from && !from.Contains("mapping=", StringComparison.Ordinal)
+                        && c.To.Contains("mapping=", StringComparison.Ordinal))
+            .Select(c => c.Key)
+            .ToList();
+    }
+
     // Read-only diff against live state.
     public static async Task<VmPlan> PlanAsync(QemuWriter writer, VmShape shape, CancellationToken ct = default)
     {
@@ -97,10 +120,23 @@ public static class VmConverger
             default: // SetConfig
             {
                 var changes = plan.Changes.ToDictionary(c => c.Key, c => c.To, StringComparer.Ordinal);
+
+                var rawToMapping = RawToMappingTransitions(plan);
+                if (rawToMapping.Count > 0)
+                {
+                    var drop = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["delete"] = string.Join(',', rawToMapping),
+                    };
+                    var dropUpid = await writer.SetConfigAsync(desired.Node, desired.Vmid, drop, ct);
+                    if (dropUpid is not null) await writer.WaitForTaskAsync(desired.Node, dropUpid, ct: ct);
+                }
+
                 var upid = await writer.SetConfigAsync(desired.Node, desired.Vmid, changes, ct);
                 if (upid is not null) await writer.WaitForTaskAsync(desired.Node, upid, ct: ct);
                 return new VmApplyResult(plan, ApplyOutcome.Applied,
-                    $"set {changes.Count} key(s): {string.Join(", ", changes.Keys)}");
+                    $"set {changes.Count} key(s): {string.Join(", ", changes.Keys)}"
+                    + (rawToMapping.Count > 0 ? $"  [raw→mapping reset: {string.Join(", ", rawToMapping)}]" : ""));
             }
         }
     }

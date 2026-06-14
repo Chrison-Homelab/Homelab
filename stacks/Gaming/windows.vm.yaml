@@ -1,0 +1,85 @@
+# Windows 11 gaming VM — ADOPTS the existing hand-built VMID 1002 (gaming-vm-01).
+#
+# Why adopt: this is the proven-working passthrough VM, and the Windows test bed
+# for ErpForFactoryGames (Satisfactory needs Windows). Bringing it under IaC makes
+# the *machine* reproducible. The guest OS + game installs stay manual/throwaway,
+# same philosophy as the Bazzite VM (1003). See ../../docs/plans/115-gaming-vm-steamos.md.
+#
+# Single-GPU reality: 1002 (this VM) and 1003 (bazzite) BOTH passthrough the one
+# Radeon RX 6600 (0000:09:00) — mutually exclusive, only one runs at a time. Both
+# stay onboot:false / on-demand (accepted). Start whichever you need.
+#
+# ADOPT = MINIMAL DELTA. Everything below mirrors the live 1002 config verbatim so
+# the reconciler's subset-diff plans those as Skip; the ONE intended change is the
+# GPU line: live 1002 holds a RAW `hostpci0: 0000:09:00` (set by root@pam, NOT
+# token-settable), which we convert to the `AMD_Radeon_RX6600` PCI resource mapping
+# (token-settable via Mapping.Use, node-portable) — same mapping the bazzite VM uses.
+
+apiVersion: homelab/v1
+kind: VM
+
+metadata:
+  name: windows
+  stack: Gaming
+  tags: [gaming, windows, passthrough]
+  description: >-
+    Windows 11 gaming VM with GPU passthrough; the ErpForFactoryGames test bed
+    (Satisfactory + Proton-equivalent native Windows). Adopted from the proven
+    hand-built gaming-vm-01 — the original passthrough recipe the rest of the
+    Gaming stack was cloned from.
+
+spec:
+  node: desktop-01
+  vmid: 1002              # ADOPTED — existing gaming-vm-01; do not allocate fresh
+  name: gaming-vm-01      # keep existing name (no rename — unlike the bazzite adopt)
+
+  machine: pc-q35-10.1    # PINNED to live value (avoids a machine-version bump on adopt)
+  bios: ovmf
+  cpu: host
+  cores: 6
+  sockets: 1
+  memory: 12288           # MB — matches live; desktop-01 going gaming-only, can raise later
+  numa: false
+  ostype: win11           # Windows 11 guest (drives sane QEMU defaults + TPM expectation)
+  agent: true
+  onboot: false           # GPU is single + shared with bazzite (1003) → start on demand
+  vga: none               # display comes from the passed-through Radeon (x-vga), not emulated
+
+  scsihw: virtio-scsi-single
+  disks:
+    - id: scsi0
+      storage: local-lvm
+      source: vm-1002-disk-1   # existing OS disk (adopted)
+      size: 120                # GB
+      ssd: true
+      iothread: true
+  efidisk:
+    storage: local-lvm
+    source: vm-1002-disk-0      # existing efidisk (adopted)
+    efitype: 4m
+    preEnrolledKeys: true
+  tpmstate:
+    storage: local-lvm
+    source: vm-1002-disk-2      # existing vTPM (adopted) — required for Win11
+    version: v2.0
+
+  # NOTE: live 1002 still has its install media attached (ide0 virtio-win.iso,
+  # ide2 the Win11 25H2 ISO) — leftover, Windows already boots from scsi0. They are
+  # deliberately NOT modeled here; the subset-diff leaves undeclared keys untouched.
+  # Detach them by hand once you're sure they're no longer needed.
+
+  network:
+    bridge: vmbr0
+    # net0 virtio (existing MAC BC:24:11:EB:B5:74 preserved on adopt)
+
+  # --- the one intended delta: raw hostpci0 → the AMD_Radeon_RX6600 mapping ---
+  # Live 1002 = `hostpci0: 0000:09:00,pcie=1,x-vga=1` (raw; root@pam-only, so our
+  # token can't manage it). The mapping (→ 0000:09:00, whole device) is the same
+  # physical GPU and is token-settable; bazzite (1003) already uses it.
+  hostpci:
+    - mapping: AMD_Radeon_RX6600
+      pcie: true
+      xVga: true            # primary GPU for the guest (host keeps the Quadro P400 @ 06:00)
+
+  boot:
+    order: [scsi0, ide2, ide0, net0]   # matches live (disk first; Windows is installed)

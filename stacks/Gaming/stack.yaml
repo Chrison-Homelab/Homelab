@@ -4,11 +4,11 @@
 # DevOps stack (community-scripts LXCs), members here are kind: VM provisioned by
 # the ProxmoxSharp write path (#115, planned) — NOT by Deploy-Shape.ps1.
 #
-# Scope note: VMIDs 1001 (Plex-VM) and 1002 (gaming-vm-01, Win11) fall inside this
-# block but are HAND-MANAGED and INTENTIONALLY UNMANAGED by IaC (same precedent as
-# CT 2005 in DevOps). Only 1003 (gaming-vm-02 / Bazzite) is adopted — see
-# bazzite.vm.yaml. Validate against ../../Infrastructure/schema/shape.schema.json
-# (kind: VM is permissive today; #115 Phase A tightens it into a real vmSpec).
+# Scope note: VMID 1001 (Plex-VM) falls inside this block but is HAND-MANAGED and
+# INTENTIONALLY UNMANAGED by IaC (same precedent as CT 2005 in DevOps). 1002
+# (gaming-vm-01 / Win11) and 1003 (gaming-vm-02 / Bazzite) are ADOPTED — see
+# windows.vm.yaml and bazzite.vm.yaml. Validate against ../../Infrastructure/schema/shape.schema.json
+# (kind: VM is a real vmSpec since #115 Phase A).
 #
 # VMID allocation policy: members set vmid EXPLICITLY (omission is an error).
 
@@ -22,7 +22,7 @@ metadata:
 spec:
   ctidRange:
     start: 1000           # guard rail: a member vmid outside this block is rejected
-    end: 1099             # 1001/1002 are in-range but unmanaged; 1003 adopted
+    end: 1099             # 1001 in-range but unmanaged; 1002/1003 adopted
   defaults:
     node: desktop-01      # the only node with the discrete GPU (0000:09:00, no iGPU)
     timezone: Pacific/Auckland
