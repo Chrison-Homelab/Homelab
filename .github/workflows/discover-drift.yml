@@ -18,9 +18,9 @@ name: discover-drift
 # at the LAN, PROXMOX_VERIFY_TLS=false for the self-signed direct cert):
 #   PROXMOX_BASE_URL  PROXMOX_TOKEN_ID  PROXMOX_TOKEN_SECRET  PROXMOX_VERIFY_TLS
 #
-# DRIFT_PR_PAT: fine-grained PAT scoped to THIS repo (contents: write +
-# pull-requests: write) for the "Open PR on drift" step — the org disables Actions
-# creating PRs, so the built-in GITHUB_TOKEN can't.
+# "Open PR on drift" uses the built-in GITHUB_TOKEN. This requires the org setting
+# "Allow GitHub Actions to create and approve pull requests" to be ENABLED
+# (Chrison-dev org → Settings → Actions → General). Without it the step 403s.
 
 on:
   schedule:
@@ -59,10 +59,6 @@ jobs:
       - name: Open PR on drift
         uses: peter-evans/create-pull-request@v8
         with:
-          # The org disables "Allow GitHub Actions to create and approve PRs", so the
-          # built-in GITHUB_TOKEN can't open the drift PR. Use a fine-grained PAT
-          # scoped to THIS repo only (contents: write + pull-requests: write).
-          token: ${{ secrets.DRIFT_PR_PAT }}
           branch: chore/discovered-state
           title: 'chore: refresh discovered Proxmox state'
           commit-message: 'chore: refresh docs/discovered-state.json from live cluster'
