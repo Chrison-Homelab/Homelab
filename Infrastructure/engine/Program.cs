@@ -10,6 +10,7 @@ using Homelab.Infrastructure.Shapes;
 //
 // Usage:
 //   homelab-infra discover               # dump a structured ClusterSnapshot as JSON
+//   homelab-infra discover-diff a.json b.json   # Markdown table of state changes
 //   homelab-infra discover-unifi         # dump a UniFi network snapshot as JSON
 //   homelab-infra converge <stack-dir>            # state-diff plan (dry run, read-only)
 //   homelab-infra converge <stack-dir> --apply    # create + reconcile config + provision
@@ -30,6 +31,8 @@ switch (command)
 {
     case "discover":
         return await DiscoverAsync();
+    case "discover-diff":
+        return RunDiscoverDiff(args);
     case "discover-unifi":
         return await DiscoverUnifiAsync();
     case "converge":
@@ -37,7 +40,7 @@ switch (command)
     case "validate":
         return RunValidate(args);
     default:
-        Console.Error.WriteLine($"Unknown command '{command}'. Supported: discover, discover-unifi, converge, validate");
+        Console.Error.WriteLine($"Unknown command '{command}'. Supported: discover, discover-diff, discover-unifi, converge, validate");
         return 1;
 }
 
@@ -155,6 +158,32 @@ static async Task<int> DiscoverAsync()
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
     }));
+    return 0;
+}
+
+// discover-diff <before.json> <after.json>: render a Markdown table of what
+// changed between two discover snapshots (used for the drift PR body). Pure I/O
+// over local files — no cluster access.
+static int RunDiscoverDiff(string[] args)
+{
+    if (args.Length < 3)
+    {
+        Console.Error.WriteLine("Usage: discover-diff <before.json> <after.json>");
+        return 2;
+    }
+
+    var opts = new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+    };
+
+    var before = JsonSerializer.Deserialize<ClusterSnapshot>(File.ReadAllText(args[1]), opts)
+        ?? new ClusterSnapshot { Nodes = [] };
+    var after = JsonSerializer.Deserialize<ClusterSnapshot>(File.ReadAllText(args[2]), opts)
+        ?? new ClusterSnapshot { Nodes = [] };
+
+    Console.WriteLine(DriftSummary.Render(before, after));
     return 0;
 }
 

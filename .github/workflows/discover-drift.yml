@@ -19,8 +19,9 @@ name: discover-drift
 #   PROXMOX_BASE_URL  PROXMOX_TOKEN_ID  PROXMOX_TOKEN_SECRET  PROXMOX_VERIFY_TLS
 #
 # DRIFT_PR_PAT: fine-grained PAT scoped to THIS repo (contents: write +
-# pull-requests: write) for the "Open PR on drift" step — the org disables Actions
-# creating PRs, so the built-in GITHUB_TOKEN can't.
+# pull-requests: write) for the "Open PR on drift" step. Deliberately a scoped
+# PAT rather than the org-wide "Allow Actions to create and approve PRs" toggle,
+# to keep the blast radius minimal.
 
 on:
   schedule:
@@ -53,23 +54,38 @@ jobs:
           PROXMOX_TOKEN_SECRET: ${{ secrets.PROXMOX_TOKEN_SECRET }}
           PROXMOX_VERIFY_TLS: ${{ secrets.PROXMOX_VERIFY_TLS }}
         run: |
+          # Keep the committed snapshot so the next step can diff against it.
+          mkdir -p "$RUNNER_TEMP/drift"
+          cp docs/discovered-state.json "$RUNNER_TEMP/drift/before.json" \
+            || echo '{"nodes":[]}' > "$RUNNER_TEMP/drift/before.json"
           dotnet run --project Infrastructure/engine -c Release -v quiet -- discover \
             > docs/discovered-state.json
+
+      - name: Summarize drift
+        id: summary
+        # Render a Markdown table of what changed (committed → live) for the PR body.
+        run: |
+          {
+            echo 'body<<DRIFT_EOF'
+            echo 'Automated discovery against the live cluster (LAN-direct from the homelab self-hosted runner) detected drift from the committed state.'
+            echo ''
+            dotnet run --project Infrastructure/engine -c Release -v quiet -- discover-diff \
+              "$RUNNER_TEMP/drift/before.json" docs/discovered-state.json
+            echo ''
+            echo '<sub>Full machine-readable state: `docs/discovered-state.json` in this PR.</sub>'
+            echo 'DRIFT_EOF'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Open PR on drift
         uses: peter-evans/create-pull-request@v8
         with:
-          # The org disables "Allow GitHub Actions to create and approve PRs", so the
-          # built-in GITHUB_TOKEN can't open the drift PR. Use a fine-grained PAT
-          # scoped to THIS repo only (contents: write + pull-requests: write).
+          # Scoped fine-grained PAT (this repo only: contents:write + pull-requests:write)
+          # so we don't depend on the org-wide "Actions can create PRs" toggle.
           token: ${{ secrets.DRIFT_PR_PAT }}
           branch: chore/discovered-state
-          title: 'chore: refresh discovered Proxmox state'
+          title: '[Proxmox Discovery] refresh discovered cluster state'
           commit-message: 'chore: refresh docs/discovered-state.json from live cluster'
-          body: |
-            Automated discovery against the live cluster (LAN-direct from the
-            homelab self-hosted runner) detected drift. Review the diff in
-            `docs/discovered-state.json` to see what changed (nodes, LXCs/VMs,
-            storage, network).
+          labels: proxmox-discovery
+          body: ${{ steps.summary.outputs.body }}
           add-paths: docs/discovered-state.json
           delete-branch: true
