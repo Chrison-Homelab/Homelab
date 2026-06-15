@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ProxmoxSharp;
 using UnifiSharp;
+using Homelab.Infrastructure;
 using Homelab.Infrastructure.Converge;
 using Homelab.Infrastructure.Shapes;
 
@@ -144,12 +145,15 @@ static async Task<int> DiscoverAsync()
     }
 
     var client = ProxmoxApi.Create(options);
-    var snapshot = await new ProxmoxDiscovery(client).DiscoverAsync();
+    // Normalize before serializing so an unchanged cluster yields byte-identical
+    // JSON across runs — otherwise the drift workflow opens a churny PR every time.
+    var snapshot = SnapshotNormalizer.Normalize(await new ProxmoxDiscovery(client).DiscoverAsync());
 
     Console.WriteLine(JsonSerializer.Serialize(snapshot, new JsonSerializerOptions
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
     }));
     return 0;
 }
