@@ -67,6 +67,15 @@ spec:
   # ide2 the Win11 25H2 ISO) — leftover, Windows already boots from scsi0. They are
   # deliberately NOT modeled here; the subset-diff leaves undeclared keys untouched.
   # Detach them by hand once you're sure they're no longer needed.
+  #
+  # GUEST SETUP (post-boot, manual — the OS is throwaway, not engine-applied):
+  #   1. Install the QEMU guest agent from virtio-win.iso (virtio-win-guest-tools.exe)
+  #      — `agent: true` below only enables it on the VM; the in-guest service must
+  #      exist for clean shutdown / IP reporting / `qm guest exec`.
+  #   2. Run guest-setup/Disable-SignInScreen.ps1 (elevated) so the console session
+  #      never locks — else Steam Remote Play gets stuck on the secure-desktop prompt.
+  #   Do NOT Microsoft-RDP into this VM while gaming (it locks the console session).
+  #   See guest-setup/README.md.
 
   network:
     bridge: vmbr0
