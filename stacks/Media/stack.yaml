@@ -1,0 +1,50 @@
+# Media stack — declarative *arr rebuild (ADR-0006, plan #105).
+#
+# A from-scratch, SIDE-BY-SIDE rebuild of the *arr fleet: brand-new CTs in the
+# 5100 block, built alongside the live hand-built 5000s CTs, verified, then cut
+# over (the old fleet keeps running until the switch — see ADR-0006). Published
+# on the clean `chrison.dev` slate via a dedicated `Homelab.Stacks.Media` tunnel
+# (the connector is cloudflared.lxc.yaml); admin UIs gated by CF Access OTP.
+#
+# THE LOAD-BEARING CONSTRAINT: every file-touching member (sonarr, radarr,
+# bazarr, qbittorrent) mounts the SAME single NFS export at the SAME path
+# `/data` (torrents/ + media/ are SUBFOLDERS) so *arr can hardlink + instant-move.
+# That export lives on volume4 and is gated by a pre-start `mountpoint -q`
+# hookscript (BL-016 shared-export branch). volume4 must be provisioned first
+# (manual DSM — task #1).
+#
+# Deployed via community-scripts over SSH — see ../../Infrastructure/deploy/.
+# Validate members against ../../Infrastructure/schema/shape.schema.json.
+#
+# CTID allocation policy: members set ctid EXPLICITLY (omission is an error).
+
+apiVersion: homelab/v1
+kind: Stack
+
+metadata:
+  name: Media
+  tags: [media, arr]
+
+spec:
+  ctidRange:
+    start: 5100           # guard rail: a member ctid outside this block is rejected.
+    end: 5199             # parallel to the legacy 5000-block fleet (no collision).
+  defaults:
+    node: hpe-01          # media compute lives here today
+    source:
+      channel: stable     # → community-scripts/ProxmoxVE (override per-member, e.g. dev)
+      ref: main
+    os: debian
+    osVersion: 13
+    unprivileged: true
+    storage: local-lvm
+    templateStorage: local
+    onboot: true
+    network:
+      bridge: vmbr0
+      vlan: 1010          # Homelab — real tag → interface name=vlan1010,tag=1010
+      ipv4: dhcp          # ⚠ file-touching members + the connector want DHCP
+                          #    reservations so origins/mounts are stable (#117-class).
+      ipv6: none
+    timezone: Pacific/Auckland
+    tags: [media, arr, community-script]

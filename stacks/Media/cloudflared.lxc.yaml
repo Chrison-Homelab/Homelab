@@ -1,0 +1,51 @@
+# Cloudflared — dedicated Cloudflare Tunnel connector for the Media stack.
+#
+# community-scripts: ct/cloudflared.sh (stable / ProxmoxVE). NEW named tunnel
+# `Homelab.Stacks.Media` — never touches the monolith CT 2001 or any existing
+# tunnel (ADD-ONLY on Cloudflare, see CLAUDE.md). Fronts the *arr ADMIN UIs on
+# the clean `<svc>.chrison.dev` slate; each hostname is additionally gated by a
+# CF Access self-hosted app (One-Time PIN, allow csimon@chrison.dev) — created
+# out-of-band like PDM/Proxmox (ADR-0006). Single connector (HA not critical for
+# media — if the node is down the media is down anyway).
+#
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: cloudflared
+  stack: Media
+  tags: [network, cloudflare, tunnel]
+
+spec:
+  app: cloudflared
+  ctid: 5108
+  cores: 1
+  memory: 512            # MB
+  disk: 2                # GB
+  # node/os/network/storage/timezone inherited from the Media stack
+
+  # Post-create wiring (converge / BL-010 — ADD-ONLY on Cloudflare):
+  # 'dependsOn' names resolve as origin hostnames (e.g. http://sonarr:8989).
+  dependsOn: [prowlarr, sonarr, radarr, bazarr, qbittorrent, seerr]
+  config:
+    tunnel: Homelab.Stacks.Media
+    # Ingress is a TUNNEL-level property defined ONCE here.
+    # flaresolverr is deliberately NOT exposed (internal — Prowlarr calls it).
+    # Each hostname below ALSO gets a CF Access OTP app (created during DNS wiring).
+    ingress:
+      - { hostname: prowlarr.chrison.dev,    service: "http://prowlarr:9696" }
+      - { hostname: sonarr.chrison.dev,      service: "http://sonarr:8989" }
+      - { hostname: radarr.chrison.dev,      service: "http://radarr:7878" }
+      - { hostname: bazarr.chrison.dev,      service: "http://bazarr:6767" }
+      - { hostname: qbittorrent.chrison.dev, service: "http://qbittorrent:8080" }
+      - { hostname: seerr.chrison.dev,       service: "http://seerr:5055" }
+  secrets:
+    - name: tunnelToken
+      valueFrom:
+        provider:
+          name: cloudflare
+          action: tunnel-token               # get-or-create tunnel by name + DNS CNAMEs (add-only); returns the token
+          with: { tunnel: Homelab.Stacks.Media }
+          auth: { env: CF_API_TOKEN }         # homelab-iac token from secrets.env

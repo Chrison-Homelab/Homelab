@@ -3,8 +3,19 @@
 **Issue:** [#57](https://github.com/Chrison-dev/Homelab/issues/57) ·
 **Relates to:** [ADR-0002 (SynoSharp SSH-runner)](../adr/ADR-0002-synosharp.md),
 [iac-csharp-native plan](iac-csharp-native.md), [BL-013 deploy renderer](BL-013-community-scripts-deploy.md) (the dry-run pattern this mirrors)
-**Status:** Scoped — 2026-05-31. Transport wedge done + live-verified
-([SynoSharp PR #3](https://github.com/Chrison-dev/SynoSharp/pull/3)). Phase A next.
+**Status:** Phase A + Phase C done — 2026-06-15. Transport wedge live-verified
+([SynoSharp PR #3](https://github.com/Chrison-dev/SynoSharp/pull/3)); shares/users/groups
+reconciler (Phase A); **NFS exports (Phase C) implemented + proven on the desktop-01
+Virtual DSM** — see the NFS note below. Phase B (hub/YAML shapes) remains.
+
+> **NFS (Phase C) — done.** API is `SYNO.Core.FileServ.NFS.SharePrivilege` (v1): read
+> `method=load share_name=<s>`, write `method=save share_name=<s> rule=[…]` (whole-list
+> replace). Rule = `{client, privilege, root_squash(no|admin|guest|all_admin|all_guest),
+> async, insecure, crossmnt, security_flavor:{sys,kerberos,kerberos_integrity,kerberos_privacy}}`
+> — `security_flavor` is an OBJECT of bool flags, and `root_squash=all_admin` is the
+> all-squash-to-admin model (anonuid=1024/anongid=100). Implemented as `SynoNfsTool` +
+> `NfsExportSpec` + reconciler NFS planning + unit tests; create/skip/clear lifecycle
+> verified reversibly on the VDSM, producing `/etc/exports` lines identical to the live NAS.
 
 ## Goal
 

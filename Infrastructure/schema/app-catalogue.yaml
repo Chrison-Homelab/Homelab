@@ -56,3 +56,21 @@ apps:
   cloudflared:
     script: cloudflared
     provisioner: cloudflared
+
+  # ── Media stack (*arr rebuild — ADR-0006 / plan #105). No post-create
+  # provisioners yet; create-only via community-scripts. /data + app config
+  # are handled by the shared-mount model + cutover, not the catalogue.
+  prowlarr:
+    script: prowlarr
+  sonarr:
+    script: sonarr
+  radarr:
+    script: radarr
+  bazarr:
+    script: bazarr
+  qbittorrent:
+    script: qbittorrent
+  seerr:
+    script: overseerr        # CONFIRM: Overseerr (Plex-native) vs Jellyseerr — #105 wants the Plex-native one
+  flaresolverr:
+    script: flaresolverr
