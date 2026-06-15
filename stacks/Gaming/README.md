@@ -45,8 +45,11 @@ Adopting 1003 should plan as **only** `+ hostpci0: 0000:09:00` — never a recre
 
 ## Streaming to the MacBook
 
-- **Sunshine** (guest) + **Moonlight** (Mac) — low-latency primary path.
-- **Steam Remote Play** — zero-config fallback.
+- **Steam Remote Play** (guest Steam ↔ Mac Steam) — **the chosen path**: zero-config,
+  no guest install/firewall setup, and survives the throwaway-OS reinstall (just log
+  back into Steam). In use for 1002 (Satisfactory).
+- **Sunshine** (guest) + **Moonlight** (Mac) — lower-latency alternative (NVENC/AMF);
+  evaluated, not needed.
 
 ## Re-deployability
 
