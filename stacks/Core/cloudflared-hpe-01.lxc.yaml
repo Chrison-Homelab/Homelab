@@ -36,6 +36,14 @@ spec:
       - hostname: teleport.chrison.dev
         service: "https://10.10.229.241:3080"
         originRequest: { noTLSVerify: true }
+      # Pangolin — SSO remote-access front door (ADR-0007); supersedes Teleport above
+      # (CT 9904 never went live). Targets the Pangolin CT (2012) Traefik on :80 — plain
+      # HTTP, Traefik reconfigured for behind-cloudflared (no Let's Encrypt; CF provides
+      # public TLS). Admin UIs migrate here one at a time as their own hostnames → same
+      # Traefik origin → defined as Pangolin resources (badger enforces auth).
+      # ⚠ TODO(deploy): replace the placeholder with CT 2012's RESERVED DHCP IP (#118).
+      - hostname: pangolin.chrison.dev
+        service: "http://10.10.0.0:80"          # TODO: pin to CT 2012 reserved IP on deploy
       # ── Break-glass admin behind Cloudflare Access (ADR-0005, live 2026-06-14) ──
       # Two admin front doors, each a CF Access self-hosted app gated by One-Time PIN
       # (policy: allow csimon@chrison.dev). The per-node `pve-*` hostname idea is dropped.
