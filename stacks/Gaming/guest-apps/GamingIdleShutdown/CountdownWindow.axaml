@@ -1,0 +1,23 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="GamingIdleShutdown.CountdownWindow"
+        Title="Gaming VM — idle"
+        Width="380" SizeToContent="Height"
+        WindowStartupLocation="CenterScreen"
+        Topmost="True" CanResize="False" ShowInTaskbar="True"
+        SystemDecorations="BorderOnly">
+  <Border Background="#1E1E1E" Padding="22">
+    <StackPanel Spacing="14">
+      <TextBlock Text="No activity detected" FontSize="18" FontWeight="Bold" Foreground="White" />
+      <TextBlock Foreground="#CFCFCF" TextWrapping="Wrap"
+                 Text="This VM looks idle. It will shut down to free up the GPU and RAM. Cancel if you're still here." />
+      <TextBlock Name="CountdownText" FontSize="34" FontWeight="Bold"
+                 Foreground="#4FC3F7" HorizontalAlignment="Center" />
+      <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
+        <Button Name="CancelBtn" Content="Cancel" MinWidth="90" />
+        <Button Name="SnoozeBtn" Content="Snooze 1h" MinWidth="90" />
+        <Button Name="ShutdownBtn" Content="Shut down now" MinWidth="110" />
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</Window>
