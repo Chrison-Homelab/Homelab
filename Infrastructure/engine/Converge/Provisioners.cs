@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using Homelab.Infrastructure.Shapes;
 
@@ -52,6 +53,7 @@ public sealed class ProvisionerRegistry
         new ForgejoRunnerProvisioner(),
         new GithubRunnerProvisioner(),
         new CloudflaredProvisioner(),
+        new PangolinProvisioner(),
     });
 }
 
@@ -293,6 +295,168 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
         foreach (var (host, service) in ingress)
             sb.Append($"{{\"hostname\":\"{host}\",\"service\":\"{service}\"}},");
         sb.Append("{\"service\":\"http_status:404\"}]");
+        return sb.ToString();
+    }
+}
+
+// Pangolin — SSO remote-access reverse proxy (ADR-0007). Runs on-prem behind the
+// `core` Cloudflare tunnel, so the stock community-scripts install (which makes
+// Traefik own public ingress via Let's Encrypt) is reshaped for "behind cloudflared":
+// every Traefik router moves onto the plain-HTTP `web` (:80) entrypoint, dropping TLS
+// + the http→https redirect — cloudflared provides the public TLS. Seeds
+// /opt/pangolin/config/config.yml, GENERATING + PRESERVING server.secret on the CT
+// (so no manual secrets.env step), and for the cloudflared edge rewrites
+// traefik/dynamic_config.yml (Traefik's file provider hot-reloads it). Idempotent via
+// a managed marker stamped into config.yml. The one-time admin/org setup stays manual.
+public sealed class PangolinProvisioner : IAppProvisioner
+{
+    public string App => "pangolin";
+
+    public IEnumerable<string> PlanSteps(Shape s)
+    {
+        var url = s.Spec.Config.Str("dashboardUrl") ?? "(dashboardUrl)";
+        var edge = s.Spec.Config.Str("edge") ?? "cloudflared";
+        yield return $"seed /opt/pangolin/config/config.yml (dashboard_url {url}; generate+preserve server.secret; flags)";
+        yield return edge == "cloudflared"
+            ? "rewrite traefik/dynamic_config.yml for behind-cloudflared (HTTP :80, no Let's Encrypt, no https-redirect)"
+            : $"edge '{edge}': leave stock Traefik (Let's Encrypt public ingress)";
+        yield return "restart pangolin + gerbil if config changed (idempotent via managed marker)";
+    }
+
+    // Stable marker over the managed inputs — when unchanged, apply is a no-op.
+    // Exposed so the drift-guard test can compute the expected marker.
+    public static string DesiredMarker(Shape s)
+    {
+        var c = s.Spec.Config;
+        var key = string.Join('|',
+            c.Str("dashboardUrl") ?? "",
+            BaseDomain(s),
+            c.Str("edge") ?? "cloudflared",
+            Flag(c, "allowRawResources", true),
+            Flag(c, "disableSignupWithoutInvite", true),
+            Flag(c, "disableUserCreateOrg", false));
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..12].ToLowerInvariant();
+    }
+
+    public async Task<ApplyResult> ApplyAsync(Shape s, ConvergeContext ctx)
+    {
+        if (s.Spec.Node is not { } node || s.Spec.Ctid is not { } ctid) return ApplyResult.Failed("missing node/ctid");
+        if (s.Spec.Config.Str("dashboardUrl") is not { } dashboardUrl) return ApplyResult.Failed("no dashboardUrl in config");
+        var host = new Uri(dashboardUrl).Host;
+        var edge = s.Spec.Config.Str("edge") ?? "cloudflared";
+        var marker = DesiredMarker(s);
+
+        // Idempotency: managed marker already current → nothing to do.
+        var cur = await ctx.Exec.InContainerAsync(node, ctid,
+            "grep -m1 '^# homelab-managed:' /opt/pangolin/config/config.yml 2>/dev/null || true");
+        var curMarker = cur.Stdout.Contains(':') ? cur.Stdout.Split(':', 2)[1].Trim() : "";
+        if (curMarker == marker)
+            return ApplyResult.NoChange($"config already current (marker {marker})");
+
+        var ipRes = await ctx.Exec.InContainerAsync(node, ctid, "hostname -I | awk '{print $1}'");
+        if (!ipRes.Ok || ipRes.Stdout.Trim().Length == 0) return ApplyResult.Failed("could not resolve CT IP");
+
+        var cmd = BuildWrite(s, marker, host, dashboardUrl, BaseDomain(s), edge, ipRes.Stdout.Trim());
+        var res = await ctx.Exec.InContainerAsync(node, ctid, cmd);
+        return res.Ok
+            ? ApplyResult.Applied($"seeded config.yml + {(edge == "cloudflared" ? "behind-cloudflared Traefik" : "stock Traefik")}; restarted (marker {marker})")
+            : ApplyResult.Failed($"write/restart failed: {res.Stderr}");
+    }
+
+    private static string BaseDomain(Shape s)
+    {
+        if (s.Spec.Config.Str("baseDomain") is { Length: > 0 } b) return b;
+        var host = s.Spec.Config.Str("dashboardUrl") is { } u ? new Uri(u).Host : "";
+        var parts = host.Split('.');
+        return parts.Length >= 2 ? string.Join('.', parts[^2..]) : host;
+    }
+
+    private static bool Flag(Dictionary<string, object?> c, string key, bool dflt)
+    {
+        if (c.TryGetValue("flags", out var f) && f is System.Collections.IDictionary d && d.Contains(key))
+        {
+            var v = d[key];
+            if (v is bool b) return b;
+            if (bool.TryParse(v?.ToString(), out var pb)) return pb;
+        }
+        return dflt;
+    }
+
+    // Builds the seed-config + restart command. Heredocs are UNQUOTED so $SECRET
+    // expands (config.yml); the Traefik rule backticks are escaped (\`) exactly as
+    // the stock installer does. host/IP are injected as literals (no shell vars).
+    private static string BuildWrite(Shape s, string marker, string host, string url, string baseDomain, string edge, string localIp)
+    {
+        var c = s.Spec.Config;
+        string B(bool x) => x ? "true" : "false";
+
+        var cfg = new List<string>
+        {
+            $"# homelab-managed: {marker}",
+            "gerbil:",
+            "    start_port: 51820",
+            $"    base_endpoint: \"{host}\"",
+            "app:",
+            $"    dashboard_url: \"{url}\"",
+            "    log_level: \"info\"",
+            "domains:",
+            "    domain1:",
+            $"        base_domain: \"{baseDomain}\"",
+        };
+        if (edge != "cloudflared") cfg.Add("        cert_resolver: \"letsencrypt\"");
+        cfg.AddRange(new[]
+        {
+            "server:",
+            "    secret: \"$SECRET\"",
+            "flags:",
+            "    require_email_verification: false",
+            $"    disable_signup_without_invite: {B(Flag(c, "disableSignupWithoutInvite", true))}",
+            $"    disable_user_create_org: {B(Flag(c, "disableUserCreateOrg", false))}",
+            $"    allow_raw_resources: {B(Flag(c, "allowRawResources", true))}",
+        });
+
+        var sb = new StringBuilder();
+        sb.Append("set -e\n");
+        sb.Append("cd /opt/pangolin/config\n");
+        sb.Append("SECRET=$(grep -m1 -oP 'secret:[[:space:]]*\"\\K[^\"]+' config.yml 2>/dev/null || true)\n");
+        sb.Append("if [ -z \"$SECRET\" ]; then SECRET=$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 32); fi\n");
+        sb.Append("cat > config.yml <<EOF\n").Append(string.Join("\n", cfg)).Append("\nEOF\n");
+
+        if (edge == "cloudflared")
+        {
+            // All routers on the plain-HTTP `web` entrypoint; no TLS, no redirect.
+            var dyn = string.Join("\n", new[]
+            {
+                "http:",
+                "  routers:",
+                "    next-router:",
+                $"      rule: \"Host(\\`{host}\\`) && !PathPrefix(\\`/api/v1\\`)\"",
+                "      service: next-service",
+                "      entryPoints:",
+                "        - web",
+                "    api-router:",
+                $"      rule: \"Host(\\`{host}\\`) && PathPrefix(\\`/api/v1\\`)\"",
+                "      service: api-service",
+                "      entryPoints:",
+                "        - web",
+                "    ws-router:",
+                $"      rule: \"Host(\\`{host}\\`)\"",
+                "      service: api-service",
+                "      entryPoints:",
+                "        - web",
+                "  services:",
+                "    next-service:",
+                "      loadBalancer:",
+                "        servers:",
+                $"          - url: \"http://{localIp}:3002\"",
+                "    api-service:",
+                "      loadBalancer:",
+                "        servers:",
+                $"          - url: \"http://{localIp}:3000\"",
+            });
+            sb.Append("cat > traefik/dynamic_config.yml <<DYN\n").Append(dyn).Append("\nDYN\n");
+        }
+        sb.Append("systemctl restart pangolin gerbil");
         return sb.ToString();
     }
 }

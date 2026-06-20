@@ -356,4 +356,73 @@ public sealed class ConvergeCoreTests
         Assert.Equal(ApplyOutcome.Applied, result.Outcome);
         Assert.Contains(exec.Commands, c => c.Contains("systemctl restart forgejo"));
     }
+
+    // ---- PangolinProvisioner ---------------------------------------------
+
+    private static Shape PangolinShape()
+    {
+        var s = Lxc("pangolin", "2012");
+        s.Spec.Node = "nuc-01";
+        s.Spec.Config["dashboardUrl"] = "https://pangolin.chrison.dev";
+        s.Spec.Config["baseDomain"] = "chrison.dev";
+        s.Spec.Config["edge"] = "cloudflared";
+        return s;
+    }
+
+    [Fact]
+    public async Task PangolinProvisioner_ReportsNoChange_WhenMarkerMatches()
+    {
+        var shape = PangolinShape();
+        var marker = PangolinProvisioner.DesiredMarker(shape);
+
+        var exec = new FakeNodeExec(cmd =>
+            cmd.Contains("homelab-managed")
+                ? new ExecResult(0, $"# homelab-managed: {marker}", "")
+                : throw new InvalidOperationException($"unexpected command: {cmd}"));
+        var ctx = new ConvergeContext(exec, SecretsEnv.Load(null),
+            new Dictionary<string, Shape>(), Deriver: null!);
+
+        var result = await new PangolinProvisioner().ApplyAsync(shape, ctx);
+
+        Assert.Equal(ApplyOutcome.NoChange, result.Outcome);
+        Assert.Single(exec.Commands); // only the marker read — no IP probe, no write
+    }
+
+    [Fact]
+    public async Task PangolinProvisioner_SeedsConfigAndReshapesTraefik_WhenMarkerStale()
+    {
+        var shape = PangolinShape();
+
+        var exec = new FakeNodeExec(cmd =>
+            cmd.Contains("homelab-managed") ? new ExecResult(0, "# homelab-managed: stale00000000", "")
+            : cmd.Contains("hostname -I") ? new ExecResult(0, "10.10.5.5", "")
+            : new ExecResult(0, "", "")); // the write + restart command
+        var ctx = new ConvergeContext(exec, SecretsEnv.Load(null),
+            new Dictionary<string, Shape>(), Deriver: null!);
+
+        var result = await new PangolinProvisioner().ApplyAsync(shape, ctx);
+
+        Assert.Equal(ApplyOutcome.Applied, result.Outcome);
+        var write = Assert.Single(exec.Commands, c => c.Contains("config.yml <<EOF"));
+        Assert.Contains("dashboard_url: \"https://pangolin.chrison.dev\"", write);
+        Assert.Contains("allow_raw_resources: true", write);
+        Assert.Contains("secret: \"$SECRET\"", write); // server.secret generated/preserved on the CT
+        Assert.Contains("openssl rand", write);         // generated when absent
+        // behind-cloudflared Traefik: routers on :80, no Let's Encrypt, no https redirect
+        Assert.Contains("dynamic_config.yml <<DYN", write);
+        Assert.Contains("- web", write);
+        Assert.DoesNotContain("websecure", write);
+        Assert.DoesNotContain("certResolver", write);
+        Assert.DoesNotContain("redirect", write);
+        Assert.Contains("systemctl restart pangolin gerbil", write);
+    }
+
+    [Fact]
+    public void PangolinProvisioner_Marker_ChangesWithEdgeMode()
+    {
+        var a = PangolinShape();
+        var b = PangolinShape();
+        b.Spec.Config["edge"] = "letsencrypt";
+        Assert.NotEqual(PangolinProvisioner.DesiredMarker(a), PangolinProvisioner.DesiredMarker(b));
+    }
 }
