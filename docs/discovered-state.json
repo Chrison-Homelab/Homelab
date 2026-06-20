@@ -1,224 +1,177 @@
 {
   "nodes": [
     {
-      "node": "nuc-01",
-      "status": "Online",
-      "maxMem": 16693035008,
-      "uptime": 442023,
-      "lxc": [
-        {
-          "vmId": 5009,
-          "name": "tautulli",
-          "status": "Running",
-          "maxMem": 1073741824
-        },
-        {
-          "vmId": 9904,
-          "name": "teleport",
-          "status": "Running",
-          "maxMem": 1073741824
-        },
-        {
-          "vmId": 2002,
-          "name": "proxmox-datacenter-manager",
-          "status": "Running",
-          "maxMem": 2147483648
-        },
-        {
-          "vmId": 5006,
-          "name": "bazarr",
-          "status": "Running",
-          "maxMem": 1073741824
-        },
-        {
-          "vmId": 5005,
-          "name": "flaresolverr",
-          "status": "Running",
-          "maxMem": 2147483648
-        },
-        {
-          "vmId": 9906,
-          "name": "obsidian-livesync",
-          "status": "Running",
-          "maxMem": 536870912
-        },
-        {
-          "vmId": 9966,
-          "name": "cookbook",
-          "status": "Running",
-          "maxMem": 536870912
-        },
-        {
-          "vmId": 2007,
-          "name": "traefik",
-          "status": "Running",
-          "maxMem": 536870912
-        },
-        {
-          "vmId": 2003,
-          "name": "pve-scripts-local",
-          "status": "Running",
-          "maxMem": 4294967296
-        }
-      ],
-      "qemu": [],
-      "storage": [
-        {
-          "storage": "ds1813-nfs-volume-3",
-          "type": "nfs",
-          "active": null,
-          "content": "vztmpl,backup,images,rootdir,iso,import,snippets"
-        },
-        {
-          "storage": "ds1813-nfs-volume-2",
-          "type": "nfs",
-          "active": null,
-          "content": "rootdir,import,iso,snippets,vztmpl,backup,images"
-        },
-        {
-          "storage": "local-lvm",
-          "type": "lvmthin",
-          "active": null,
-          "content": "rootdir,images"
-        },
-        {
-          "storage": "local",
-          "type": "dir",
-          "active": null,
-          "content": "backup,iso,vztmpl"
-        },
-        {
-          "storage": "ds1813-nfs-volume-1",
-          "type": "nfs",
-          "active": null,
-          "content": "images,backup,vztmpl,snippets,iso,import,rootdir"
-        }
-      ],
-      "network": [
-        {
-          "iface": "eno1",
-          "type": "Eth",
-          "address": null
-        },
-        {
-          "iface": "vmbr0",
-          "type": "Bridge",
-          "address": "192.168.179.1"
-        }
-      ]
-    },
-    {
       "node": "desktop-01",
       "status": "Online",
       "maxMem": 16707616768,
-      "uptime": 445161,
       "lxc": [
         {
-          "vmId": 2008,
-          "name": "erp-for-factory-games",
+          "vmId": 2004,
+          "name": "searxng",
+          "status": "Stopped",
+          "maxMem": 2147483648,
+          "cores": 2,
+          "tags": "community-script;desktop-01;search"
+        },
+        {
+          "vmId": 2005,
+          "name": "github-runner",
           "status": "Running",
-          "maxMem": 4294967296
+          "maxMem": 2147483648,
+          "cores": 2,
+          "tags": "ci;community-script;desktop-01"
         },
         {
           "vmId": 2006,
           "name": "asp-dev",
           "status": "Stopped",
-          "maxMem": 3145728000
+          "maxMem": 3145728000,
+          "cores": 2,
+          "tags": "desktop-01"
         },
         {
-          "vmId": 3002,
-          "name": "github-runner",
+          "vmId": 2008,
+          "name": "erp-for-factory-games",
           "status": "Running",
-          "maxMem": 4294967296
+          "maxMem": 4294967296,
+          "cores": 2,
+          "tags": "ai;cloudflare;desktop-01;vlan-1010"
+        },
+        {
+          "vmId": 2009,
+          "name": "topaz",
+          "status": "Running",
+          "maxMem": 2147483648,
+          "cores": 2
         },
         {
           "vmId": 3000,
           "name": "forgejo",
           "status": "Running",
-          "maxMem": 2147483648
-        },
-        {
-          "vmId": 9905,
-          "name": "openwebui",
-          "status": "Running",
-          "maxMem": 8589934592
-        },
-        {
-          "vmId": 2004,
-          "name": "searxng",
-          "status": "Running",
-          "maxMem": 2147483648
+          "maxMem": 2147483648,
+          "cores": 2,
+          "tags": "community-script;desktop-01;devops;forge;git"
         },
         {
           "vmId": 3001,
           "name": "forgejo-runner",
           "status": "Running",
-          "maxMem": 4294967296
+          "maxMem": 4294967296,
+          "cores": 4,
+          "tags": "ci;community-script;desktop-01;devops;forge"
+        },
+        {
+          "vmId": 3002,
+          "name": "github-runner",
+          "status": "Running",
+          "maxMem": 4294967296,
+          "cores": 4,
+          "tags": "ci;community-script;desktop-01;devops;github"
         },
         {
           "vmId": 3004,
           "name": "cloudflared",
           "status": "Running",
-          "maxMem": 536870912
+          "maxMem": 536870912,
+          "cores": 1,
+          "tags": "cloudflare;community-script;desktop-01;devops;network;tunnel"
+        },
+        {
+          "vmId": 9905,
+          "name": "openwebui",
+          "status": "Stopped",
+          "maxMem": 8589934592,
+          "cores": 4,
+          "tags": "ai;community-script;desktop-01;vlan-1010"
+        },
+        {
+          "vmId": 9906,
+          "name": "obsidian-livesync",
+          "status": "Stopped",
+          "maxMem": 536870912,
+          "cores": 1,
+          "tags": "desktop-01"
+        },
+        {
+          "vmId": 9966,
+          "name": "cookbook",
+          "status": "Stopped",
+          "maxMem": 536870912,
+          "cores": 1,
+          "tags": "desktop-01"
+        },
+        {
+          "vmId": 9971,
+          "name": "vdsm-lab",
+          "status": "Running",
+          "maxMem": 2147483648,
+          "cores": 2
         }
       ],
       "qemu": [
         {
-          "vmId": 1002,
-          "name": "gaming-vm-01",
-          "status": "Stopped",
-          "maxMem": 12884901888
-        },
-        {
-          "vmId": 1003,
-          "name": "gaming-vm-02",
-          "status": "Stopped",
-          "maxMem": 12884901888
-        },
-        {
           "vmId": 1001,
           "name": "Plex-VM",
           "status": "Stopped",
-          "maxMem": 4294967296
+          "maxMem": 4294967296,
+          "cores": 2
+        },
+        {
+          "vmId": 1002,
+          "name": "gaming-vm-01",
+          "status": "Running",
+          "maxMem": 12884901888,
+          "cores": 6,
+          "tags": "gaming"
+        },
+        {
+          "vmId": 1003,
+          "name": "bazzite",
+          "status": "Stopped",
+          "maxMem": 12884901888,
+          "cores": 6,
+          "tags": "gaming"
+        },
+        {
+          "vmId": 9999,
+          "name": "proxmoxsharp-dev",
+          "status": "Stopped",
+          "maxMem": 536870912,
+          "cores": 1,
+          "tags": "dev;proxmoxsharp"
         }
       ],
       "storage": [
         {
-          "storage": "local",
-          "type": "dir",
-          "active": null,
-          "content": "vztmpl,backup,iso"
-        },
-        {
-          "storage": "local-lvm",
-          "type": "lvmthin",
-          "active": null,
-          "content": "images,rootdir"
-        },
-        {
-          "storage": "ds1813-nfs-volume-3",
-          "type": "nfs",
-          "active": null,
-          "content": "backup,import,vztmpl,iso,rootdir,images,snippets"
-        },
-        {
           "storage": "ds1813-nfs-volume-1",
           "type": "nfs",
-          "active": null,
-          "content": "iso,rootdir,images,snippets,backup,import,vztmpl"
+          "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
         },
         {
           "storage": "ds1813-nfs-volume-2",
           "type": "nfs",
-          "active": null,
-          "content": "backup,import,vztmpl,iso,images,rootdir,snippets"
+          "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
+        },
+        {
+          "storage": "ds1813-nfs-volume-3",
+          "type": "nfs",
+          "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
+        },
+        {
+          "storage": "local",
+          "type": "dir",
+          "content": "backup,iso,vztmpl"
+        },
+        {
+          "storage": "local-lvm",
+          "type": "lvmthin",
+          "content": "images,rootdir"
         }
       ],
       "network": [
         {
           "iface": "eno1",
-          "type": "Eth",
-          "address": null
+          "type": "Eth"
         },
         {
           "iface": "vmbr0",
@@ -227,8 +180,7 @@
         },
         {
           "iface": "wlp8s0",
-          "type": "Unknown",
-          "address": null
+          "type": "Unknown"
         }
       ]
     },
@@ -236,79 +188,126 @@
       "node": "hpe-01",
       "status": "Online",
       "maxMem": 16642457600,
-      "uptime": 443944,
       "lxc": [
-        {
-          "vmId": 5011,
-          "name": "seerr",
-          "status": "Running",
-          "maxMem": 4294967296
-        },
         {
           "vmId": 2001,
           "name": "cloudflared-01",
           "status": "Running",
-          "maxMem": 536870912
+          "maxMem": 536870912,
+          "cores": 1,
+          "tags": "cloudflare;community-script;hpe-01;network"
         },
         {
-          "vmId": 5007,
-          "name": "qbittorrent",
+          "vmId": 2010,
+          "name": "cloudflared-hpe-01",
           "status": "Running",
-          "maxMem": 2147483648
+          "maxMem": 536870912,
+          "cores": 1,
+          "tags": "cloudflare;community-script;core;ha-primary;network;tunnel"
         },
         {
           "vmId": 5002,
           "name": "prowlarr",
           "status": "Running",
-          "maxMem": 1073741824
-        },
-        {
-          "vmId": 2005,
-          "name": "github-runner",
-          "status": "Running",
-          "maxMem": 2147483648
-        },
-        {
-          "vmId": 5014,
-          "name": "audiobookshelf",
-          "status": "Running",
-          "maxMem": 2147483648
-        },
-        {
-          "vmId": 5008,
-          "name": "plex",
-          "status": "Running",
-          "maxMem": 2147483648
-        },
-        {
-          "vmId": 5013,
-          "name": "tracearr",
-          "status": "Running",
-          "maxMem": 2147483648
+          "maxMem": 1073741824,
+          "cores": 1,
+          "tags": "arr-stack;community-script;homelab;hpe-01;vlan-1010"
         },
         {
           "vmId": 5003,
           "name": "sonarr",
           "status": "Running",
-          "maxMem": 1073741824
-        },
-        {
-          "vmId": 5012,
-          "name": "romm",
-          "status": "Running",
-          "maxMem": 4294967296
+          "maxMem": 1073741824,
+          "cores": 1,
+          "tags": "arr-stack;community-script;homelab;hpe-01;vlan-1010"
         },
         {
           "vmId": 5004,
           "name": "radarr",
           "status": "Running",
-          "maxMem": 1073741824
+          "maxMem": 1073741824,
+          "cores": 1,
+          "tags": "arr-stack;community-script;homelab;hpe-01;vlan-1010"
+        },
+        {
+          "vmId": 5005,
+          "name": "flaresolverr",
+          "status": "Running",
+          "maxMem": 2147483648,
+          "cores": 1,
+          "tags": "arr-stack;community-script;homelab;hpe-01;vlan-1010"
+        },
+        {
+          "vmId": 5006,
+          "name": "bazarr",
+          "status": "Running",
+          "maxMem": 1073741824,
+          "cores": 1,
+          "tags": "arr-stack;community-script;homelab;hpe-01;vlan-1010"
+        },
+        {
+          "vmId": 5007,
+          "name": "qbittorrent",
+          "status": "Running",
+          "maxMem": 2147483648,
+          "cores": 2,
+          "tags": "arr-stack;community-script;homelab;hpe-01;vlan-1010"
+        },
+        {
+          "vmId": 5008,
+          "name": "plex",
+          "status": "Running",
+          "maxMem": 2147483648,
+          "cores": 2,
+          "tags": "community-script;homelab;hpe-01;vlan-1010"
+        },
+        {
+          "vmId": 5009,
+          "name": "tautulli",
+          "status": "Running",
+          "maxMem": 1073741824,
+          "cores": 2,
+          "tags": "arr-stack;community-script;homelab;hpe-01;vlan-1010"
+        },
+        {
+          "vmId": 5011,
+          "name": "seerr",
+          "status": "Running",
+          "maxMem": 4294967296,
+          "cores": 4,
+          "tags": "arr-stack;community-script;homelab;hpe-01;vlan-1010"
+        },
+        {
+          "vmId": 5012,
+          "name": "romm",
+          "status": "Stopped",
+          "maxMem": 4294967296,
+          "cores": 2,
+          "tags": "arr-stack;community-script;emulation;homelab;hpe-01;vlan-1010"
+        },
+        {
+          "vmId": 5013,
+          "name": "tracearr",
+          "status": "Stopped",
+          "maxMem": 2147483648,
+          "cores": 2,
+          "tags": "arr-stack;community-script;homelab;hpe-01;vlan-1010"
+        },
+        {
+          "vmId": 5014,
+          "name": "audiobookshelf",
+          "status": "Running",
+          "maxMem": 2147483648,
+          "cores": 2,
+          "tags": "arr-stack;audiobook;community-script;hpe-01;podcast;vlan-1010"
         },
         {
           "vmId": 5015,
           "name": "shelfmark",
           "status": "Running",
-          "maxMem": 2147483648
+          "maxMem": 2147483648,
+          "cores": 2,
+          "tags": "arr-stack;community-script;ebooks;hpe-01;vlan-1010"
         }
       ],
       "qemu": [
@@ -316,51 +315,133 @@
           "vmId": 2000,
           "name": "homeassistant",
           "status": "Running",
-          "maxMem": 2147483648
+          "maxMem": 2147483648,
+          "cores": 2,
+          "tags": "hpe-01;smart-home;vlan-1010;vlan-1040"
         }
       ],
       "storage": [
         {
-          "storage": "ds1813-nfs-volume-3",
-          "type": "nfs",
-          "active": null,
-          "content": "snippets,images,rootdir,iso,backup,import,vztmpl"
-        },
-        {
-          "storage": "local",
-          "type": "dir",
-          "active": null,
-          "content": "vztmpl,iso,backup"
-        },
-        {
           "storage": "ds1813-nfs-volume-1",
           "type": "nfs",
-          "active": null,
-          "content": "backup,import,vztmpl,images,snippets,rootdir,iso"
-        },
-        {
-          "storage": "local-lvm",
-          "type": "lvmthin",
-          "active": null,
-          "content": "images,rootdir"
+          "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
         },
         {
           "storage": "ds1813-nfs-volume-2",
           "type": "nfs",
-          "active": null,
-          "content": "vztmpl,import,backup,rootdir,iso,snippets,images"
+          "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
+        },
+        {
+          "storage": "ds1813-nfs-volume-3",
+          "type": "nfs",
+          "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
+        },
+        {
+          "storage": "local",
+          "type": "dir",
+          "content": "backup,iso,vztmpl"
+        },
+        {
+          "storage": "local-lvm",
+          "type": "lvmthin",
+          "content": "images,rootdir"
         }
       ],
       "network": [
         {
+          "iface": "eno1",
+          "type": "Eth"
+        },
+        {
           "iface": "vmbr0",
           "type": "Bridge",
           "address": "192.168.179.3"
+        }
+      ]
+    },
+    {
+      "node": "nuc-01",
+      "status": "Online",
+      "maxMem": 16693030912,
+      "lxc": [
+        {
+          "vmId": 2002,
+          "name": "proxmox-datacenter-manager",
+          "status": "Running",
+          "maxMem": 2147483648,
+          "cores": 2,
+          "tags": "community-script;datacenter;nuc-01"
         },
         {
+          "vmId": 2003,
+          "name": "pve-scripts-local",
+          "status": "Running",
+          "maxMem": 4294967296,
+          "cores": 2,
+          "tags": "community-script;nuc-01"
+        },
+        {
+          "vmId": 2007,
+          "name": "traefik",
+          "status": "Running",
+          "maxMem": 536870912,
+          "cores": 1,
+          "tags": "access-management;community-script;homelab;nuc-01;vlan-1010"
+        },
+        {
+          "vmId": 2011,
+          "name": "cloudflared-nuc-01",
+          "status": "Running",
+          "maxMem": 536870912,
+          "cores": 1,
+          "tags": "cloudflare;community-script;core;ha-replica;network;tunnel"
+        },
+        {
+          "vmId": 9904,
+          "name": "teleport",
+          "status": "Running",
+          "maxMem": 1073741824,
+          "cores": 1,
+          "tags": "access-management;community-script;nuc-01;vlan-1010;zero-trust"
+        }
+      ],
+      "qemu": [],
+      "storage": [
+        {
+          "storage": "ds1813-nfs-volume-1",
+          "type": "nfs",
+          "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
+        },
+        {
+          "storage": "ds1813-nfs-volume-2",
+          "type": "nfs",
+          "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
+        },
+        {
+          "storage": "ds1813-nfs-volume-3",
+          "type": "nfs",
+          "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
+        },
+        {
+          "storage": "local",
+          "type": "dir",
+          "content": "backup,iso,vztmpl"
+        },
+        {
+          "storage": "local-lvm",
+          "type": "lvmthin",
+          "content": "images,rootdir"
+        }
+      ],
+      "network": [
+        {
           "iface": "eno1",
-          "type": "Eth",
-          "address": null
+          "type": "Eth"
+        },
+        {
+          "iface": "vmbr0",
+          "type": "Bridge",
+          "address": "192.168.179.1"
         }
       ]
     }

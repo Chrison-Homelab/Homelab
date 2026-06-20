@@ -3,11 +3,13 @@
 **Issue:** [#115](https://github.com/Chrison-dev/Homelab/issues/115) ·
 **Relates to:** [#57 SynoSharp write path](057-synosharp-write-path.md) (the layered, dry-run-default
 pattern this mirrors), [ADR-0001 shape contract](../adr/), [#113 converge apply](BL-010-converge.md)
-**Status (2026-06-13):** Phases **A, B, C DONE + L4 DONE**. 1003 (`bazzite`) has the Radeon via
-`hostpci0: mapping=AMD_Radeon_RX6600`, applied through the hub: **`homelab-infra converge
-stacks/Gaming [--apply]`** loads the `*.vm.yaml`, maps it to ProxmoxSharp's `QemuVmSpec`, and
-reconciles idempotently (re-plan = Skip). 43 hub tests green. Remaining = **Phase D** (boot Bazzite
-on the GPU + Sunshine/Moonlight streaming — hands-on) and Phase E (promote the stack to a submodule).
+**Status (2026-06-15):** Phases **A–D DONE + L4 DONE**. Both `bazzite` (1003) and the adopted
+Windows VM `gaming-vm-01` (1002) hold the Radeon via `hostpci0: mapping=AMD_Radeon_RX6600`,
+applied through the hub: **`homelab-infra converge stacks/Gaming [--apply]`** loads the `*.vm.yaml`,
+maps it to ProxmoxSharp's `QemuVmSpec`, and reconciles idempotently (re-plan = Skip). 46 hub tests
+green. **Phase D done** — 1002 boots on the GPU running Satisfactory, streamed to the MacBook via
+**Steam Remote Play** (Sunshine/Moonlight evaluated, not needed). Remaining = only **Phase E**
+(promote the stack to a submodule).
 
 **Decisions (2026-06-08):** desktop-01 will become the **dedicated gaming node** (LXCs migrate
 off) → the 16 GB pressure resolves, VM keeps/raises its 12 GB. One gaming VM at a time is fine
@@ -95,8 +97,10 @@ Adoption-friendly: reconciling against an **existing** VM (1003) must emit only 
 
 ## Streaming to the MacBook
 
-- **Sunshine** in the guest + **Moonlight** on the Mac (low-latency, NVENC/AMF) — primary.
-- **Steam Remote Play** — zero-config fallback.
+- **Steam Remote Play** (guest Steam ↔ Mac Steam) — **the chosen path**: zero-config,
+  survives the throwaway-OS reinstall. In production for 1002 (Satisfactory).
+- **Sunshine** in the guest + **Moonlight** on the Mac (low-latency, NVENC/AMF) — lower-latency
+  alternative; evaluated, not needed.
 - Guest-side config; not modeled as a separate stack member.
 
 ## Constraints / caveats (be honest)
@@ -153,8 +157,15 @@ Adoption-friendly: reconciling against an **existing** VM (1003) must emit only 
     attaching it needs only `Mapping.Use`. ProxmoxSharp `hostpci` gained a `mapping=` form
     (PR ProxmoxSharp#15) and the `kind: VM` schema/shape now model `mapping` (preferred) vs raw `id`.
   - **Still to do:** boot 1003 into Bazzite on the Radeon (start = claims the GPU; host keeps the P400).
-- **Phase D — streaming + redeploy base.** Sunshine/Moonlight; snapshot the installed VM as the
-  re-deployable baseline. Document the one-time install seam.
+- **Phase D — streaming + redeploy base. ✅ DONE (2026-06-15).** 1002 boots on the Radeon running
+  Satisfactory, streamed to the MacBook via **Steam Remote Play** (zero-config, survives the OS
+  reinstall) — Sunshine/Moonlight evaluated but not needed. Adopting 1002 also surfaced the
+  **raw→mapping root seam**: a scoped token can't rewrite *or delete* a root-set raw `hostpciN`
+  ("only root can set hostpciN config for non-mapped devices"), so a one-time root
+  `qm set 1002 --delete hostpci0` was needed before the token-driven converge added the mapping
+  fresh. The engine now sequences this as delete-then-set (`VmConverger.RawToMappingTransitions`),
+  though clearing the raw entry stays root-gated for a minimal token. Redeploy-base snapshot
+  remains optional/deferred (OS is throwaway).
 - **Phase E — promote stack** to its own submodule repo once stable.
 
 ## Out of scope (deliberately)

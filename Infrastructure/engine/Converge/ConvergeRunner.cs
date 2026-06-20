@@ -1,5 +1,6 @@
 using Homelab.Infrastructure.Shapes;
 using ProxmoxSharp;
+using ProxmoxSharp.Lxc;
 using ProxmoxSharp.Vm;
 
 namespace Homelab.Infrastructure.Converge;
@@ -158,6 +159,7 @@ public sealed class ConvergeRunner
         var ctx = new ConvergeContext(exec, _env, byName, deriver);
         var creator = new CommunityScriptsCreator(exec);
         var reconciler = new CtConfigReconciler(exec);
+        var mountReconciler = new MountReconciler(exec);
         var ct = CancellationToken.None;
 
         var stackName = loaded.Stack?.Metadata.Name ?? Path.GetFileName(_stackDir);
@@ -209,6 +211,27 @@ public sealed class ConvergeRunner
                     }
                 }
                 catch (Exception ex) { Console.WriteLine($"    config FAILED: {ex.Message}"); failed++; Console.WriteLine(); continue; }
+            }
+
+            // Mounts + hookscript: apply declared mpN entries (e.g. the shared /data NFS
+            // path-bind). Idempotent — no-op when already in place. Community-scripts create
+            // does NOT provision mounts, so this is where they land.
+            if (sp.Node is not null && sp.Ctid is not null && (sp.Mounts.Count > 0 || sp.Hookscript is not null))
+            {
+                try
+                {
+                    var mnt = await mountReconciler.ReconcileAsync(s, ct);
+                    switch (mnt.Outcome)
+                    {
+                        case ApplyOutcome.Applied:
+                            applied++; Console.WriteLine($"    mounts APPLIED: {mnt.Message}"); break;
+                        case ApplyOutcome.Failed:
+                            failed++; Console.WriteLine($"    mounts FAILED: {mnt.Message}"); Console.WriteLine(); continue;
+                        default:
+                            Console.WriteLine($"    mounts: {mnt.Message}"); break;
+                    }
+                }
+                catch (Exception ex) { Console.WriteLine($"    mounts FAILED: {ex.Message}"); failed++; Console.WriteLine(); continue; }
             }
 
             // Guard: required env secrets must be present.
@@ -314,7 +337,7 @@ public sealed class ConvergeRunner
                 continue;
             }
 
-            var res = await creator.DestroyAsync(node, ctid, ct);
+            var res = await DestroyCtAsync(creator, node, ctid, ct);
             Console.WriteLine($"▸ {s.Metadata.Name}  (ctid {ctid}, node {node}): " +
                               $"{res.Outcome.ToString().ToUpperInvariant()} — {res.Message}");
             switch (res.Outcome)
@@ -330,6 +353,33 @@ public sealed class ConvergeRunner
             ? $"Destroy summary — {destroyed} destroyed, {absent} absent, {failed} failed."
             : $"Destroy plan — {planned} to destroy, {absent} absent. (Re-run with --yes to apply.)");
         return failed == 0 ? 0 : 1;
+    }
+
+    // CT teardown. Prefers the ProxmoxSharp API write path (PctWriter, mirroring the
+    // VM path via QemuWriter) when PVE credentials are present — force+purge destroys
+    // even a running CT in one call. Falls back to community-scripts `pct` over SSH
+    // when there are no creds or the ctid isn't numeric. Exists is checked first so an
+    // already-absent CT reads as NoChange instead of an API error (#149 / #101).
+    private async Task<ApplyResult> DestroyCtAsync(CommunityScriptsCreator creator, string node, string ctid, CancellationToken ct)
+    {
+        if (!await creator.ExistsAsync(node, ctid, ct))
+            return ApplyResult.NoChange($"CT {ctid} absent");
+        if (_pveOptions is null || !int.TryParse(ctid, out var id))
+            return await creator.DestroyAsync(node, ctid, ct);
+        try
+        {
+            var pct = PctWriter.Create(_pveOptions);
+            var upid = await pct.DeleteAsync(node, id, force: true, purge: true, ct: ct);
+            if (upid is null) return ApplyResult.Applied($"CT {ctid} destroyed (no task returned)");
+            var exit = await pct.WaitForTaskAsync(node, upid, ct: ct);
+            return string.Equals(exit, "OK", StringComparison.OrdinalIgnoreCase)
+                ? ApplyResult.Applied($"CT {ctid} destroyed via ProxmoxSharp (task {exit})")
+                : ApplyResult.Failed($"CT {ctid} destroy task ended: {exit ?? "(no exit status)"}");
+        }
+        catch (Exception ex)
+        {
+            return ApplyResult.Failed($"CT {ctid} destroy via ProxmoxSharp failed: {ex.Message}");
+        }
     }
 
     // The forgejo-runner DEV script registers AT create time, so it needs the

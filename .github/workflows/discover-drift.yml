@@ -4,23 +4,28 @@ name: discover-drift
 # (which consumes the ProxmoxSharp package) against the live cluster, refreshes
 # docs/discovered-state.json, and opens a PR when it drifts from what's committed.
 #
-# Package restore uses the built-in GITHUB_TOKEN — no PAT needed, BUT the
+# Runs on the homelab self-hosted runner (same as the Fallout deploy pipeline) so
+# it reaches the cluster directly over the LAN — NOT via the public, now
+# CF-Access-gated `proxmox.chrison.dev` hostname. This sidesteps the Cloudflare WAF
+# (which 403s datacenter/runner IPs) that blocked GitHub-hosted runners before.
+#
+# Package restore uses the built-in GITHUB_TOKEN — no PAT needed (the engine only
+# restores same-org ProxmoxSharp*; the cross-org Fallout feed is build/-only). The
 # ProxmoxSharp + ProxmoxSharp.Api packages must grant this repo read access:
 # each package → Package settings → Manage Actions access → add Chrison-dev/Homelab (Read).
 #
-# Required repository secrets:
-#   PROXMOX_BASE_URL     https://proxmox.chrison.dev/api2/json
-#   PROXMOX_TOKEN_ID     a read-only PVE token, e.g. root@pam!claude-mcp
-#   PROXMOX_TOKEN_SECRET the token secret
+# Cluster-reach secrets are shared with _deploy-stack.yml (PROXMOX_BASE_URL points
+# at the LAN, PROXMOX_VERIFY_TLS=false for the self-signed direct cert):
+#   PROXMOX_BASE_URL  PROXMOX_TOKEN_ID  PROXMOX_TOKEN_SECRET  PROXMOX_VERIFY_TLS
+#
+# DRIFT_PR_PAT: fine-grained PAT scoped to THIS repo (contents: write +
+# pull-requests: write) for the "Open PR on drift" step. Deliberately a scoped
+# PAT rather than the org-wide "Allow Actions to create and approve PRs" toggle,
+# to keep the blast radius minimal.
 
 on:
-  # NOTE: disabled until this runs on a self-hosted runner inside the homelab.
-  # GitHub-hosted runners are blocked by Cloudflare (403) on proxmox.chrison.dev
-  # (residential IPs pass; datacenter/runner IPs are WAF-blocked). The fix is a
-  # self-hosted runner on the LAN hitting the cluster directly — tracked in the
-  # backlog. Manual dispatch kept for testing once that runner exists.
-  # schedule:
-  #   - cron: '0 6 * * *'   # daily at 06:00 UTC
+  schedule:
+    - cron: '0 6 * * *'   # daily at 06:00 UTC
   workflow_dispatch:
 
 permissions:
@@ -30,37 +35,57 @@ permissions:
 
 jobs:
   discover:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, homelab]
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: '10.0.x'
+      # No setup-dotnet: the homelab runner already has the .NET 10 SDK on PATH
+      # (same host the Fallout deploy pipeline runs build.sh on; see global.json).
 
       - name: Discover live state
         env:
           # nuget.config reads this for the GitHub Packages feed; the built-in
           # token works once the packages grant this repo read access.
           GITHUB_PACKAGES_PAT: ${{ secrets.GITHUB_TOKEN }}
+          # Cluster-reach config shared with _deploy-stack.yml — LAN-direct, so
+          # PROXMOX_VERIFY_TLS comes from the secret (false for the self-signed cert).
           PROXMOX_BASE_URL: ${{ secrets.PROXMOX_BASE_URL }}
           PROXMOX_TOKEN_ID: ${{ secrets.PROXMOX_TOKEN_ID }}
           PROXMOX_TOKEN_SECRET: ${{ secrets.PROXMOX_TOKEN_SECRET }}
-          # Public endpoint has a valid cert — verify TLS.
-          PROXMOX_VERIFY_TLS: 'true'
+          PROXMOX_VERIFY_TLS: ${{ secrets.PROXMOX_VERIFY_TLS }}
         run: |
+          # Keep the committed snapshot so the next step can diff against it.
+          mkdir -p "$RUNNER_TEMP/drift"
+          cp docs/discovered-state.json "$RUNNER_TEMP/drift/before.json" \
+            || echo '{"nodes":[]}' > "$RUNNER_TEMP/drift/before.json"
           dotnet run --project Infrastructure/engine -c Release -v quiet -- discover \
             > docs/discovered-state.json
+
+      - name: Summarize drift
+        id: summary
+        # Render a Markdown table of what changed (committed → live) for the PR body.
+        run: |
+          {
+            echo 'body<<DRIFT_EOF'
+            echo 'Automated discovery against the live cluster (LAN-direct from the homelab self-hosted runner) detected drift from the committed state.'
+            echo ''
+            dotnet run --project Infrastructure/engine -c Release -v quiet -- discover-diff \
+              "$RUNNER_TEMP/drift/before.json" docs/discovered-state.json
+            echo ''
+            echo '<sub>Full machine-readable state: `docs/discovered-state.json` in this PR.</sub>'
+            echo 'DRIFT_EOF'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Open PR on drift
         uses: peter-evans/create-pull-request@v8
         with:
+          # Scoped fine-grained PAT (this repo only: contents:write + pull-requests:write)
+          # so we don't depend on the org-wide "Actions can create PRs" toggle.
+          token: ${{ secrets.DRIFT_PR_PAT }}
           branch: chore/discovered-state
-          title: 'chore: refresh discovered Proxmox state'
+          title: '[Proxmox Discovery] refresh discovered cluster state'
           commit-message: 'chore: refresh docs/discovered-state.json from live cluster'
-          body: |
-            Automated discovery against the live cluster (`proxmox.chrison.dev`)
-            detected drift. Review the diff in `docs/discovered-state.json` to see
-            what changed (nodes, LXCs/VMs, storage, network).
+          labels: proxmox-discovery
+          body: ${{ steps.summary.outputs.body }}
           add-paths: docs/discovered-state.json
           delete-branch: true
