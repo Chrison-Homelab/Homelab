@@ -20,8 +20,11 @@ if (-not (Test-Path $srcExe)) {
     throw "$exeName not found in '$Source'. Copy the published folder here and re-run."
 }
 
-# Stop any running instance, then copy the app (+ optional config.json) to the target.
+# Stop any running instance and WAIT for it to release the exe before copying.
 Get-Process GamingIdleShutdown -ErrorAction SilentlyContinue | Stop-Process -Force
+for ($i = 0; $i -lt 20 -and (Get-Process GamingIdleShutdown -ErrorAction SilentlyContinue); $i++) {
+    Start-Sleep -Milliseconds 250
+}
 New-Item -ItemType Directory -Path $Target -Force | Out-Null
 Copy-Item $srcExe (Join-Path $Target $exeName) -Force
 $srcCfg = Join-Path $Source 'config.json'
