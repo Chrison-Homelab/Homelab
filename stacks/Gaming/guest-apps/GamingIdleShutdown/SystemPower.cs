@@ -30,7 +30,7 @@ public static class SystemPower
         {
             var privOk = EnableShutdownPrivilege(out var privDetail);
 
-            if (privOk && ExitWindowsEx(EWX_SHUTDOWN | EWX_FORCEIFHUNG,
+            if (privOk && ExitWindowsEx(EWX_SHUTDOWN | EWX_FORCE,
                     SHTDN_REASON_MAJOR_OTHER | SHTDN_REASON_MINOR_OTHER | SHTDN_REASON_FLAG_PLANNED))
             {
                 detail = "ExitWindowsEx accepted";
@@ -49,7 +49,7 @@ public static class SystemPower
         {
             try
             {
-                var p = Process.Start(new ProcessStartInfo("shutdown", "/s /t 0")
+                var p = Process.Start(new ProcessStartInfo("shutdown", "/s /f /t 0")
                 { CreateNoWindow = true, UseShellExecute = false });
                 if (p is null) { detail = "Process.Start returned null"; return false; }
                 if (!p.WaitForExit(10_000)) { detail = "still running (assumed initiated)"; return true; }
@@ -83,7 +83,7 @@ public static class SystemPower
         }
 
         private const uint EWX_SHUTDOWN = 0x00000001;
-        private const uint EWX_FORCEIFHUNG = 0x00000010;
+        private const uint EWX_FORCE = 0x00000004;        // force-close apps (skips "other users logged on" + unsaved prompts)
         private const uint SHTDN_REASON_MAJOR_OTHER = 0x00000000;
         private const uint SHTDN_REASON_MINOR_OTHER = 0x00000000;
         private const uint SHTDN_REASON_FLAG_PLANNED = 0x80000000;
