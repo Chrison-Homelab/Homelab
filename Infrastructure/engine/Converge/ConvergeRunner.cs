@@ -159,6 +159,7 @@ public sealed class ConvergeRunner
         var ctx = new ConvergeContext(exec, _env, byName, deriver);
         var creator = new CommunityScriptsCreator(exec);
         var reconciler = new CtConfigReconciler(exec);
+        var mountReconciler = new MountReconciler(exec);
         var ct = CancellationToken.None;
 
         var stackName = loaded.Stack?.Metadata.Name ?? Path.GetFileName(_stackDir);
@@ -210,6 +211,27 @@ public sealed class ConvergeRunner
                     }
                 }
                 catch (Exception ex) { Console.WriteLine($"    config FAILED: {ex.Message}"); failed++; Console.WriteLine(); continue; }
+            }
+
+            // Mounts + hookscript: apply declared mpN entries (e.g. the shared /data NFS
+            // path-bind). Idempotent — no-op when already in place. Community-scripts create
+            // does NOT provision mounts, so this is where they land.
+            if (sp.Node is not null && sp.Ctid is not null && (sp.Mounts.Count > 0 || sp.Hookscript is not null))
+            {
+                try
+                {
+                    var mnt = await mountReconciler.ReconcileAsync(s, ct);
+                    switch (mnt.Outcome)
+                    {
+                        case ApplyOutcome.Applied:
+                            applied++; Console.WriteLine($"    mounts APPLIED: {mnt.Message}"); break;
+                        case ApplyOutcome.Failed:
+                            failed++; Console.WriteLine($"    mounts FAILED: {mnt.Message}"); Console.WriteLine(); continue;
+                        default:
+                            Console.WriteLine($"    mounts: {mnt.Message}"); break;
+                    }
+                }
+                catch (Exception ex) { Console.WriteLine($"    mounts FAILED: {ex.Message}"); failed++; Console.WriteLine(); continue; }
             }
 
             // Guard: required env secrets must be present.
