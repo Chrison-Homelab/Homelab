@@ -103,7 +103,7 @@
         {
           "vmId": 9971,
           "name": "vdsm-lab",
-          "status": "Running",
+          "status": "Stopped",
           "maxMem": 2147483648,
           "cores": 2
         }
@@ -156,6 +156,11 @@
           "storage": "ds1813-nfs-volume-3",
           "type": "nfs",
           "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
+        },
+        {
+          "storage": "ds1813-nfs-volume-4",
+          "type": "nfs",
+          "content": "import"
         },
         {
           "storage": "local",
@@ -337,6 +342,11 @@
           "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
         },
         {
+          "storage": "ds1813-nfs-volume-4",
+          "type": "nfs",
+          "content": "import"
+        },
+        {
           "storage": "local",
           "type": "dir",
           "content": "backup,iso,vztmpl"
@@ -421,6 +431,11 @@
           "storage": "ds1813-nfs-volume-3",
           "type": "nfs",
           "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
+        },
+        {
+          "storage": "ds1813-nfs-volume-4",
+          "type": "nfs",
+          "content": "import"
         },
         {
           "storage": "local",
