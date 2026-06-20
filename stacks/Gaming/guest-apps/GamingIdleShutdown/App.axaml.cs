@@ -109,15 +109,16 @@ public class App : Application
             return;
         }
         Log($"shutting down ({reason})");
-        try
+        if (SystemPower.TryShutdown(out var detail))
         {
-            if (OperatingSystem.IsWindows())
-                Process.Start(new ProcessStartInfo("shutdown", "/s /t 0")
-                { CreateNoWindow = true, UseShellExecute = false });
-            else
-                Log("non-Windows host: shutdown skipped");
+            Log($"shutdown initiated — {detail}");
+            return;
         }
-        catch (Exception ex) { Log("shutdown failed: " + ex.Message); }
+        // Loud failure + back off, so a token that can't shut down doesn't busy-retry every cycle (#153).
+        Log($"shutdown FAILED — {detail}");
+        var now = DateTime.UtcNow;
+        _lastActiveUtc = now;
+        _snoozeUntilUtc = now.AddMinutes(5);
     }
 
     private void TrySetupTray()
