@@ -29,15 +29,10 @@ spec:
     tunnel: Homelab.Stacks.Core              # NEW named tunnel — never touches existing tunnels / CT 2001
     # Ingress is a TUNNEL-level property defined ONCE here (the replica omits it).
     ingress:
-      # Teleport — the SSH + admin-UI SSO front door. Directly unblocks #117.
-      # Target is CT 9904's web UI; ⚠ needs a DHCP reservation (#117) — until then
-      # this IP is the value verified 2026-06-13. noTLSVerify: Teleport self-signs
-      # on :3080, Cloudflare provides the public TLS.
-      - hostname: teleport.chrison.dev
-        service: "https://10.10.229.241:3080"
-        originRequest: { noTLSVerify: true }
-      # Pangolin — SSO remote-access front door (ADR-0007); supersedes Teleport above
-      # (CT 9904 never went live). Targets the Pangolin CT (2012) Traefik on :80 — plain
+      # Pangolin — SSO remote-access front door (ADR-0007). Replaces Teleport, whose
+      # CT 9904 was decommissioned via `proxmoxsharp lxc delete` (#149); its dead
+      # teleport.chrison.dev ingress entry was removed here. Targets the Pangolin CT
+      # (2012) Traefik on :80 — plain
       # HTTP, Traefik reconfigured for behind-cloudflared (no Let's Encrypt; CF provides
       # public TLS). Admin UIs migrate here one at a time as their own hostnames → same
       # Traefik origin → defined as Pangolin resources (badger enforces auth).
