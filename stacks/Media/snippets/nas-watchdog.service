@@ -1,0 +1,8 @@
+# nas-watchdog (iteration 1) — oneshot, fired by nas-watchdog.timer. See nas-watchdog.sh.
+[Unit]
+Description=NAS-backed media app watchdog (iteration 1)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nas-watchdog.sh

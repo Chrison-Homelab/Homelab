@@ -1,0 +1,21 @@
+# FlareSolverr — solves Cloudflare/JS challenges for Prowlarr indexers.
+#
+# community-scripts: ct/flaresolverr.sh (stable). Inherits node/os/network/storage/
+# timezone from ./stack.yaml. No /data — headless-browser proxy, no media files.
+# Deployed first so Prowlarr can point its indexers at it.
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: flaresolverr
+  stack: Media
+  tags: [indexers, proxy]
+
+spec:
+  app: flaresolverr
+  ctid: 5107
+  cores: 1
+  memory: 1024           # MB — bundles a headless Chromium
+  disk: 4                # GB

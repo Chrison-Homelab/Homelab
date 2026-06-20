@@ -1,0 +1,13 @@
+{
+  "_comment": "SynoSharp desired-state for the shared /data NFS export on Synology volume4. Apply with: `synosharp apply stacks/Media/volume4-nfs.spec.json` (dry-run unless --confirm). Whole-list replace: BOTH client rules must be present. all_admin = all_squash → anonuid=1024/anongid=100. Applied to the live NAS 2026-06-20; `plan` reports in-sync. See docs/runbooks/volume4-data-export.md.",
+  "nfsExports": [
+    {
+      "share": "Volume-4",
+      "present": true,
+      "rules": [
+        { "client": "10.10.0.0/16",     "privilege": "rw", "squash": "all_admin", "async": true, "insecure": true, "crossmnt": true, "security": "sys" },
+        { "client": "192.168.179.0/24", "privilege": "rw", "squash": "all_admin", "async": true, "insecure": true, "crossmnt": true, "security": "sys" }
+      ]
+    }
+  ]
+}

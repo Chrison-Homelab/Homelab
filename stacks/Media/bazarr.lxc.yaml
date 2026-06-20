@@ -1,0 +1,31 @@
+# Bazarr — subtitle automation for Sonarr/Radarr.
+#
+# community-scripts: ct/bazarr.sh (stable). Inherits node/os/network/storage/
+# timezone from ./stack.yaml. Needs the same /data view as Sonarr/Radarr so it
+# can read media + write sidecar subtitles next to each file.
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: bazarr
+  stack: Media
+  tags: [subtitles]
+
+spec:
+  app: bazarr
+  ctid: 5103
+  cores: 2
+  memory: 1024           # MB
+  disk: 8                # GB
+  dependsOn: [sonarr, radarr]
+
+  mounts:
+    - type: nfs
+      storage: ds1813-nfs-volume-4
+      source: data
+      target: /data
+      acl: true
+      backup: false
+  hookscript: local:snippets/ensure-data-mount.sh
