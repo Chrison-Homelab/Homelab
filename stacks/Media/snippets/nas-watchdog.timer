@@ -1,0 +1,11 @@
+# Runs nas-watchdog every ~20s. Enable per file-touching member: `systemctl enable --now nas-watchdog.timer`.
+[Unit]
+Description=Run nas-watchdog every 20s
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=20s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
