@@ -1,0 +1,22 @@
+# Prowlarr — indexer hub; syncs indexers to Sonarr/Radarr.
+#
+# community-scripts: ct/prowlarr.sh (stable). Inherits node/os/network/storage/
+# timezone from ./stack.yaml. No /data — Prowlarr touches no media files.
+# Cutover migrates the existing /var/lib/prowlarr config DB (indexers) — see README.
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: prowlarr
+  stack: Media
+  tags: [indexers]
+
+spec:
+  app: prowlarr
+  ctid: 5100
+  cores: 1
+  memory: 1024           # MB
+  disk: 4                # GB
+  dependsOn: [flaresolverr]   # some indexers solve Cloudflare challenges via flaresolverr

@@ -1,0 +1,30 @@
+# Radarr — movie automation.
+#
+# community-scripts: ct/radarr.sh (stable). Inherits node/os/network/storage/
+# timezone from ./stack.yaml. Binds the shared /data export (TRaSH hardlinks).
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: radarr
+  stack: Media
+  tags: [movies]
+
+spec:
+  app: radarr
+  ctid: 5102
+  cores: 2
+  memory: 1024           # MB
+  disk: 8                # GB — app DB only; media lives on /data
+  dependsOn: [prowlarr, qbittorrent]
+
+  mounts:
+    - type: nfs
+      storage: ds1813-nfs-volume-4
+      source: data
+      target: /data
+      acl: true
+      backup: false
+  hookscript: local:snippets/ensure-data-mount.sh
