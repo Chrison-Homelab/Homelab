@@ -1,0 +1,58 @@
+# Pangolin — the homelab's SSO remote-access front door (ADR-0007).
+#
+# Replaces Teleport (CT 9904, never went live) as the authenticated door for admin
+# UIs. Runs ON-PREM, behind the existing HA `core` Cloudflare tunnel — NO VPS. It is
+# a self-hosted identity-aware reverse proxy (Traefik + an IdP/RBAC layer); a public
+# VPS would only be needed to make Pangolin its OWN public ingress (its Gerbil/Newt
+# WireGuard path), which is a separate, optional, #137-driven track — see ADR-0007.
+#
+# community-scripts: ct/pangolin.sh (stable / ProxmoxVE), pinned upstream to 1.18.4
+# (Pangolin's schema changes break unattended updates). NATIVE systemd install
+# (Node 24 + pangolin/gerbil/traefik binaries, SQLite OSS), NOT Docker. The script
+# sets var_tun=1 (TUN for Gerbil's WireGuard) — Gerbil is installed but UNUSED in the
+# behind-cloudflared model (no Newt clients). Validate against
+# ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: pangolin
+  stack: Core
+  tags: [network, proxy, sso, remote-access]
+
+spec:
+  app: pangolin
+  ctid: 2012
+  node: nuc-01           # single instance (not HA — replica of an IdP buys little);
+                         # lands on nuc-01, Teleport's old home, which it supersedes.
+  cores: 2               # community-scripts ct/pangolin.sh defaults (Node build + Traefik)
+  memory: 4096           # MB
+  disk: 10               # GB
+  # source(stable/main)/os(debian 13)/unprivileged/network(vlan 1010, dhcp)/storage/
+  # timezone/onboot inherited from the Core stack. var_tun is set by the script itself.
+  #
+  # ⚠ DHCP reservation: the `core` tunnel targets this CT's Traefik by IP, so it needs
+  # a stable lease (UniFi reservation) the same as the connectors + PDM (#118 / #117-class).
+
+  # ── Post-create wiring (converge / BL-010). NOTE: the `pangolin` provisioner is not
+  # yet implemented engine-side (follow-up) — this config block declares what it must do.
+  config:
+    dashboardUrl: https://pangolin.chrison.dev
+    baseDomain: chrison.dev
+    # EDGE MODE — the load-bearing delta from the stock install. community-scripts
+    # configures Traefik to OWN public ingress via Let's Encrypt (httpChallenge on
+    # :80/:443). Behind cloudflared there is no public :80 for ACME, so the provisioner
+    # must reconfigure Traefik to serve plain HTTP on :80 to the `core` tunnel and DROP
+    # the LE certResolver + https-redirect. cloudflared provides the public TLS.
+    edge: cloudflared        # vs 'letsencrypt' (the stock public-ingress default)
+    flags:
+      allowRawResources: true        # enables raw TCP/UDP resources (e.g. SSH)
+      disableSignupWithoutInvite: true
+      disableUserCreateOrg: false
+    # Admin UIs are added as Pangolin *resources* (host-routed by Traefik, auth enforced
+    # by the badger plugin), migrated one at a time — see ADR-0007 open decision #1.
+  secrets:
+    - name: serverSecret              # config.yml server.secret — stable across re-converge
+      valueFrom:
+        env: PANGOLIN_SERVER_SECRET   # gitignored secrets.env; provisioner generates one if unset

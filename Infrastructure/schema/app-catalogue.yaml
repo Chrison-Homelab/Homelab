@@ -56,3 +56,13 @@ apps:
   cloudflared:
     script: cloudflared
     provisioner: cloudflared
+
+  # Pangolin — SSO remote-access reverse proxy, the Teleport replacement (ADR-0007).
+  # ct/pangolin.sh is a NATIVE systemd install (pinned upstream to 1.18.4). The
+  # provisioner is NOT yet implemented engine-side (follow-up): it must reconfigure
+  # Traefik for behind-cloudflared (plain HTTP on :80, no Let's Encrypt — CF provides
+  # public TLS), seed config.yml (dashboard_url, server.secret, flags), and run the
+  # one-time admin/org setup. See stacks/Core/pangolin.lxc.yaml.
+  pangolin:
+    script: pangolin
+    provisioner: pangolin
