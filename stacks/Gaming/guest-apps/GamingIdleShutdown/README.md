@@ -57,6 +57,15 @@ cd <publish folder>
 ./Install.ps1        # registers HKCU autostart + launches it
 ```
 
+## Preview the UI (no waiting)
+The app has no main window — it only shows the countdown after the idle window. To
+eyeball the countdown immediately (e.g. on the dev box), set `GAMING_IDLE_DEMO=1`:
+```bash
+GAMING_IDLE_DEMO=1 dotnet run -c Release
+```
+It pops a 15-second countdown straight away. Safe to run on macOS/Linux: `dryRun`
+defaults true *and* the shutdown call is Windows-guarded, so nothing shuts down.
+
 ## Operating it
 - **Tray icon** → *Snooze 1h* or *Quit*.
 - **Countdown window** → *Cancel* (reset), *Snooze 1h*, *Shut down now*.

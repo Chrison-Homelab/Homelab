@@ -40,6 +40,14 @@ public class App : Application
         _pollTimer.Tick += (_, _) => Poll();
         _pollTimer.Start();
 
+        // Preview affordance: GAMING_IDLE_DEMO=1 pops the countdown straight away
+        // (short timer) so the UI can be eyeballed without waiting out the idle window.
+        if (Environment.GetEnvironmentVariable("GAMING_IDLE_DEMO") == "1")
+        {
+            Log("DEMO mode: showing countdown immediately");
+            ShowCountdown(15);
+        }
+
         base.OnFrameworkInitializationCompleted();
     }
 
@@ -65,10 +73,10 @@ public class App : Application
         catch (Exception ex) { Log("poll error: " + ex.Message); }
     }
 
-    private void ShowCountdown()
+    private void ShowCountdown(int? seconds = null)
     {
         Log("idle threshold reached -> countdown shown");
-        _countdown = new CountdownWindow(_cfg.CountdownSeconds);
+        _countdown = new CountdownWindow(seconds ?? _cfg.CountdownSeconds);
         _countdown.Result += OnCountdownResult;
         _countdown.Show();
         _countdown.Activate();

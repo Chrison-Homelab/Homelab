@@ -1,27 +1,41 @@
 <#
-  Install.ps1 — register GamingIdleShutdown to autostart in the current user's
-  session (no elevation needed) and launch it. Run in the Windows guest (1002),
-  signed in as the gamer, from the published output folder.
+  Install.ps1 — install GamingIdleShutdown for the CURRENT user and launch it.
+  Run inside the Windows guest (1002), signed in as the gamer (no elevation needed).
+
+  Works from any folder, including a mounted CD: it COPIES the app to a persistent
+  local path (so it survives the CD being unmounted), registers logon autostart
+  (HKCU Run), and starts it.
+
+  MUST run in the gamer's interactive session — the app reads per-session input-idle
+  (GetLastInputInfo), so running it as SYSTEM/a service would misread idle.
 #>
 param(
-    [string]$ExePath = (Join-Path $PSScriptRoot 'GamingIdleShutdown.exe')
+    [string]$Source = $PSScriptRoot,
+    [string]$Target = (Join-Path $env:LOCALAPPDATA 'GamingIdleShutdown')
 )
-
 $ErrorActionPreference = 'Stop'
 
-if (-not (Test-Path $ExePath)) {
-    throw "GamingIdleShutdown.exe not found at '$ExePath'. Publish first (see README.md) and run this from the publish folder."
+$exeName = 'GamingIdleShutdown.exe'
+$srcExe = Join-Path $Source $exeName
+if (-not (Test-Path $srcExe)) {
+    throw "$exeName not found in '$Source'. Publish first (see README.md), then run this from that folder."
 }
-$ExePath = (Resolve-Path $ExePath).Path
 
-$run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-New-ItemProperty -Path $run -Name 'GamingIdleShutdown' -Value "`"$ExePath`"" -PropertyType String -Force | Out-Null
-Write-Host "Registered autostart (HKCU\...\Run\GamingIdleShutdown -> $ExePath)"
-
-# Stop any running instance, then (re)launch.
+# Stop any running instance, then copy the app (+ optional config.json) to the target.
 Get-Process GamingIdleShutdown -ErrorAction SilentlyContinue | Stop-Process -Force
-Start-Process $ExePath
-Write-Host "Started."
+New-Item -ItemType Directory -Path $Target -Force | Out-Null
+Copy-Item $srcExe (Join-Path $Target $exeName) -Force
+$srcCfg = Join-Path $Source 'config.json'
+if ((Test-Path $srcCfg) -and -not (Test-Path (Join-Path $Target 'config.json'))) {
+    Copy-Item $srcCfg (Join-Path $Target 'config.json') -Force   # never clobber an existing config
+}
+$tgtExe = Join-Path $Target $exeName
+
+# Logon autostart for THIS user.
+$run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+New-ItemProperty -Path $run -Name 'GamingIdleShutdown' -Value "`"$tgtExe`"" -PropertyType String -Force | Out-Null
+
+Start-Process $tgtExe
+Write-Host "Installed to $Target and started; autostart registered for $env:USERNAME."
 Write-Host "Log:    $env:LOCALAPPDATA\GamingIdleShutdown\log.txt"
-Write-Host "Config: config.json beside the exe (optional). dryRun defaults to TRUE —"
-Write-Host "        watch the log for a few days, then set dryRun=false to arm it."
+Write-Host "dryRun defaults TRUE — watch the log, then drop a config.json with { ""dryRun"": false } next to the exe to arm it."
