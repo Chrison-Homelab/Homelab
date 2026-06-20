@@ -59,7 +59,9 @@ public sealed class CtConfigReconciler
             if (!desiredTags.SetEquals(liveTags))
             {
                 var joined = TagSet.Join(desiredTags);
-                sets.Add($"--tags {joined}");
+                // Quote: Proxmox joins tags with ';', which the remote shell would
+                // otherwise read as a command separator (#114 smoke test caught this).
+                sets.Add($"--tags \"{joined}\"");
                 changed.Add($"tags →{joined}");
             }
         }

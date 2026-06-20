@@ -108,12 +108,13 @@ static async Task<int> RunConverge(string[] args)
     var secretsPath = FindUp("secrets.env", Directory.GetCurrentDirectory());
     var env = SecretsEnv.Load(secretsPath);
 
-    // PVE creds power the kind: VM converge path (ProxmoxSharp); null degrades to
-    // "VM plan/apply skipped" while LXC converge still works.
+    // PVE creds power the ProxmoxSharp write paths: VM converge (QemuWriter) AND the
+    // LXC teardown via PctWriter (#149). null degrades to SSH-only (pct over SSH for
+    // LXC; "VM plan/apply skipped").
     var pve = LoadOptions();
 
     if (destroy)
-        return await new ConvergeRunner(stackDir, env).DestroyAsync(confirmed);
+        return await new ConvergeRunner(stackDir, env, pveOptions: pve).DestroyAsync(confirmed);
     if (apply)
         return await new ConvergeRunner(stackDir, env, pveOptions: pve).ApplyAsync();
 

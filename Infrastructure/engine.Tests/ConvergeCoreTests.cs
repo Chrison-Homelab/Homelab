@@ -244,6 +244,28 @@ public sealed class ConvergeCoreTests
         Assert.DoesNotContain("--memory", set);
     }
 
+    [Fact]
+    public async Task CtConfigReconciler_QuotesTagsSeparator()
+    {
+        // Proxmox joins tags with ';'. The `pct set` arg must be quoted, or the remote
+        // shell reads ';' as a command separator (#114 live smoke test caught this:
+        // `pct set … --tags a;b` ran `b` as a command → "command not found").
+        var shape = Lxc("smoketest", "9099");
+        shape.Spec.Node = "nuc-01";
+        shape.Metadata.Tags = new List<string> { "smoketest", "throwaway" };
+
+        var exec = new FakeNodeExec(cmd =>
+            cmd.Contains("pct config")
+                ? new ExecResult(0, "cores: 1\nmemory: 512", "") // no tags live → differs
+                : new ExecResult(0, "", ""));
+
+        var result = await new CtConfigReconciler(exec).ReconcileAsync(shape);
+
+        Assert.Equal(ApplyOutcome.Applied, result.Outcome);
+        var set = Assert.Single(exec.Commands, c => c.Contains("pct set"));
+        Assert.Matches(@"--tags ""[^""]*;[^""]*""", set); // ';' lives INSIDE the quotes
+    }
+
     // ---- Destroy lifecycle ------------------------------------------------
 
     [Fact]
