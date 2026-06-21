@@ -60,6 +60,12 @@ public sealed class BazarrClient : IDisposable
         return doc.RootElement.Clone();
     }
 
+    public async Task<JsonElement> GetProfilesAsync(CancellationToken ct)
+    {
+        using var doc = JsonDocument.Parse(await _http.GetStringAsync("api/system/languages/profiles", ct));
+        return doc.RootElement.Clone();
+    }
+
     public async Task<bool> PostSettingsAsync(IEnumerable<KeyValuePair<string, string>> form, CancellationToken ct)
     {
         using var resp = await _http.PostAsync("api/system/settings", new FormUrlEncodedContent(form), ct);

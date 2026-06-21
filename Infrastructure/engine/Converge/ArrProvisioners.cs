@@ -521,14 +521,19 @@ public sealed class BazarrProvisioner : IAppProvisioner
             return ApplyResult.Failed("could not resolve sonarr/radarr IP+apikey for bazarr");
         using var bz = new BazarrClient($"http://{ip}:6767", key);
 
-        // Idempotency: both enabled, IPs match, Forms auth on → done.
         var cur = await bz.GetSettingsAsync(ct);
         var g = cur.GetProperty("general");
+        var sub = ParseSubtitles(s.Spec.Config);
+
+        // Idempotency: sonarr/radarr enabled + IPs match + Forms auth + (if subtitles
+        // declared) providers match + the profile exists → nothing to do.
         var wired = g.GetProperty("use_sonarr").GetBoolean() && g.GetProperty("use_radarr").GetBoolean()
             && cur.GetProperty("sonarr").GetProperty("ip").GetString() == sIp
             && cur.GetProperty("radarr").GetProperty("ip").GetString() == rIp
             && string.Equals(cur.GetProperty("auth").GetProperty("type").GetString(), "form", StringComparison.OrdinalIgnoreCase);
-        if (wired) return ApplyResult.NoChange("bazarr already wired (sonarr + radarr + forms auth)");
+        var subsDone = sub is null
+            || (ProvidersMatch(g, sub.Providers) && await ProfileExistsAsync(bz, sub.ProfileName, ct));
+        if (wired && subsDone) return ApplyResult.NoChange("bazarr already wired (sonarr/radarr, auth, subtitles)");
 
         var form = new List<KeyValuePair<string, string>>
         {
@@ -544,7 +549,90 @@ public sealed class BazarrProvisioner : IAppProvisioner
             form.Add(new("settings-auth-username", ctx.Secrets.Get("ARR_USER") ?? "csimon"));
             form.Add(new("settings-auth-password", pass));
         }
+
+        // Subtitles: enabled providers + languages, opensubtitlescom creds (from secrets)
+        // + settings, and the language profile set as the series/movies default.
+        if (sub is not null)
+        {
+            foreach (var p in sub.Providers) form.Add(new("settings-general-enabled_providers", p));
+            foreach (var l in sub.Languages) form.Add(new("settings-general-enabled_languages", l));
+            if (sub.Providers.Contains("opensubtitlescom"))
+            {
+                var ou = ctx.Secrets.Get("BAZARR_OPENSUBTITLES_USER");
+                var op = ctx.Secrets.Get("BAZARR_OPENSUBTITLES_PASSWORD");
+                if (!string.IsNullOrEmpty(ou)) form.Add(new("settings-opensubtitlescom-username", ou));
+                if (!string.IsNullOrEmpty(op)) form.Add(new("settings-opensubtitlescom-password", op));
+                form.Add(new("settings-opensubtitlescom-use_hash", sub.OstUseHash ? "true" : "false"));
+                form.Add(new("settings-opensubtitlescom-include_ai_translated", sub.OstIncludeAi ? "true" : "false"));
+            }
+            if (sub.ProfileName is not null)
+            {
+                form.Add(new("languages-profiles", BuildProfileJson(sub)));
+                form.Add(new("settings-general-serie_default_enabled", "true"));
+                form.Add(new("settings-general-serie_default_profile", "1"));
+                form.Add(new("settings-general-movie_default_enabled", "true"));
+                form.Add(new("settings-general-movie_default_profile", "1"));
+            }
+        }
+
         if (!await bz.PostSettingsAsync(form, ct)) return ApplyResult.Failed("bazarr settings POST failed");
-        return ApplyResult.Applied("bazarr wired to sonarr + radarr" + (string.IsNullOrEmpty(pass) ? "" : " + forms auth"));
+        return ApplyResult.Applied($"bazarr wired (sonarr/radarr, auth{(sub is not null ? $", {sub.Providers.Count} providers + profile" : "")})");
+    }
+
+    private sealed record Subtitles(List<string> Providers, List<string> Languages,
+        bool OstUseHash, bool OstIncludeAi, string? ProfileName, int ProfileCutoff, List<(string lang, bool audioOnly)> Items);
+
+    // Parse the declarative config.subtitles block (migrated from old bazarr). Null when absent.
+    private static Subtitles? ParseSubtitles(Dictionary<string, object?> c)
+    {
+        if (!c.TryGetValue("subtitles", out var sv) || sv is not System.Collections.IDictionary d) return null;
+        List<string> List(string k) => d.Contains(k) && d[k] is IEnumerable<object> e
+            ? e.Select(x => x?.ToString() ?? "").Where(x => x.Length > 0).ToList() : new();
+        var ost = d.Contains("opensubtitlescom") && d["opensubtitlescom"] is System.Collections.IDictionary o ? o : null;
+        bool OstFlag(string k) => ost is not null && ost.Contains(k) && ost[k] is bool b && b;
+        string? profName = null; var cutoff = 65535; var items = new List<(string, bool)>();
+        if (d.Contains("profile") && d["profile"] is System.Collections.IDictionary pr)
+        {
+            profName = pr["name"]?.ToString();
+            if (pr.Contains("cutoff") && int.TryParse(pr["cutoff"]?.ToString(), out var cv)) cutoff = cv;
+            if (pr.Contains("items") && pr["items"] is IEnumerable<object> its)
+                foreach (var it in its)
+                    if (it is System.Collections.IDictionary id && id["language"]?.ToString() is { Length: > 0 } lang)
+                        items.Add((lang, id.Contains("audio_only") && id["audio_only"] is bool ab && ab));
+        }
+        return new Subtitles(List("providers"), List("languages"), OstFlag("use_hash"), OstFlag("include_ai_translated"), profName, cutoff, items);
+    }
+
+    private static bool ProvidersMatch(JsonElement general, List<string> want)
+    {
+        if (!general.TryGetProperty("enabled_providers", out var p) || p.ValueKind != JsonValueKind.Array) return false;
+        var have = p.EnumerateArray().Select(x => x.GetString()).Where(x => x is not null).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return have.SetEquals(want);
+    }
+
+    private static async Task<bool> ProfileExistsAsync(BazarrClient bz, string? name, CancellationToken ct)
+    {
+        if (name is null) return true;
+        var profs = await bz.GetProfilesAsync(ct);
+        return profs.ValueKind == JsonValueKind.Array && profs.EnumerateArray().Any(p =>
+            p.TryGetProperty("name", out var n) && string.Equals(n.GetString(), name, StringComparison.Ordinal));
+    }
+
+    private static string BuildProfileJson(Subtitles sub)
+    {
+        var items = sub.Items.Select((it, i) => new
+        {
+            id = i + 1,
+            language = it.lang,
+            audio_exclude = "False",
+            audio_only_include = it.audioOnly ? "True" : "False",
+            hi = "False",
+            forced = "False",
+        }).ToArray();
+        return JsonSerializer.Serialize(new[]
+        {
+            new { profileId = 1, name = sub.ProfileName, cutoff = sub.ProfileCutoff, items,
+                  mustContain = Array.Empty<string>(), mustNotContain = Array.Empty<string>(), originalFormat = 0, tag = "" },
+        });
     }
 }

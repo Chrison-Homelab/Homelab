@@ -44,6 +44,8 @@ jobs:
       RADARR_PASSWORD: ${{ secrets.RADARR_PASSWORD }}
       PROWLARR_PASSWORD: ${{ secrets.PROWLARR_PASSWORD }}
       BAZARR_PASSWORD: ${{ secrets.BAZARR_PASSWORD }}
+      BAZARR_OPENSUBTITLES_USER: ${{ secrets.BAZARR_OPENSUBTITLES_USER }}
+      BAZARR_OPENSUBTITLES_PASSWORD: ${{ secrets.BAZARR_OPENSUBTITLES_PASSWORD }}
       # NB: SSH to nodes for the community-scripts create path is provided by the
       # runner host (proven by the BL-013 smoke deploy), not a GH secret.
       # The runner has no DNS for node short-names, so map each to its LAN IP —
