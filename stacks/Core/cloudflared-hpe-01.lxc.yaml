@@ -36,9 +36,8 @@ spec:
       # HTTP, Traefik reconfigured for behind-cloudflared (no Let's Encrypt; CF provides
       # public TLS). Admin UIs migrate here one at a time as their own hostnames → same
       # Traefik origin → defined as Pangolin resources (badger enforces auth).
-      # ⚠ TODO(deploy): replace the placeholder with CT 2012's RESERVED DHCP IP (#118).
       - hostname: pangolin.chrison.dev
-        service: "http://10.10.0.0:80"          # TODO: pin to CT 2012 reserved IP on deploy
+        service: "http://10.10.0.12:80"         # CT 2012 static IP (Homelab VLAN)
       # ── Break-glass admin behind Cloudflare Access (ADR-0005, live 2026-06-14) ──
       # Two admin front doors, each a CF Access self-hosted app gated by One-Time PIN
       # (policy: allow csimon@chrison.dev). The per-node `pve-*` hostname idea is dropped.

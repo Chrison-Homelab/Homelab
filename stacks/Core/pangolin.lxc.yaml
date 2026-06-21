@@ -29,11 +29,18 @@ spec:
   cores: 2               # community-scripts ct/pangolin.sh defaults (Node build + Traefik)
   memory: 4096           # MB
   disk: 10               # GB
-  # source(stable/main)/os(debian 13)/unprivileged/network(vlan 1010, dhcp)/storage/
-  # timezone/onboot inherited from the Core stack. var_tun is set by the script itself.
+  # source(stable/main)/os(debian 13)/unprivileged/storage/timezone/onboot inherited
+  # from the Core stack. var_tun is set by the script itself.
   #
-  # ⚠ DHCP reservation: the `core` tunnel targets this CT's Traefik by IP, so it needs
-  # a stable lease (UniFi reservation) the same as the connectors + PDM (#118 / #117-class).
+  # STATIC IP (overrides the stack's dhcp default): the `core` tunnel targets this CT's
+  # Traefik by IP, so pin it deterministically rather than relying on a DHCP reservation.
+  # .12 ↔ ctid 2012, on the Homelab VLAN.
+  network:
+    bridge: vmbr0
+    vlan: 1010
+    ipv4: 10.10.0.12/16
+    gateway: 10.10.0.1
+    ipv6: none
 
   # ── Post-create wiring applied by the `pangolin` converge provisioner (#145).
   config:
