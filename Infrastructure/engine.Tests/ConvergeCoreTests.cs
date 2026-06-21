@@ -329,6 +329,27 @@ public sealed class ConvergeCoreTests
         finally { Environment.SetEnvironmentVariable("NODE_ADDR_HPE_TEST_01", null); }
     }
 
+    // ---- arr-wire parse helpers (#159) ------------------------------------
+
+    [Fact]
+    public void ArrExec_ParseApiKey_ExtractsFromConfigXml()
+    {
+        var xml = "<Config>\n  <Port>8989</Port>\n  <ApiKey>abc123def4567890abcdef0123456789</ApiKey>\n</Config>";
+        Assert.Equal("abc123def4567890abcdef0123456789", ArrExec.ParseApiKey(xml));
+        Assert.Null(ArrExec.ParseApiKey("<Config><Port>8989</Port></Config>"));
+    }
+
+    [Fact]
+    public void ArrExec_ParseQbitTempPassword_TakesLatestSessionPassword()
+    {
+        var journal = string.Join('\n',
+            "... A temporary password is provided for this session: OLDpw11",
+            "some other line",
+            "... A temporary password is provided for this session: NEWpw22");
+        Assert.Equal("NEWpw22", ArrExec.ParseQbitTempPassword(journal));
+        Assert.Null(ArrExec.ParseQbitTempPassword("nothing here"));
+    }
+
     // ---- Provisioner idempotency (faked INodeExec seam) -------------------
 
     // Records pct-exec commands and replies from a scripted map. Lets us assert a

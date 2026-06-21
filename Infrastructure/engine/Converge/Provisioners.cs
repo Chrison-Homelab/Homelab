@@ -54,6 +54,10 @@ public sealed class ProvisionerRegistry
         new GithubRunnerProvisioner(),
         new CloudflaredProvisioner(),
         new PangolinProvisioner(),
+        new QbittorrentProvisioner(),
+        new ProwlarrProvisioner(),
+        new SonarrProvisioner(),
+        new RadarrProvisioner(),
     });
 }
 

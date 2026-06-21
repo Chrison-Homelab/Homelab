@@ -62,14 +62,18 @@ apps:
   # are handled by the shared-mount model + cutover, not the catalogue.
   prowlarr:
     script: prowlarr
+    provisioner: prowlarr       # arr-wire: indexer carry-over + FlareSolverr proxy (#159)
   sonarr:
     script: sonarr
+    provisioner: sonarr         # arr-wire: root folder + qbit client + self-register (#159)
   radarr:
     script: radarr
+    provisioner: radarr         # arr-wire: root folder + qbit client + self-register (#159)
   bazarr:
     script: bazarr
   qbittorrent:
     script: qbittorrent
+    provisioner: qbittorrent   # arr-wire: WebUI creds + categories + save path (#159)
   seerr:
     script: overseerr        # CONFIRM: Overseerr (Plex-native) vs Jellyseerr — #105 wants the Plex-native one
   flaresolverr:
