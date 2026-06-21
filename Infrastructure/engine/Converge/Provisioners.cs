@@ -215,6 +215,9 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
         {
             yield return $"ensure tunnel '{tunnel}' + DNS exist (ADD-ONLY — never touch existing; CLAUDE.md)";
             yield return $"apply {ingressCount} ingress rule(s); install tunnel token; start cloudflared";
+            var allow = ParseAccessAllow(s.Spec.Config);
+            if (allow.Count > 0)
+                yield return $"ensure a CF Access OTP app per hostname (allow {string.Join(", ", allow)}) — ADD-ONLY";
         }
     }
 
@@ -257,23 +260,64 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
         foreach (var (host, _) in ingress)
             if (!await api.DnsExistsAsync(zone.ZoneId, host, ct)) { dnsPresent = false; break; }
 
-        // Idempotency (ADD-ONLY): tunnel + all DNS + active connector → done.
-        if (tunnelId is not null && dnsPresent && svcActive)
-            return ApplyResult.NoChange($"tunnel '{tunnelName}' + DNS present, cloudflared active");
+        // CF Access gating (ADD-ONLY): each ingress hostname gets a self-hosted Access
+        // app + an allow-by-email policy so the admin UI is never exposed raw — login is
+        // One-Time PIN (no other IdP). Driven by config.access.allow; empty → no gating.
+        // App is keyed by domain + policy by name, so this is find-or-create (re-run safe).
+        var allowEmails = ParseAccessAllow(s.Spec.Config);
+        var gated = 0;
+        foreach (var (host, _) in ingress)
+        {
+            if (allowEmails.Count == 0) break;
+            var appId = await api.FindAccessAppIdAsync(zone.AccountId, host, ct);
+            if (appId is null)
+            {
+                appId = await api.CreateAccessAppAsync(zone.AccountId, $"{host.Split('.')[0]} (Media)", host, "24h", ct);
+                gated++;
+            }
+            if (!await api.AccessPolicyExistsAsync(zone.AccountId, appId, AccessPolicyName, ct))
+            {
+                await api.CreateAccessAllowEmailPolicyAsync(zone.AccountId, appId, AccessPolicyName, allowEmails, ct);
+                gated++;
+            }
+        }
+        var gateNote = allowEmails.Count > 0 ? $", {ingress.Count} host(s) Access-gated" : "";
 
-        tunnelId ??= await api.CreateTunnelAsync(zone.AccountId, tunnelName, ct);
-        await api.SetTunnelConfigAsync(zone.AccountId, tunnelId, BuildIngressJson(ingress), ct);
-        var token = await api.GetTunnelTokenAsync(zone.AccountId, tunnelId, ct);
+        // Idempotency (ADD-ONLY): tunnel + all DNS + active connector + gating in place → done.
+        if (tunnelId is not null && dnsPresent && svcActive && gated == 0)
+            return ApplyResult.NoChange($"tunnel '{tunnelName}' + DNS present, cloudflared active{gateNote}");
 
-        var install = $"cloudflared service uninstall 2>/dev/null; cloudflared service install {token}";
-        var res = await ctx.Exec.InContainerAsync(node, ctid, install);
-        if (!res.Ok) return ApplyResult.Failed($"cloudflared install failed: {res.Stderr}");
+        // (Re)provision the connector only when the tunnel is absent or not running —
+        // never disturb an already-active connector just to add a gate.
+        if (tunnelId is null || !svcActive)
+        {
+            tunnelId ??= await api.CreateTunnelAsync(zone.AccountId, tunnelName, ct);
+            await api.SetTunnelConfigAsync(zone.AccountId, tunnelId, BuildIngressJson(ingress), ct);
+            var token = await api.GetTunnelTokenAsync(zone.AccountId, tunnelId, ct);
+            var install = $"cloudflared service uninstall 2>/dev/null; cloudflared service install {token}";
+            var res = await ctx.Exec.InContainerAsync(node, ctid, install);
+            if (!res.Ok) return ApplyResult.Failed($"cloudflared install failed: {res.Stderr}");
+        }
 
         foreach (var (host, _) in ingress)
             if (!await api.DnsExistsAsync(zone.ZoneId, host, ct))
                 await api.CreateCnameAsync(zone.ZoneId, host, $"{tunnelId}.cfargotunnel.com", ct);
 
-        return ApplyResult.Applied($"tunnel '{tunnelName}' ensured + token installed ({ingress.Count} ingress)");
+        var changes = gated > 0 ? $"; {gated} Access change(s)" : "";
+        return ApplyResult.Applied($"tunnel '{tunnelName}' ensured ({ingress.Count} ingress){changes}");
+    }
+
+    private const string AccessPolicyName = "allow-homelab-admins";
+
+    // config.access.allow — emails permitted through the CF Access OTP gate.
+    private static List<string> ParseAccessAllow(Dictionary<string, object?> c)
+    {
+        var emails = new List<string>();
+        if (c.TryGetValue("access", out var a) && a is System.Collections.IDictionary ad
+            && ad["allow"] is IEnumerable<object> items)
+            foreach (var it in items)
+                if (it?.ToString() is { Length: > 0 } e) emails.Add(e);
+        return emails;
     }
 
     private static List<(string host, string service)> ParseIngress(Dictionary<string, object?> c)

@@ -311,6 +311,24 @@ public sealed class ConvergeCoreTests
         Assert.Contains(exec.Commands, c => c.Contains("pct destroy 5001"));
     }
 
+    // ---- NodeExec node→address resolution (issue #162) --------------------
+
+    [Fact]
+    public void NodeExecResolve_FallsBackToName_WhenNoOverride()
+    {
+        // unique name → no env override exists → resolves to the name unchanged.
+        Assert.Equal("node-xyzzy-01", NodeExec.Resolve("node-xyzzy-01"));
+    }
+
+    [Fact]
+    public void NodeExecResolve_UsesEnvOverride_MappingNameToIp()
+    {
+        // NODE_ADDR_<NAME>: name uppercased, non-alphanumerics → underscore.
+        Environment.SetEnvironmentVariable("NODE_ADDR_HPE_TEST_01", "10.0.0.9");
+        try { Assert.Equal("10.0.0.9", NodeExec.Resolve("hpe-test-01")); }
+        finally { Environment.SetEnvironmentVariable("NODE_ADDR_HPE_TEST_01", null); }
+    }
+
     // ---- Provisioner idempotency (faked INodeExec seam) -------------------
 
     // Records pct-exec commands and replies from a scripted map. Lets us assert a

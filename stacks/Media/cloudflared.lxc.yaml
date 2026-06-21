@@ -31,6 +31,12 @@ spec:
   dependsOn: [prowlarr, sonarr, radarr, bazarr, qbittorrent, seerr]
   config:
     tunnel: Homelab.Stacks.Media
+    # CF Access gating (ADD-ONLY): converge ensures a self-hosted Access app +
+    # allow-by-email policy on EVERY ingress hostname below, so the admin UIs are
+    # never exposed raw. With no other IdP these emails log in via One-Time PIN
+    # (same pattern as PDM/Proxmox). Stage-2 auth (Pangolin/ADR-0007) can replace this.
+    access:
+      allow: [csimon@chrison.dev]
     # Ingress is a TUNNEL-level property defined ONCE here.
     # flaresolverr is deliberately NOT exposed (internal — Prowlarr calls it).
     # Each hostname below ALSO gets a CF Access OTP app (created during DNS wiring).

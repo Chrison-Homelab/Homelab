@@ -110,4 +110,53 @@ public sealed class CloudflareApi
             Encoding.UTF8, "application/json");
         await ResultAsync(await _http.PostAsync($"zones/{zoneId}/dns_records", body, ct), ct);
     }
+
+    // --- Cloudflare Access (Zero Trust) gating — ADD-ONLY (callers check first) ---
+    // A self-hosted Access application keyed by its `domain`, plus an allow-by-email
+    // policy. With no other IdP configured these emails authenticate via One-Time PIN.
+    // Mirrors the Topaz AccessReconciler over the same endpoints.
+
+    public async Task<string?> FindAccessAppIdAsync(string accountId, string domain, CancellationToken ct)
+    {
+        var r = await ResultAsync(await _http.GetAsync($"accounts/{accountId}/access/apps?per_page=100", ct), ct);
+        foreach (var a in r.EnumerateArray())
+            if (string.Equals(a.GetProperty("domain").GetString(), domain, StringComparison.OrdinalIgnoreCase))
+                return a.GetProperty("id").GetString();
+        return null;
+    }
+
+    public async Task<string> CreateAccessAppAsync(string accountId, string name, string domain, string sessionDuration, CancellationToken ct)
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            name,
+            domain,
+            type = "self_hosted",
+            session_duration = sessionDuration,
+            app_launcher_visible = true,
+        });
+        var body = new StringContent(json, Encoding.UTF8, "application/json");
+        var r = await ResultAsync(await _http.PostAsync($"accounts/{accountId}/access/apps", body, ct), ct);
+        return r.GetProperty("id").GetString()!;
+    }
+
+    public async Task<bool> AccessPolicyExistsAsync(string accountId, string appId, string policyName, CancellationToken ct)
+    {
+        var r = await ResultAsync(await _http.GetAsync($"accounts/{accountId}/access/apps/{appId}/policies", ct), ct);
+        foreach (var p in r.EnumerateArray())
+            if (p.GetProperty("name").GetString() == policyName) return true;
+        return false;
+    }
+
+    public async Task CreateAccessAllowEmailPolicyAsync(string accountId, string appId, string policyName, IReadOnlyList<string> emails, CancellationToken ct)
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            name = policyName,
+            decision = "allow",
+            include = emails.Select(e => new { email = new { email = e } }).ToArray(),
+        });
+        var body = new StringContent(json, Encoding.UTF8, "application/json");
+        await ResultAsync(await _http.PostAsync($"accounts/{accountId}/access/apps/{appId}/policies", body, ct), ct);
+    }
 }
