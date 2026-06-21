@@ -1,0 +1,35 @@
+# cross-seed — finds cross-seedable torrents across trackers and injects them into
+# qBittorrent for extra seeding (no re-download; hardlinked). Net-new (not in the old
+# fleet). community-scripts: ct/cross-seed.sh (stable).
+#
+# Needs the SAME /data view as qBittorrent/*arr so it can match existing torrent data
+# and hardlink cross-seeds. Searches indexers via Prowlarr's torznab; injects into the
+# new qBittorrent (5104). Config + secrets applied by the cross-seed provisioner
+# (qBittorrent creds from QBIT_PASSWORD; Prowlarr key read live). No public ingress —
+# internal daemon only (CF Access not needed).
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: cross-seed
+  stack: Media
+  tags: [seeding, cross-seed]
+
+spec:
+  app: cross-seed
+  ctid: 5106            # was the reserved 2nd-torrent-client slot (dropped); reused for cross-seed
+  cores: 1
+  memory: 1024          # MB
+  disk: 4               # GB — app + config only; data lives on /data
+  dependsOn: [qbittorrent, prowlarr]   # download client to inject into + indexers to search
+
+  mounts:
+    - type: nfs
+      storage: ds1813-nfs-volume-4
+      source: data
+      target: /data
+      acl: true
+      backup: false
+  hookscript: local:snippets/ensure-data-mount.sh
