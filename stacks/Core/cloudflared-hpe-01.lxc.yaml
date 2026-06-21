@@ -38,6 +38,12 @@ spec:
       # Traefik origin → defined as Pangolin resources (badger enforces auth).
       - hostname: pangolin.chrison.dev
         service: "http://10.10.0.12:80"         # CT 2012 static IP (Homelab VLAN)
+      # Traefik dashboard — first admin UI migrated as a Pangolin RESOURCE (#136).
+      # Same Traefik origin as pangolin.chrison.dev; Pangolin host-routes traefik.chrison.dev
+      # → its own dashboard (:8080) and badger enforces Pangolin SSO. NO CF Access app here:
+      # for Pangolin-fronted resources, Pangolin IS the gate (unlike the break-glass below).
+      - hostname: traefik.chrison.dev
+        service: "http://10.10.0.12:80"         # → Pangolin Traefik; resource defined in Pangolin
       # ── Break-glass admin behind Cloudflare Access (ADR-0005, live 2026-06-14) ──
       # Two admin front doors, each a CF Access self-hosted app gated by One-Time PIN
       # (policy: allow csimon@chrison.dev). The per-node `pve-*` hostname idea is dropped.
