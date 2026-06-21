@@ -62,10 +62,13 @@ apps:
   # are handled by the shared-mount model + cutover, not the catalogue.
   prowlarr:
     script: prowlarr
+    provisioner: prowlarr       # arr-wire: indexer carry-over + FlareSolverr proxy (#159)
   sonarr:
     script: sonarr
+    provisioner: sonarr         # arr-wire: root folder + qbit client + self-register (#159)
   radarr:
     script: radarr
+    provisioner: radarr         # arr-wire: root folder + qbit client + self-register (#159)
   bazarr:
     script: bazarr
   qbittorrent:

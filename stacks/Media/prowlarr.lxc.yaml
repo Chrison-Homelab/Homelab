@@ -20,3 +20,8 @@ spec:
   memory: 1024           # MB
   disk: 4                # GB
   dependsOn: [flaresolverr]   # some indexers solve Cloudflare challenges via flaresolverr
+
+  # arr-wire config migration (#159) — both ADD-ONLY, both idempotent (skip-by-name):
+  config:
+    migrateIndexersFrom: 5002   # OLD prowlarr CTID (same node) — clean API carry-over of indexers
+    flaresolverr: flaresolverr  # ensure a FlareSolverr proxy → the new flaresolverr sibling (5107)
