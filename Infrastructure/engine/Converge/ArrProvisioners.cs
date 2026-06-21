@@ -13,10 +13,16 @@ namespace Homelab.Infrastructure.Converge;
 public static class ArrExec
 {
     // First IPv4 of the CT (the apps bind all interfaces; we reach them by LAN IP).
+    // The exec is a LOGIN shell (`bash -lc`), so community-scripts CTs print an MOTD
+    // banner to stdout ahead of the command — fence the IP with sentinels and extract
+    // between them so the banner (which can itself contain an IP) can't leak in.
     public static async Task<string?> CtIpAsync(ConvergeContext ctx, string node, string ctid, CancellationToken ct)
     {
-        var r = await ctx.Exec.InContainerAsync(node, ctid, "hostname -I | awk '{print $1}'", ct);
-        return r.Ok && r.Stdout.Trim().Length > 0 ? r.Stdout.Trim() : null;
+        var r = await ctx.Exec.InContainerAsync(node, ctid,
+            "echo __IP__$(hostname -I | awk '{print $1}')__IP__", ct);
+        if (!r.Ok) return null;
+        var m = System.Text.RegularExpressions.Regex.Match(r.Stdout, @"__IP__(\d{1,3}(?:\.\d{1,3}){3})__IP__");
+        return m.Success ? m.Groups[1].Value : null;
     }
 
     // sonarr/radarr/prowlarr store their key in config.xml. Find it wherever the
