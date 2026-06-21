@@ -41,6 +41,34 @@ public sealed class ArrClient : IDisposable
     public void Dispose() => _http.Dispose();
 }
 
+// Bazarr settings client — Bazarr has no per-setting REST API like the *arr; its UI
+// saves the whole settings form. GET returns nested JSON; writes are flattened
+// `settings-<section>-<key>` form fields (partial POSTs merge). Auth header is X-API-KEY.
+public sealed class BazarrClient : IDisposable
+{
+    private readonly HttpClient _http;
+
+    public BazarrClient(string baseUrl, string apiKey)
+    {
+        _http = new HttpClient { BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/"), Timeout = TimeSpan.FromSeconds(30) };
+        _http.DefaultRequestHeaders.Add("X-API-KEY", apiKey);
+    }
+
+    public async Task<JsonElement> GetSettingsAsync(CancellationToken ct)
+    {
+        using var doc = JsonDocument.Parse(await _http.GetStringAsync("api/system/settings", ct));
+        return doc.RootElement.Clone();
+    }
+
+    public async Task<bool> PostSettingsAsync(IEnumerable<KeyValuePair<string, string>> form, CancellationToken ct)
+    {
+        using var resp = await _http.PostAsync("api/system/settings", new FormUrlEncodedContent(form), ct);
+        return resp.IsSuccessStatusCode;
+    }
+
+    public void Dispose() => _http.Dispose();
+}
+
 // Thin REST clients for the *arr media apps the arr-wire provisioners talk to
 // (issue #159). Like Providers.cs: read methods power idempotency, writes are
 // applied only for missing config. Each client targets one already-running CT
