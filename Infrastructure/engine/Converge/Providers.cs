@@ -97,6 +97,20 @@ public sealed class CloudflareApi
         await ResultAsync(await _http.PutAsync($"accounts/{accountId}/cfd_tunnel/{tunnelId}/configurations", body, ct), ct);
     }
 
+    // Live ingress (hostname → service) of a tunnel, for content-aware idempotency (#165).
+    // Skips the catch-all (entries without a hostname).
+    public async Task<List<(string host, string service)>> GetTunnelIngressAsync(string accountId, string tunnelId, CancellationToken ct)
+    {
+        var r = await ResultAsync(await _http.GetAsync($"accounts/{accountId}/cfd_tunnel/{tunnelId}/configurations", ct), ct);
+        var list = new List<(string, string)>();
+        if (r.TryGetProperty("config", out var cfg) && cfg.ValueKind == JsonValueKind.Object
+            && cfg.TryGetProperty("ingress", out var ing) && ing.ValueKind == JsonValueKind.Array)
+            foreach (var e in ing.EnumerateArray())
+                if (e.TryGetProperty("hostname", out var h) && h.ValueKind == JsonValueKind.String)
+                    list.Add((h.GetString()!, e.TryGetProperty("service", out var sv) ? sv.GetString() ?? "" : ""));
+        return list;
+    }
+
     public async Task<string> GetTunnelTokenAsync(string accountId, string tunnelId, CancellationToken ct)
     {
         var r = await ResultAsync(await _http.GetAsync($"accounts/{accountId}/cfd_tunnel/{tunnelId}/token", ct), ct);

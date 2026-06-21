@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Homelab.Infrastructure.Shapes;
 
 namespace Homelab.Infrastructure.Converge;
@@ -257,8 +258,19 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
         var svcActive = (await ctx.Exec.InContainerAsync(node, ctid, "systemctl is-active cloudflared")).Stdout.Trim() == "active";
 
         var dnsPresent = true;
-        foreach (var (host, _) in ingress)
+        foreach (var (host, _, _) in ingress)
             if (!await api.DnsExistsAsync(zone.ZoneId, host, ct)) { dnsPresent = false; break; }
+
+        // Content-aware ingress drift (#165): the live tunnel ingress must match the
+        // shape's (hostname → service), else re-push. Without this, adding/changing a
+        // hostname whose DNS already exists is silently never pushed.
+        var ingressDrift = false;
+        if (tunnelId is not null)
+        {
+            var live = await api.GetTunnelIngressAsync(zone.AccountId, tunnelId, ct);
+            var desired = ingress.Select(i => (i.host, i.service)).ToHashSet();
+            ingressDrift = !desired.SetEquals(live.ToHashSet());
+        }
 
         // CF Access gating (ADD-ONLY): each ingress hostname gets a self-hosted Access
         // app + an allow-by-email policy so the admin UI is never exposed raw — login is
@@ -266,7 +278,7 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
         // App is keyed by domain + policy by name, so this is find-or-create (re-run safe).
         var allowEmails = ParseAccessAllow(s.Spec.Config);
         var gated = 0;
-        foreach (var (host, _) in ingress)
+        foreach (var (host, _, _) in ingress)
         {
             if (allowEmails.Count == 0) break;
             var appId = await api.FindAccessAppIdAsync(zone.AccountId, host, ct);
@@ -283,8 +295,8 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
         }
         var gateNote = allowEmails.Count > 0 ? $", {ingress.Count} host(s) Access-gated" : "";
 
-        // Idempotency (ADD-ONLY): tunnel + all DNS + active connector + gating in place → done.
-        if (tunnelId is not null && dnsPresent && svcActive && gated == 0)
+        // Idempotency (ADD-ONLY): tunnel + all DNS + active connector + gating + ingress in place → done.
+        if (tunnelId is not null && dnsPresent && svcActive && gated == 0 && !ingressDrift)
             return ApplyResult.NoChange($"tunnel '{tunnelName}' + DNS present, cloudflared active{gateNote}");
 
         // (Re)provision the connector only when the tunnel is absent or not running —
@@ -298,12 +310,17 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
             var res = await ctx.Exec.InContainerAsync(node, ctid, install);
             if (!res.Ok) return ApplyResult.Failed($"cloudflared install failed: {res.Stderr}");
         }
+        else if (ingressDrift)
+        {
+            // Connector is already up — just push the corrected ingress, no reinstall (#165).
+            await api.SetTunnelConfigAsync(zone.AccountId, tunnelId, BuildIngressJson(ingress), ct);
+        }
 
-        foreach (var (host, _) in ingress)
+        foreach (var (host, _, _) in ingress)
             if (!await api.DnsExistsAsync(zone.ZoneId, host, ct))
                 await api.CreateCnameAsync(zone.ZoneId, host, $"{tunnelId}.cfargotunnel.com", ct);
 
-        var changes = gated > 0 ? $"; {gated} Access change(s)" : "";
+        var changes = (gated > 0 ? $"; {gated} Access change(s)" : "") + (ingressDrift ? "; ingress re-pushed" : "");
         return ApplyResult.Applied($"tunnel '{tunnelName}' ensured ({ingress.Count} ingress){changes}");
     }
 
@@ -320,24 +337,39 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
         return emails;
     }
 
-    private static List<(string host, string service)> ParseIngress(Dictionary<string, object?> c)
+    // Captures originRequest too (e.g. { noTLSVerify: true }) so a re-push (#165)
+    // faithfully preserves it — otherwise re-pushing would strip noTLSVerify from
+    // the self-signed https origins (pdm/proxmox) and break them.
+    private static List<(string host, string service, string? origin)> ParseIngress(Dictionary<string, object?> c)
     {
-        var list = new List<(string, string)>();
+        var list = new List<(string, string, string?)>();
         if (c.TryGetValue("ingress", out var v) && v is IEnumerable<object> items)
             foreach (var it in items)
                 if (it is System.Collections.IDictionary d)
-                    list.Add((d["hostname"]?.ToString() ?? "", d["service"]?.ToString() ?? ""));
+                {
+                    string? origin = null;
+                    if (d.Contains("originRequest") && d["originRequest"] is System.Collections.IDictionary od)
+                    {
+                        var map = new Dictionary<string, object?>();
+                        foreach (System.Collections.DictionaryEntry e in od) map[e.Key?.ToString() ?? ""] = e.Value;
+                        origin = JsonSerializer.Serialize(map);
+                    }
+                    list.Add((d["hostname"]?.ToString() ?? "", d["service"]?.ToString() ?? "", origin));
+                }
         return list;
     }
 
     // NOTE: service is taken from config as-is (e.g. http://forgejo:3000). A live
-    // create should resolve the logical host to the CT IP first; this branch only
-    // runs when the tunnel is absent (never on the already-provisioned stack).
-    private static string BuildIngressJson(List<(string host, string service)> ingress)
+    // create should resolve the logical host to the CT IP first.
+    private static string BuildIngressJson(List<(string host, string service, string? origin)> ingress)
     {
         var sb = new StringBuilder("[");
-        foreach (var (host, service) in ingress)
-            sb.Append($"{{\"hostname\":\"{host}\",\"service\":\"{service}\"}},");
+        foreach (var (host, service, origin) in ingress)
+        {
+            sb.Append($"{{\"hostname\":\"{host}\",\"service\":\"{service}\"");
+            if (origin is not null) sb.Append($",\"originRequest\":{origin}");
+            sb.Append("},");
+        }
         sb.Append("{\"service\":\"http_status:404\"}]");
         return sb.ToString();
     }
