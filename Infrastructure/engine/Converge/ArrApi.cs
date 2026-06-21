@@ -32,6 +32,12 @@ public sealed class ArrClient : IDisposable
         return (resp.IsSuccessStatusCode, await resp.Content.ReadAsStringAsync(ct));
     }
 
+    public async Task<(bool ok, string body)> PutAsync(string path, string json, CancellationToken ct)
+    {
+        using var resp = await _http.PutAsync(path, new StringContent(json, Encoding.UTF8, "application/json"), ct);
+        return (resp.IsSuccessStatusCode, await resp.Content.ReadAsStringAsync(ct));
+    }
+
     public void Dispose() => _http.Dispose();
 }
 

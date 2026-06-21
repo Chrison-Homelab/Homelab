@@ -59,6 +59,33 @@ public static class ArrExec
         arr.ValueKind == JsonValueKind.Array && arr.EnumerateArray().Any(e =>
             e.TryGetProperty("name", out var n) && string.Equals(n.GetString(), name, StringComparison.OrdinalIgnoreCase));
 
+    // Ensure Forms authentication (username + managed password) on an *arr via its
+    // config/host endpoint. Idempotent: skip when already Forms + our username (the GET
+    // returns only the salted password HASH, so we can't compare the plaintext — the
+    // one-time manual→managed switch is done out-of-band, like the qbit conf bootstrap).
+    // Preserves authenticationRequired (default disabledForLocalAddresses) + every other field.
+    public static async Task<bool> EnsureArrAuthAsync(ArrClient c, string apiVer, string user, string pass, CancellationToken ct)
+    {
+        var host = await c.GetAsync($"api/{apiVer}/config/host", ct);
+        var method = host.TryGetProperty("authenticationMethod", out var m) ? m.GetString() : null;
+        var curUser = host.TryGetProperty("username", out var u) ? u.GetString() : null;
+        if (string.Equals(method, "forms", StringComparison.OrdinalIgnoreCase) && string.Equals(curUser, user, StringComparison.Ordinal))
+            return false;   // already managed (Forms + our username)
+
+        var node = JsonNode.Parse(host.GetRawText())!.AsObject();
+        node["authenticationMethod"] = "forms";
+        var req = node["authenticationRequired"]?.GetValue<string>();
+        if (string.IsNullOrEmpty(req) || string.Equals(req, "none", StringComparison.OrdinalIgnoreCase))
+            node["authenticationRequired"] = "disabledForLocalAddresses";
+        node["username"] = user;
+        node["password"] = pass;
+        node["passwordConfirmation"] = pass;
+        var id = host.GetProperty("id").GetInt32();
+        var (ok, body) = await c.PutAsync($"api/{apiVer}/config/host/{id}", node.ToJsonString(), ct);
+        if (!ok) throw new InvalidOperationException($"set {apiVer} auth failed: {body}");
+        return true;
+    }
+
     // qBittorrent (4.6+) prints a random WebUI password to its journal on first run:
     //   "...A temporary password is provided for this session: <pw>".
     public static string? ParseQbitTempPassword(string journal)
@@ -140,15 +167,31 @@ public sealed class QbittorrentProvisioner : IAppProvisioner
                 return ApplyResult.Applied("set WebUI password; re-login needed on next run to finish categories");
         }
 
-        // Default save path.
+        // Default save path + Automatic Torrent Management. TRaSH: TMM must be Automatic or
+        // downloads don't land in the category folder (tv-sonarr→/data/torrents/tv). Enable
+        // auto-TMM + the relocate-on-change flags so category save-paths actually apply.
         var prefs = await qb.GetStringAsync("api/v2/app/preferences", ct);
         using (var doc = JsonDocument.Parse(prefs))
         {
-            var savePath = doc.RootElement.TryGetProperty("save_path", out var sp) ? sp.GetString() : null;
+            var root = doc.RootElement;
+            var savePath = root.TryGetProperty("save_path", out var sp) ? sp.GetString() : null;
             if (savePath?.TrimEnd('/') != "/data/torrents")
             {
                 if (!await qb.SetPreferencesAsync(new { save_path = "/data/torrents" }, ct))
                     return ApplyResult.Failed("failed to set qbittorrent save_path");
+                changed = true;
+            }
+            var autoTmm = root.TryGetProperty("auto_tmm_enabled", out var a) && a.ValueKind == JsonValueKind.True;
+            if (!autoTmm)
+            {
+                if (!await qb.SetPreferencesAsync(new
+                {
+                    auto_tmm_enabled = true,
+                    torrent_changed_tmm_enabled = true,
+                    save_path_changed_tmm_enabled = true,
+                    category_changed_tmm_enabled = true,
+                }, ct))
+                    return ApplyResult.Failed("failed to enable qbittorrent automatic torrent management");
                 changed = true;
             }
         }
@@ -216,9 +259,11 @@ public abstract class ArrAppProvisionerBase : IAppProvisioner
     protected abstract string RootFolder { get; }     // /data/media/{tv,movies}
     protected abstract string QbitCategory { get; }   // tv-sonarr / radarr
     protected abstract int[] SyncCategories { get; }   // newznab cats Prowlarr syncs to this app
+    protected abstract string PasswordSecret { get; }  // secrets.env key for this app's WebUI password
 
     public IEnumerable<string> PlanSteps(Shape s)
     {
+        yield return $"ensure Forms auth (user from ARR_USER, password from {PasswordSecret})";
         yield return $"ensure root folder {RootFolder}";
         yield return $"ensure qBittorrent download client (category {QbitCategory})";
         yield return $"self-register into Prowlarr as a {App} application (add-only)";
@@ -234,6 +279,12 @@ public abstract class ArrAppProvisionerBase : IAppProvisioner
         if (ip is null || key is null) return ApplyResult.Failed($"could not resolve {App} IP/ApiKey");
         using var self = new ArrClient($"http://{ip}:{Port}", key);
         var changed = 0;
+
+        // 0. Forms authentication (managed password). Skips when already Forms + our user.
+        var arrPass = ctx.Secrets.Get(PasswordSecret);
+        if (!string.IsNullOrEmpty(arrPass)
+            && await ArrExec.EnsureArrAuthAsync(self, "v3", ctx.Secrets.Get("ARR_USER") ?? "csimon", arrPass, ct))
+            changed++;
 
         // 1. Root folder (keyed by path).
         var roots = await self.GetAsync("api/v3/rootfolder", ct);
@@ -317,6 +368,7 @@ public sealed class SonarrProvisioner : ArrAppProvisionerBase
     protected override string RootFolder => "/data/media/tv";
     protected override string QbitCategory => "tv-sonarr";
     protected override int[] SyncCategories => new[] { 5000, 5010, 5020, 5030, 5040, 5045, 5050 };
+    protected override string PasswordSecret => "SONARR_PASSWORD";
 }
 
 public sealed class RadarrProvisioner : ArrAppProvisionerBase
@@ -326,6 +378,7 @@ public sealed class RadarrProvisioner : ArrAppProvisionerBase
     protected override string RootFolder => "/data/media/movies";
     protected override string QbitCategory => "radarr";
     protected override int[] SyncCategories => new[] { 2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060 };
+    protected override string PasswordSecret => "RADARR_PASSWORD";
 }
 
 // Prowlarr (CT 5100) — the indexer hub. Two jobs, both add-only:
@@ -356,6 +409,12 @@ public sealed class ProwlarrProvisioner : IAppProvisioner
         if (ip is null || key is null) return ApplyResult.Failed("could not resolve prowlarr IP/ApiKey");
         using var self = new ArrClient($"http://{ip}:9696", key);
         var changed = 0;
+
+        // Forms authentication (managed password) — Prowlarr is v1. Skips when already managed.
+        var pwPass = ctx.Secrets.Get("PROWLARR_PASSWORD");
+        if (!string.IsNullOrEmpty(pwPass)
+            && await ArrExec.EnsureArrAuthAsync(self, "v1", ctx.Secrets.Get("ARR_USER") ?? "csimon", pwPass, ct))
+            changed++;
 
         // 1. Indexer carry-over from the OLD prowlarr (same node, configured CTID).
         if (s.Spec.Config.TryGetValue("migrateIndexersFrom", out var oldRaw) && oldRaw is not null)
