@@ -34,6 +34,10 @@ jobs:
       # Cloudflare tunnel-token provider (cloudflared shapes) — ADD-ONLY (CLAUDE.md).
       CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
       CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+      # arr-wire (#159): qBittorrent WebUI creds the Media provisioner sets + that
+      # sonarr/radarr use as download-client auth. QBIT_USER defaults to 'admin' if unset.
+      QBIT_USER: ${{ secrets.QBIT_USER }}
+      QBIT_PASSWORD: ${{ secrets.QBIT_PASSWORD }}
       # NB: SSH to nodes for the community-scripts create path is provided by the
       # runner host (proven by the BL-013 smoke deploy), not a GH secret.
       # The runner has no DNS for node short-names, so map each to its LAN IP —
