@@ -107,26 +107,37 @@ public sealed class QbittorrentProvisioner : IAppProvisioner
         if (ip is null) return ApplyResult.Failed("could not resolve qbittorrent CT IP");
         using var qb = new QbitClient($"http://{ip}:{ArrExec.QbitWebUiPort}");
 
-        // Bootstrap login: desired creds (re-run) → legacy default → journal temp pw.
+        // Bootstrap login: desired creds (re-run) → legacy default → journal temp pw →
+        // (last resort) set the password directly in qBittorrent.conf. A fresh
+        // community-scripts qbit has a RANDOM temp password we can't predict, so the
+        // conf-set is what makes this reproducible from bare metal (no manual step).
         var changed = false;
         if (!await qb.LoginAsync(user, pass, ct))
         {
-            var bootPw = "adminadmin";
-            if (!await qb.LoginAsync("admin", bootPw, ct))
+            var bootstrapped = await qb.LoginAsync("admin", "adminadmin", ct);
+            if (!bootstrapped)
             {
                 var journal = await ctx.Exec.InContainerAsync(node, ctid.ToString(),
                     "journalctl -u qbittorrent-nox --no-pager 2>/dev/null | grep -i 'temporary password' | tail -5", ct);
                 var temp = ArrExec.ParseQbitTempPassword(journal.Stdout);
-                if (temp is null || !await qb.LoginAsync("admin", temp, ct))
-                    return ApplyResult.Failed("qbittorrent login failed (desired creds, legacy default, and journal temp password all rejected) — set the WebUI password once, then re-run");
+                bootstrapped = temp is not null && await qb.LoginAsync("admin", temp, ct);
             }
-            // Logged in with a bootstrap credential → set the desired creds.
-            if (!await qb.SetPreferencesAsync(new { web_ui_username = user, web_ui_password = pass }, ct))
-                return ApplyResult.Failed("failed to set qbittorrent WebUI credentials");
+            if (bootstrapped)
+            {
+                // Logged in with a bootstrap credential → set desired creds via the API.
+                if (!await qb.SetPreferencesAsync(new { web_ui_username = user, web_ui_password = pass }, ct))
+                    return ApplyResult.Failed("failed to set qbittorrent WebUI credentials");
+            }
+            else
+            {
+                // No login worked → write the PBKDF2 of the desired password into the conf.
+                if (!await SetPasswordViaConfAsync(ctx, node, ctid, user, pass, ct))
+                    return ApplyResult.Failed("qbittorrent login failed and could not set the WebUI password via the conf");
+            }
             changed = true;
             // Re-login under the new creds for the rest of the session.
             if (!await qb.LoginAsync(user, pass, ct))
-                return ApplyResult.Applied("set WebUI creds; re-login needed on next run to finish categories");
+                return ApplyResult.Applied("set WebUI password; re-login needed on next run to finish categories");
         }
 
         // Default save path.
@@ -157,6 +168,41 @@ public sealed class QbittorrentProvisioner : IAppProvisioner
         return changed
             ? ApplyResult.Applied($"WebUI creds + save_path + {Categories.Length} categories ensured")
             : ApplyResult.NoChange("qbittorrent already configured (creds, save_path, categories)");
+    }
+
+    // Set the WebUI password directly in qBittorrent.conf when no login works (the only
+    // way to bootstrap a fresh qbit whose random temp password we can't predict). qbit
+    // stores it as PBKDF2-HMAC-SHA512 (100k iters) → @ByteArray(b64(salt):b64(dk)). We
+    // ship a tiny conf-editor as base64'd Python (quote-safe over ssh→pct exec→bash -lc;
+    // chr() avoids backslash/quote escaping in the `WebUI\Password_PBKDF2` key).
+    private static async Task<bool> SetPasswordViaConfAsync(
+        ConvergeContext ctx, string node, string ctid, string user, string pass, CancellationToken ct)
+    {
+        var salt = System.Security.Cryptography.RandomNumberGenerator.GetBytes(16);
+        var dk = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2(
+            System.Text.Encoding.UTF8.GetBytes(pass), salt, 100_000,
+            System.Security.Cryptography.HashAlgorithmName.SHA512, 64);
+        var val = $"@ByteArray({Convert.ToBase64String(salt)}:{Convert.ToBase64String(dk)})";
+        var py = string.Join("\n", new[]
+        {
+            "import re, os",
+            "K1 = \"WebUI\"+chr(92)+\"Password_PBKDF2\"",
+            "K2 = \"WebUI\"+chr(92)+\"Username\"",
+            "q = chr(34)",
+            "c = os.environ[\"QBCONF\"]; t = open(c).read()",
+            $"v = \"{val}\"; u = \"{user}\"",
+            "t = re.sub(re.escape(K1)+\"=.*\", lambda m: K1+\"=\"+q+v+q, t) if (K1+\"=\") in t else t.rstrip()+chr(10)+K1+\"=\"+q+v+q+chr(10)",
+            "t = re.sub(re.escape(K2)+\"=.*\", lambda m: K2+\"=\"+u, t) if (K2+\"=\") in t else t.rstrip()+chr(10)+K2+\"=\"+u+chr(10)",
+            "open(c, \"w\").write(t)",
+        });
+        var b64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(py));
+        var cmd =
+            "c=$(find /root /home -name qBittorrent.conf 2>/dev/null | head -1); [ -z \"$c\" ] && exit 3; " +
+            "systemctl stop qbittorrent-nox 2>/dev/null; sleep 2; " +
+            $"echo {b64} | base64 -d | QBCONF=\"$c\" python3 -; " +
+            "systemctl start qbittorrent-nox 2>/dev/null; sleep 3";
+        var r = await ctx.Exec.InContainerAsync(node, ctid, cmd, ct);
+        return r.Ok;
     }
 }
 
