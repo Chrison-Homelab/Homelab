@@ -1,0 +1,20 @@
+name: runner-ssh-diag
+on: workflow_dispatch
+jobs:
+  diag:
+    runs-on: [self-hosted, homelab]
+    env:
+      NODE_SSH_KEY: /home/runner/.ssh/id_ed25519
+    steps:
+      - name: Diagnose node SSH from a job step
+        run: |
+          echo "HOME=$HOME  USER=$(whoami)  PWD=$(pwd)"
+          echo "NODE_SSH_KEY=$NODE_SSH_KEY"
+          echo "== key files (job's view) =="
+          ls -la "$NODE_SSH_KEY" "$NODE_SSH_KEY.pub" /home/runner/.ssh/known_hosts 2>&1 || true
+          echo "== pub fingerprint =="
+          ssh-keygen -lf "$NODE_SSH_KEY.pub" 2>&1 || true
+          echo "== exact NodeExec ssh, verbose =="
+          ssh -v -o BatchMode=yes -o StrictHostKeyChecking=accept-new -i "$NODE_SSH_KEY" \
+            -o IdentitiesOnly=yes -o UserKnownHostsFile=/home/runner/.ssh/known_hosts \
+            -o ConnectTimeout=10 root@192.168.179.3 hostname 2>&1 | tail -35
