@@ -54,6 +54,24 @@ public static class ArrExec
         return await CtIpAsync(ctx, n, c.ToString(), ct);
     }
 
+    // Resolve a sibling *arr to (IP, config.xml ApiKey) — for cross-app wiring (e.g. bazarr→sonarr).
+    public static async Task<(string? ip, string? key)> SiblingIpKeyAsync(ConvergeContext ctx, string name, CancellationToken ct)
+    {
+        if (!ctx.ByName.TryGetValue(name, out var dep) || dep.Spec.Node is not { } n || dep.Spec.Ctid is not { } c)
+            return (null, null);
+        return (await CtIpAsync(ctx, n, c.ToString(), ct), await ApiKeyAsync(ctx, n, c.ToString(), ct));
+    }
+
+    // Bazarr keeps its API key in config.yaml under auth: (not config.xml). Read auth.apikey.
+    public static async Task<string?> BazarrApiKeyAsync(ConvergeContext ctx, string node, string ctid, CancellationToken ct)
+    {
+        var r = await ctx.Exec.InContainerAsync(node, ctid,
+            "f=$(find /opt /var/lib /config -name config.yaml -path '*azarr*' 2>/dev/null | head -1); sed -n '/^auth:/,/^[a-z]/p' \"$f\" | grep -m1 apikey", ct);
+        if (!r.Ok) return null;
+        var m = System.Text.RegularExpressions.Regex.Match(r.Stdout, @"apikey:\s*([0-9a-fA-F]+)");
+        return m.Success ? m.Groups[1].Value : null;
+    }
+
     // True if a Servarr resource array already has an element with this name (case-insensitive).
     public static bool HasName(JsonElement arr, string name) =>
         arr.ValueKind == JsonValueKind.Array && arr.EnumerateArray().Any(e =>
@@ -473,5 +491,60 @@ public sealed class ProwlarrProvisioner : IAppProvisioner
         return changed > 0
             ? ApplyResult.Applied($"prowlarr: {changed} item(s) added (indexers + FlareSolverr)")
             : ApplyResult.NoChange("prowlarr already has its indexers + FlareSolverr proxy");
+    }
+}
+
+// Bazarr (CT 5103) — subtitle automation. Wires bazarr → sonarr + radarr (use flags +
+// ip/apikey) and sets Forms auth. No per-setting API: POST the flattened settings form.
+// Subtitle providers/languages are user choices (need provider accounts) — left alone.
+public sealed class BazarrProvisioner : IAppProvisioner
+{
+    public string App => "bazarr";
+
+    public IEnumerable<string> PlanSteps(Shape s)
+    {
+        yield return "connect bazarr → sonarr + radarr (use flags + ip/apikey)";
+        yield return "ensure Forms auth (ARR_USER / BAZARR_PASSWORD)";
+    }
+
+    public async Task<ApplyResult> ApplyAsync(Shape s, ConvergeContext ctx)
+    {
+        var ct = CancellationToken.None;
+        if (s.Spec.Node is not { } node || s.Spec.Ctid is not { } ctid) return ApplyResult.Failed("missing node/ctid");
+
+        var ip = await ArrExec.CtIpAsync(ctx, node, ctid.ToString(), ct);
+        var key = await ArrExec.BazarrApiKeyAsync(ctx, node, ctid.ToString(), ct);
+        if (ip is null || key is null) return ApplyResult.Failed("could not resolve bazarr IP/apikey");
+        var (sIp, sKey) = await ArrExec.SiblingIpKeyAsync(ctx, "sonarr", ct);
+        var (rIp, rKey) = await ArrExec.SiblingIpKeyAsync(ctx, "radarr", ct);
+        if (sIp is null || sKey is null || rIp is null || rKey is null)
+            return ApplyResult.Failed("could not resolve sonarr/radarr IP+apikey for bazarr");
+        using var bz = new BazarrClient($"http://{ip}:6767", key);
+
+        // Idempotency: both enabled, IPs match, Forms auth on → done.
+        var cur = await bz.GetSettingsAsync(ct);
+        var g = cur.GetProperty("general");
+        var wired = g.GetProperty("use_sonarr").GetBoolean() && g.GetProperty("use_radarr").GetBoolean()
+            && cur.GetProperty("sonarr").GetProperty("ip").GetString() == sIp
+            && cur.GetProperty("radarr").GetProperty("ip").GetString() == rIp
+            && string.Equals(cur.GetProperty("auth").GetProperty("type").GetString(), "form", StringComparison.OrdinalIgnoreCase);
+        if (wired) return ApplyResult.NoChange("bazarr already wired (sonarr + radarr + forms auth)");
+
+        var form = new List<KeyValuePair<string, string>>
+        {
+            new("settings-general-use_sonarr", "true"),
+            new("settings-sonarr-ip", sIp), new("settings-sonarr-port", "8989"), new("settings-sonarr-apikey", sKey),
+            new("settings-general-use_radarr", "true"),
+            new("settings-radarr-ip", rIp), new("settings-radarr-port", "7878"), new("settings-radarr-apikey", rKey),
+        };
+        var pass = ctx.Secrets.Get("BAZARR_PASSWORD");
+        if (!string.IsNullOrEmpty(pass))
+        {
+            form.Add(new("settings-auth-type", "form"));
+            form.Add(new("settings-auth-username", ctx.Secrets.Get("ARR_USER") ?? "csimon"));
+            form.Add(new("settings-auth-password", pass));
+        }
+        if (!await bz.PostSettingsAsync(form, ct)) return ApplyResult.Failed("bazarr settings POST failed");
+        return ApplyResult.Applied("bazarr wired to sonarr + radarr" + (string.IsNullOrEmpty(pass) ? "" : " + forms auth"));
     }
 }

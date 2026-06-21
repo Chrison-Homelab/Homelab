@@ -59,6 +59,7 @@ public sealed class ProvisionerRegistry
         new ProwlarrProvisioner(),
         new SonarrProvisioner(),
         new RadarrProvisioner(),
+        new BazarrProvisioner(),
     });
 }
 

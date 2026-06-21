@@ -71,6 +71,7 @@ apps:
     provisioner: radarr         # arr-wire: root folder + qbit client + self-register (#159)
   bazarr:
     script: bazarr
+    provisioner: bazarr         # arr-wire: connect to sonarr/radarr + Forms auth (#178)
   qbittorrent:
     script: qbittorrent
     provisioner: qbittorrent   # arr-wire: WebUI creds + categories + save path (#159)
