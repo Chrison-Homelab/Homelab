@@ -29,3 +29,21 @@ spec:
       acl: true
       backup: false
   hookscript: local:snippets/ensure-data-mount.sh
+
+  # Subtitle config migrated from the old bazarr (CT 5006) — IaC + redeployable.
+  # The provisioner applies: enabled providers, languages, the language profile (set
+  # as the series/movies default), and opensubtitlescom settings. Provider creds are
+  # NOT here — opensubtitlescom username/password come from secrets.env
+  # (BAZARR_OPENSUBTITLES_USER / _PASSWORD). animetosho + yifysubtitles need no account.
+  config:
+    subtitles:
+      providers: [opensubtitlescom, animetosho, yifysubtitles]
+      languages: [en, zh, de]
+      opensubtitlescom: { use_hash: true, include_ai_translated: true }
+      profile:
+        name: Standard Profile
+        cutoff: 65535          # 65535 = "any" (no cutoff)
+        items:
+          - { language: en }
+          - { language: zh, audio_only: true }
+          - { language: de, audio_only: true }
