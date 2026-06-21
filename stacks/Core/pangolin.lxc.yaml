@@ -59,8 +59,18 @@ spec:
       enableIntegrationApi: true     # integration API on :3003 — lets us manage resources
                                      # declaratively via the API (Bearer key) instead of by hand
 
-    # Admin UIs are added as Pangolin *resources* (host-routed by Traefik, auth enforced
-    # by the badger plugin), migrated one at a time — see ADR-0007 open decision #1.
+    org: chrison             # Pangolin org id — resources are created under it
+
+    # Declarative admin-UI resources (#136): the provisioner creates these via the
+    # integration API (add-only, idempotent by fullDomain) using PANGOLIN_API_KEY from
+    # secrets.env. ssl is forced OFF (behind-cloudflared, Pangolin SSO gates them via
+    # badger). Each <subdomain>.chrison.dev ALSO needs its cloudflared ingress entry in
+    # cloudflared-hpe-01.lxc.yaml (#165 pushes that idempotently). Migrate UIs by adding
+    # entries here + the matching ingress, then `converge --apply`.
+    resources:
+      - name: Traefik Dashboard
+        subdomain: traefik
+        target: { ip: localhost, port: 8080, method: http }
   # No `secrets:` block: the provisioner GENERATES config.yml server.secret on the CT
   # the first time and PRESERVES it on every re-converge — no manual secrets.env step
   # (and no fail-fast on a missing declared secret). See PangolinProvisioner (#145).
