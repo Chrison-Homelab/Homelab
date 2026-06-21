@@ -57,13 +57,15 @@ public sealed class QbitClient : IDisposable
         _http.Timeout = TimeSpan.FromSeconds(20);
     }
 
-    // Returns true on "Ok." — qBittorrent's success body for a valid login.
+    // Success = a 2xx that isn't the literal "Fails." body. Older qBittorrent returns
+    // 200 "Ok."; newer (CT 5104) returns 204 with an empty body + the QBT_SID cookie
+    // (captured by the CookieContainer). A wrong password is 200 "Fails."; a ban is 403.
     public async Task<bool> LoginAsync(string user, string pass, CancellationToken ct)
     {
         var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["username"] = user, ["password"] = pass });
         using var resp = await _http.PostAsync("api/v2/auth/login", form, ct);
         if (!resp.IsSuccessStatusCode) return false;
-        return (await resp.Content.ReadAsStringAsync(ct)).Trim() == "Ok.";
+        return !(await resp.Content.ReadAsStringAsync(ct)).Contains("Fails", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<string> GetStringAsync(string path, CancellationToken ct) => await _http.GetStringAsync(path, ct);
