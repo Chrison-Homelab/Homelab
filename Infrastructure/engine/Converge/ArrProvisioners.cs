@@ -34,6 +34,11 @@ public static class ArrExec
         return m.Success ? m.Groups[1].Value : null;
     }
 
+    // community-scripts qbittorrent-nox serves its WebUI on 8090 (not the upstream
+    // default 8080) — verified on CT 5104. Used by the qbit provisioner + the
+    // sonarr/radarr download-client wiring + the cloudflared ingress.
+    public const int QbitWebUiPort = 8090;
+
     // Resolve a sibling Media member (by shape name) to its CT IP — node/ctid via
     // ConvergeContext.ByName, IP read live over Exec.
     public static async Task<string?> SiblingIpAsync(ConvergeContext ctx, string name, CancellationToken ct)
@@ -94,7 +99,7 @@ public sealed class QbittorrentProvisioner : IAppProvisioner
 
         var ip = await ArrExec.CtIpAsync(ctx, node, ctid.ToString(), ct);
         if (ip is null) return ApplyResult.Failed("could not resolve qbittorrent CT IP");
-        using var qb = new QbitClient($"http://{ip}:8080");
+        using var qb = new QbitClient($"http://{ip}:{ArrExec.QbitWebUiPort}");
 
         // Bootstrap login: desired creds (re-run) → legacy default → journal temp pw.
         var changed = false;
@@ -204,7 +209,7 @@ public abstract class ArrAppProvisionerBase : IAppProvisioner
                 fields = new object[]
                 {
                     new { name = "host", value = (object)qbitIp },
-                    new { name = "port", value = (object)8080 },
+                    new { name = "port", value = (object)ArrExec.QbitWebUiPort },
                     new { name = "useSsl", value = (object)false },
                     new { name = "username", value = (object)(ctx.Secrets.Get("QBIT_USER") ?? "admin") },
                     new { name = "password", value = (object)qbitPass },
