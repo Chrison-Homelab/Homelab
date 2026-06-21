@@ -13,7 +13,9 @@ public sealed class ArrClient : IDisposable
 
     public ArrClient(string baseUrl, string apiKey)
     {
-        _http = new HttpClient { BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/"), Timeout = TimeSpan.FromSeconds(30) };
+        if (!Uri.TryCreate(baseUrl.TrimEnd('/') + "/", UriKind.Absolute, out var uri))
+            throw new ArgumentException($"arr base URL not parseable: '{baseUrl}' (resolved host/IP was empty or malformed)");
+        _http = new HttpClient { BaseAddress = uri, Timeout = TimeSpan.FromSeconds(30) };
         _http.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
     }
 

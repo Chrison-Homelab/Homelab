@@ -45,7 +45,7 @@ spec:
       - { hostname: sonarr.chrison.dev,      service: "http://sonarr:8989" }
       - { hostname: radarr.chrison.dev,      service: "http://radarr:7878" }
       - { hostname: bazarr.chrison.dev,      service: "http://bazarr:6767" }
-      - { hostname: qbittorrent.chrison.dev, service: "http://qbittorrent:8080" }
+      - { hostname: qbittorrent.chrison.dev, service: "http://qbittorrent:8090" }
       - { hostname: seerr.chrison.dev,       service: "http://seerr:5055" }
   secrets:
     - name: tunnelToken
