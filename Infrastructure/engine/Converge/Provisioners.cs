@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Homelab.Infrastructure.Shapes;
 
 namespace Homelab.Infrastructure.Converge;
@@ -261,8 +262,19 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
         var svcActive = (await ctx.Exec.InContainerAsync(node, ctid, "systemctl is-active cloudflared")).Stdout.Trim() == "active";
 
         var dnsPresent = true;
-        foreach (var (host, _) in ingress)
+        foreach (var (host, _, _) in ingress)
             if (!await api.DnsExistsAsync(zone.ZoneId, host, ct)) { dnsPresent = false; break; }
+
+        // Content-aware ingress drift (#165): the live tunnel ingress must match the
+        // shape's (hostname → service), else re-push. Without this, adding/changing a
+        // hostname whose DNS already exists is silently never pushed.
+        var ingressDrift = false;
+        if (tunnelId is not null)
+        {
+            var live = await api.GetTunnelIngressAsync(zone.AccountId, tunnelId, ct);
+            var desired = ingress.Select(i => (i.host, i.service)).ToHashSet();
+            ingressDrift = !desired.SetEquals(live.ToHashSet());
+        }
 
         // CF Access gating (ADD-ONLY): each ingress hostname gets a self-hosted Access
         // app + an allow-by-email policy so the admin UI is never exposed raw — login is
@@ -270,7 +282,7 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
         // App is keyed by domain + policy by name, so this is find-or-create (re-run safe).
         var allowEmails = ParseAccessAllow(s.Spec.Config);
         var gated = 0;
-        foreach (var (host, _) in ingress)
+        foreach (var (host, _, _) in ingress)
         {
             if (allowEmails.Count == 0) break;
             var appId = await api.FindAccessAppIdAsync(zone.AccountId, host, ct);
@@ -287,8 +299,8 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
         }
         var gateNote = allowEmails.Count > 0 ? $", {ingress.Count} host(s) Access-gated" : "";
 
-        // Idempotency (ADD-ONLY): tunnel + all DNS + active connector + gating in place → done.
-        if (tunnelId is not null && dnsPresent && svcActive && gated == 0)
+        // Idempotency (ADD-ONLY): tunnel + all DNS + active connector + gating + ingress in place → done.
+        if (tunnelId is not null && dnsPresent && svcActive && gated == 0 && !ingressDrift)
             return ApplyResult.NoChange($"tunnel '{tunnelName}' + DNS present, cloudflared active{gateNote}");
 
         // (Re)provision the connector only when the tunnel is absent or not running —
@@ -302,12 +314,17 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
             var res = await ctx.Exec.InContainerAsync(node, ctid, install);
             if (!res.Ok) return ApplyResult.Failed($"cloudflared install failed: {res.Stderr}");
         }
+        else if (ingressDrift)
+        {
+            // Connector is already up — just push the corrected ingress, no reinstall (#165).
+            await api.SetTunnelConfigAsync(zone.AccountId, tunnelId, BuildIngressJson(ingress), ct);
+        }
 
-        foreach (var (host, _) in ingress)
+        foreach (var (host, _, _) in ingress)
             if (!await api.DnsExistsAsync(zone.ZoneId, host, ct))
                 await api.CreateCnameAsync(zone.ZoneId, host, $"{tunnelId}.cfargotunnel.com", ct);
 
-        var changes = gated > 0 ? $"; {gated} Access change(s)" : "";
+        var changes = (gated > 0 ? $"; {gated} Access change(s)" : "") + (ingressDrift ? "; ingress re-pushed" : "");
         return ApplyResult.Applied($"tunnel '{tunnelName}' ensured ({ingress.Count} ingress){changes}");
     }
 
@@ -324,24 +341,39 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
         return emails;
     }
 
-    private static List<(string host, string service)> ParseIngress(Dictionary<string, object?> c)
+    // Captures originRequest too (e.g. { noTLSVerify: true }) so a re-push (#165)
+    // faithfully preserves it — otherwise re-pushing would strip noTLSVerify from
+    // the self-signed https origins (pdm/proxmox) and break them.
+    private static List<(string host, string service, string? origin)> ParseIngress(Dictionary<string, object?> c)
     {
-        var list = new List<(string, string)>();
+        var list = new List<(string, string, string?)>();
         if (c.TryGetValue("ingress", out var v) && v is IEnumerable<object> items)
             foreach (var it in items)
                 if (it is System.Collections.IDictionary d)
-                    list.Add((d["hostname"]?.ToString() ?? "", d["service"]?.ToString() ?? ""));
+                {
+                    string? origin = null;
+                    if (d.Contains("originRequest") && d["originRequest"] is System.Collections.IDictionary od)
+                    {
+                        var map = new Dictionary<string, object?>();
+                        foreach (System.Collections.DictionaryEntry e in od) map[e.Key?.ToString() ?? ""] = e.Value;
+                        origin = JsonSerializer.Serialize(map);
+                    }
+                    list.Add((d["hostname"]?.ToString() ?? "", d["service"]?.ToString() ?? "", origin));
+                }
         return list;
     }
 
     // NOTE: service is taken from config as-is (e.g. http://forgejo:3000). A live
-    // create should resolve the logical host to the CT IP first; this branch only
-    // runs when the tunnel is absent (never on the already-provisioned stack).
-    private static string BuildIngressJson(List<(string host, string service)> ingress)
+    // create should resolve the logical host to the CT IP first.
+    private static string BuildIngressJson(List<(string host, string service, string? origin)> ingress)
     {
         var sb = new StringBuilder("[");
-        foreach (var (host, service) in ingress)
-            sb.Append($"{{\"hostname\":\"{host}\",\"service\":\"{service}\"}},");
+        foreach (var (host, service, origin) in ingress)
+        {
+            sb.Append($"{{\"hostname\":\"{host}\",\"service\":\"{service}\"");
+            if (origin is not null) sb.Append($",\"originRequest\":{origin}");
+            sb.Append("},");
+        }
         sb.Append("{\"service\":\"http_status:404\"}]");
         return sb.ToString();
     }
@@ -395,21 +427,148 @@ public sealed class PangolinProvisioner : IAppProvisioner
         var edge = s.Spec.Config.Str("edge") ?? "cloudflared";
         var marker = DesiredMarker(s);
 
-        // Idempotency: managed marker already current → nothing to do.
+        // Config: re-seed only when the managed marker drifted.
         var cur = await ctx.Exec.InContainerAsync(node, ctid,
             "grep -m1 '^# homelab-managed:' /opt/pangolin/config/config.yml 2>/dev/null || true");
         var curMarker = cur.Stdout.Contains(':') ? cur.Stdout.Split(':', 2)[1].Trim() : "";
-        if (curMarker == marker)
-            return ApplyResult.NoChange($"config already current (marker {marker})");
+        string? configMsg = null;
+        if (curMarker != marker)
+        {
+            var ipRes = await ctx.Exec.InContainerAsync(node, ctid, "hostname -I | awk '{print $1}'");
+            if (!ipRes.Ok || ipRes.Stdout.Trim().Length == 0) return ApplyResult.Failed("could not resolve CT IP");
+            var cmd = BuildWrite(s, marker, host, dashboardUrl, BaseDomain(s), edge, ipRes.Stdout.Trim());
+            var res = await ctx.Exec.InContainerAsync(node, ctid, cmd);
+            if (!res.Ok) return ApplyResult.Failed($"write/restart failed: {res.Stderr}");
+            configMsg = $"seeded config.yml + {(edge == "cloudflared" ? "behind-cloudflared Traefik" : "stock Traefik")}; restarted (marker {marker})";
+        }
 
-        var ipRes = await ctx.Exec.InContainerAsync(node, ctid, "hostname -I | awk '{print $1}'");
-        if (!ipRes.Ok || ipRes.Stdout.Trim().Length == 0) return ApplyResult.Failed("could not resolve CT IP");
+        // Resources (declarative, #136): reconcile declared admin-UI resources via the
+        // integration API (add-only, idempotent by fullDomain). Skipped — not failed —
+        // until the org PANGOLIN_API_KEY exists, since that's a post-setup bootstrap secret.
+        var (resMsg, resChanged, resFailed) = await ReconcileResourcesAsync(s, ctx, node, ctid);
+        if (resFailed is not null) return ApplyResult.Failed(resFailed);
 
-        var cmd = BuildWrite(s, marker, host, dashboardUrl, BaseDomain(s), edge, ipRes.Stdout.Trim());
-        var res = await ctx.Exec.InContainerAsync(node, ctid, cmd);
-        return res.Ok
-            ? ApplyResult.Applied($"seeded config.yml + {(edge == "cloudflared" ? "behind-cloudflared Traefik" : "stock Traefik")}; restarted (marker {marker})")
-            : ApplyResult.Failed($"write/restart failed: {res.Stderr}");
+        if (configMsg is null && !resChanged)
+            return ApplyResult.NoChange($"config current (marker {marker})" + (resMsg is null ? "" : $"; {resMsg}"));
+        return ApplyResult.Applied(string.Join("; ", new[] { configMsg, resMsg }.Where(x => x is not null)));
+    }
+
+    // Reconcile declared Pangolin resources (admin UIs) via the integration API on the
+    // CT (:3003, Bearer org key). Add-only: find-or-create by fullDomain, set the target
+    // (via a local-type site) and ssl=false (behind-cloudflared). Returns (msg, changed,
+    // failedReason). Each resource's public hostname is wired separately in the cloudflared
+    // ingress (#165 makes that push idempotently).
+    private static async Task<(string? msg, bool changed, string? failed)> ReconcileResourcesAsync(
+        Shape s, ConvergeContext ctx, string node, string ctid)
+    {
+        var c = s.Spec.Config;
+        if (!(c.TryGetValue("resources", out var rv) && rv is IEnumerable<object> items) || !items.Any())
+            return (null, false, null);
+        if (ctx.Secrets.Get("PANGOLIN_API_KEY") is not { Length: > 0 } key)
+            return ("resources declared but PANGOLIN_API_KEY unset — skipped (create an org API key, then re-run)", false, null);
+        if (c.Str("org") is not { Length: > 0 } org)
+            return (null, false, "resources declared but config.org (Pangolin org id) is missing");
+
+        var baseDomain = BaseDomain(s);
+        var ct = CancellationToken.None;
+        var pg = new PangolinClient(ctx.Exec, node, ctid, key);
+
+        // domainId for our baseDomain
+        var (dok, droot) = await pg.CallAsync("GET", $"/org/{org}/domains", null, ct);
+        if (!dok) return (null, false, "pangolin: integration API unreachable or key invalid (GET domains failed)");
+        string? domainId = null;
+        foreach (var d in DataArray(droot, "domains"))
+            if (d.TryGetProperty("baseDomain", out var bd) && bd.GetString() == baseDomain && d.TryGetProperty("domainId", out var di))
+                domainId = di.GetString();
+        if (domainId is null) return (null, false, $"pangolin: domain '{baseDomain}' not found in org '{org}'");
+
+        // local site (create if missing — targets the Pangolin host's own services, no Newt)
+        int? siteId = null;
+        var (sok, sroot) = await pg.CallAsync("GET", $"/org/{org}/sites", null, ct);
+        if (sok)
+            foreach (var st in DataArray(sroot, "sites"))
+                if (st.TryGetProperty("type", out var t) && t.GetString() == "local" && st.TryGetProperty("siteId", out var si))
+                    siteId = si.GetInt32();
+        if (siteId is null)
+        {
+            var (cok, croot) = await pg.CallAsync("PUT", $"/org/{org}/site", "{\"name\":\"local\",\"type\":\"local\"}", ct);
+            if (!cok || !Data(croot).TryGetProperty("siteId", out var nsi)) return (null, false, "pangolin: failed to create local site");
+            siteId = nsi.GetInt32();
+        }
+
+        // existing resources, by fullDomain (add-only idempotency)
+        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var (eok, eroot) = await pg.CallAsync("GET", $"/org/{org}/resources", null, ct);
+        if (eok)
+            foreach (var r in DataArray(eroot, "resources"))
+                if (r.TryGetProperty("fullDomain", out var fd) && fd.GetString() is { } f) existing.Add(f);
+
+        int total = 0, created = 0;
+        foreach (var it in items)
+        {
+            if (it is not System.Collections.IDictionary rd) continue;
+            total++;
+            var sub = rd["subdomain"]?.ToString() ?? "";
+            if (existing.Contains($"{sub}.{baseDomain}")) continue;
+            var name = rd["name"]?.ToString() ?? sub;
+            var tgt = rd["target"] as System.Collections.IDictionary;
+            var tip = tgt?["ip"]?.ToString() ?? "localhost";
+            var tmethod = tgt?["method"]?.ToString() ?? "http";
+            var tport = int.TryParse(tgt?["port"]?.ToString(), out var pp) ? pp : 80;
+
+            var (rok, rroot) = await pg.CallAsync("PUT", $"/org/{org}/resource",
+                JsonSerializer.Serialize(new { name, subdomain = sub, http = true, protocol = "tcp", domainId }), ct);
+            if (!rok || !Data(rroot).TryGetProperty("resourceId", out var rid))
+                return (null, false, $"pangolin: failed to create resource {sub}.{baseDomain}");
+            var resourceId = rid.GetInt32();
+            await pg.CallAsync("PUT", $"/resource/{resourceId}/target",
+                JsonSerializer.Serialize(new { siteId, ip = tip, method = tmethod, port = tport, enabled = true }), ct);
+            await pg.CallAsync("POST", $"/resource/{resourceId}", "{\"ssl\":false}", ct); // behind-cloudflared
+            created++;
+        }
+        return ($"{total} resource(s) declared, {created} created", created > 0, null);
+    }
+
+    // response.data is sometimes an array, sometimes { <key>: array } — normalise both.
+    private static IEnumerable<JsonElement> DataArray(JsonElement root, string key)
+    {
+        var d = Data(root);
+        if (d.ValueKind == JsonValueKind.Array) return d.EnumerateArray().ToList();
+        if (d.ValueKind == JsonValueKind.Object && d.TryGetProperty(key, out var arr) && arr.ValueKind == JsonValueKind.Array)
+            return arr.EnumerateArray().ToList();
+        return Array.Empty<JsonElement>();
+    }
+
+    private static JsonElement Data(JsonElement root) =>
+        root.ValueKind == JsonValueKind.Object && root.TryGetProperty("data", out var d) ? d : root;
+
+    // Thin client for the Pangolin integration API (:3003), invoked via the node-exec
+    // seam (curl inside the CT) — the API isn't publicly reachable (CF Access gates the
+    // dashboard hostname) and may not be routable from the engine host.
+    private sealed class PangolinClient
+    {
+        private readonly INodeExec _exec;
+        private readonly string _node, _ctid, _key;
+        public PangolinClient(INodeExec exec, string node, string ctid, string key)
+            => (_exec, _node, _ctid, _key) = (exec, node, ctid, key);
+
+        public async Task<(bool ok, JsonElement root)> CallAsync(string method, string path, string? body, CancellationToken ct)
+        {
+            var cmd = new StringBuilder($"curl -s -X {method} -H 'Authorization: Bearer {_key}'");
+            if (body is not null)
+                cmd.Append($" -H 'Content-Type: application/json' -d '{body.Replace("'", "'\\''")}'");
+            cmd.Append($" http://localhost:3003/v1{path}");
+            var r = await _exec.InContainerAsync(_node, _ctid, cmd.ToString(), ct);
+            if (!r.Ok || string.IsNullOrWhiteSpace(r.Stdout)) return (false, default);
+            try
+            {
+                using var doc = JsonDocument.Parse(r.Stdout);
+                var root = doc.RootElement.Clone();
+                var ok = !root.TryGetProperty("success", out var sc) || sc.ValueKind != JsonValueKind.False;
+                return (ok, root);
+            }
+            catch { return (false, default); }
+        }
     }
 
     private static string BaseDomain(Shape s)
