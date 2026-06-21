@@ -46,6 +46,9 @@ jobs:
       NODE_ADDR_HPE_01: '192.168.179.3'
       NODE_ADDR_NUC_01: '192.168.179.1'
       NODE_ADDR_DESKTOP_01: '192.168.179.2'
+      # The runner runs jobs with a HOME that isn't the login home, so NodeExec can't
+      # find the SSH identity in ~/.ssh — point it at the runner's key explicitly (#162).
+      NODE_SSH_KEY: /home/runner/.ssh/id_ed25519
     steps:
       - uses: actions/checkout@v6
       - name: Fetch stack submodules (shapes live here; vendor/* C# repos skipped)

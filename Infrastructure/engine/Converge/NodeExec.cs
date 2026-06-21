@@ -24,11 +24,29 @@ public sealed class NodeExec : INodeExec
     public NodeExec(string sshUser = "root") => _sshUser = sshUser;
 
     public Task<ExecResult> OnNodeAsync(string node, string command, CancellationToken ct = default)
-        // accept-new: the runner reaches nodes by IP (see Resolve) and won't have the
-        // IP in known_hosts on first contact; BatchMode would otherwise fail. TOFU on
-        // a trusted LAN — a CHANGED key is still rejected.
-        => RunAsync("ssh", new[] { "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new",
-            $"{_sshUser}@{Resolve(node)}", command }, ct);
+        => RunAsync("ssh", BuildSshArgs(node, command), ct);
+
+    // ssh args. accept-new: the runner reaches nodes by IP (see Resolve) and won't have
+    // the IP in known_hosts on first contact; BatchMode would otherwise fail (TOFU on a
+    // trusted LAN — a CHANGED key is still rejected). NODE_SSH_KEY: the self-hosted
+    // runner runs jobs with a HOME that ISN'T the login home, so ssh can't find the
+    // identity in ~/.ssh; point it at the key explicitly (IdentitiesOnly) + a sibling
+    // known_hosts, decoupling auth from $HOME entirely. See issue #162.
+    private string[] BuildSshArgs(string node, string command)
+    {
+        var args = new List<string> { "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new" };
+        var key = Environment.GetEnvironmentVariable("NODE_SSH_KEY");
+        if (!string.IsNullOrWhiteSpace(key))
+        {
+            args.AddRange(new[] { "-i", key, "-o", "IdentitiesOnly=yes" });
+            var dir = Path.GetDirectoryName(key);
+            if (!string.IsNullOrEmpty(dir))
+                args.AddRange(new[] { "-o", $"UserKnownHostsFile={Path.Combine(dir, "known_hosts")}" });
+        }
+        args.Add($"{_sshUser}@{Resolve(node)}");
+        args.Add(command);
+        return args.ToArray();
+    }
 
     // Map a Proxmox node name to an SSH-reachable address. The self-hosted runner
     // sits on the node LAN but has no DNS for the short names (`hpe-01`), so an
