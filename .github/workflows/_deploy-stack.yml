@@ -38,6 +38,11 @@ jobs:
       # sonarr/radarr use as download-client auth. QBIT_USER defaults to 'admin' if unset.
       QBIT_USER: ${{ secrets.QBIT_USER }}
       QBIT_PASSWORD: ${{ secrets.QBIT_PASSWORD }}
+      # *arr WebUI Forms-auth creds the provisioners set (per-app passwords, #178).
+      ARR_USER: ${{ secrets.ARR_USER }}
+      SONARR_PASSWORD: ${{ secrets.SONARR_PASSWORD }}
+      RADARR_PASSWORD: ${{ secrets.RADARR_PASSWORD }}
+      PROWLARR_PASSWORD: ${{ secrets.PROWLARR_PASSWORD }}
       # NB: SSH to nodes for the community-scripts create path is provided by the
       # runner host (proven by the BL-013 smoke deploy), not a GH secret.
       # The runner has no DNS for node short-names, so map each to its LAN IP —
