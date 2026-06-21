@@ -24,7 +24,23 @@ public sealed class NodeExec : INodeExec
     public NodeExec(string sshUser = "root") => _sshUser = sshUser;
 
     public Task<ExecResult> OnNodeAsync(string node, string command, CancellationToken ct = default)
-        => RunAsync("ssh", new[] { "-o", "BatchMode=yes", $"{_sshUser}@{node}", command }, ct);
+        // accept-new: the runner reaches nodes by IP (see Resolve) and won't have the
+        // IP in known_hosts on first contact; BatchMode would otherwise fail. TOFU on
+        // a trusted LAN — a CHANGED key is still rejected.
+        => RunAsync("ssh", new[] { "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new",
+            $"{_sshUser}@{Resolve(node)}", command }, ct);
+
+    // Map a Proxmox node name to an SSH-reachable address. The self-hosted runner
+    // sits on the node LAN but has no DNS for the short names (`hpe-01`), so an
+    // explicit `NODE_ADDR_<NAME>` env override (e.g. NODE_ADDR_HPE_01=192.168.179.3)
+    // sends SSH straight to the IP. With no override we fall back to the name, so
+    // local runs that resolve via DNS/hosts keep working. See issue #162.
+    public static string Resolve(string node)
+    {
+        var key = "NODE_ADDR_" + new string(node.Select(c => char.IsLetterOrDigit(c) ? char.ToUpperInvariant(c) : '_').ToArray());
+        var addr = Environment.GetEnvironmentVariable(key);
+        return string.IsNullOrWhiteSpace(addr) ? node : addr.Trim();
+    }
 
     public Task<ExecResult> InContainerAsync(string node, string ctid, string command, CancellationToken ct = default)
         // pct exec <ctid> -- bash -lc '<command>' — single-quoted on the remote.
