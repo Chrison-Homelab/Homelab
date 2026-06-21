@@ -56,6 +56,9 @@ spec:
       allowRawResources: true        # enables raw TCP/UDP resources (e.g. SSH)
       disableSignupWithoutInvite: true
       disableUserCreateOrg: false
+      enableIntegrationApi: true     # integration API on :3003 — lets us manage resources
+                                     # declaratively via the API (Bearer key) instead of by hand
+
     # Admin UIs are added as Pangolin *resources* (host-routed by Traefik, auth enforced
     # by the badger plugin), migrated one at a time — see ADR-0007 open decision #1.
   # No `secrets:` block: the provisioner GENERATES config.yml server.secret on the CT

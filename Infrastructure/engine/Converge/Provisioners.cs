@@ -378,7 +378,8 @@ public sealed class PangolinProvisioner : IAppProvisioner
             c.Str("edge") ?? "cloudflared",
             Flag(c, "allowRawResources", true),
             Flag(c, "disableSignupWithoutInvite", true),
-            Flag(c, "disableUserCreateOrg", false));
+            Flag(c, "disableUserCreateOrg", false),
+            Flag(c, "enableIntegrationApi", false));
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..12].ToLowerInvariant();
     }
 
@@ -457,6 +458,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
             $"    disable_signup_without_invite: {B(Flag(c, "disableSignupWithoutInvite", true))}",
             $"    disable_user_create_org: {B(Flag(c, "disableUserCreateOrg", false))}",
             $"    allow_raw_resources: {B(Flag(c, "allowRawResources", true))}",
+            $"    enable_integration_api: {B(Flag(c, "enableIntegrationApi", false))}",
         });
 
         var sb = new StringBuilder();
