@@ -62,6 +62,7 @@ public sealed class ProvisionerRegistry
         new BazarrProvisioner(),
         new CrossSeedProvisioner(),
         new ShelfmarkProvisioner(),
+        new SeerrProvisioner(),
     });
 }
 

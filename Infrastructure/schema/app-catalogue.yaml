@@ -76,7 +76,8 @@ apps:
     script: qbittorrent
     provisioner: qbittorrent   # arr-wire: WebUI creds + categories + save path (#159)
   seerr:
-    script: overseerr        # CONFIRM: Overseerr (Plex-native) vs Jellyseerr — #105 wants the Plex-native one
+    script: seerr            # merged Overseerr/Jellyseerr successor (ct/seerr.sh)
+    provisioner: seerr       # wire sonarr/radarr request targets via the Seerr API (after the manual Plex wizard)
   flaresolverr:
     script: flaresolverr
   cross-seed:
