@@ -1,0 +1,33 @@
+# tracearr — session monitoring + analytics for Plex/Jellyfin/Emby (the Tautulli
+# replacement): real-time session tracking, watch-history import, sharing detection
+# (impossible-travel / device velocity / trust scoring), library analytics, Discord
+# alerts. Net-new (not in the old fleet).
+#
+# community-scripts: ct/tracearr.sh (stable). Self-contained all-in-one install —
+# Node 24 + PostgreSQL 18/TimescaleDB + Redis, all LOCAL to the CT. The install
+# auto-generates JWT_SECRET/COOKIE_SECRET (openssl) and writes /data/tracearr/.env
+# with internal DATABASE_URL/REDIS_URL → nothing for a converge provisioner to wire.
+#
+# NO shared NFS mount: tracearr stores no media, and it uses /data LOCALLY for its
+# app dir + Postgres data — mounting the volume4 export at /data would SHADOW that.
+# (This is why it is NOT in the cloudflared dependsOn/ingress either.)
+#
+# INTERNAL-ONLY (no public ingress): reach the UI over the LAN at http://<ct-ip>:3000.
+# The media-server connection is a one-time WEB-UI step (no headless API) — point it at
+# the OLD Plex for now (lives outside this stack). Expose later via cloudflared if wanted.
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: tracearr
+  stack: Media
+  tags: [monitoring, analytics]
+
+spec:
+  app: tracearr
+  ctid: 5109             # next free in the 5100 block (5100–5108 taken)
+  cores: 2
+  memory: 4096           # MB — bundles Postgres 18 + TimescaleDB + Redis + Node 24
+  disk: 16               # GB — app + local Postgres/TimescaleDB time-series data
