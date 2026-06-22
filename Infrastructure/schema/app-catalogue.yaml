@@ -86,7 +86,8 @@ apps:
     script: tracearr             # net-new; Plex/Jellyfin/Emby session monitoring (Tautulli replacement). No
                                  # provisioner — all-in-one install self-generates secrets; Plex link is a UI step.
   shelfmark:
-    script: shelfmark            # net-new; ebook discovery/download (calibrain/CWA family). No provisioner (UI config).
+    script: shelfmark            # net-new; book search/request hub (calibrain)
+    provisioner: shelfmark       # upsert /etc/shelfmark/.env: Prowlarr (live) + Hardcover metadata + ABS nav link
   audiobookshelf:
     script: audiobookshelf       # net-new; audiobook/podcast server (native apps). No provisioner (libraries via UI).
 
