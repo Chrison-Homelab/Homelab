@@ -85,8 +85,6 @@ apps:
   tracearr:
     script: tracearr             # net-new; Plex/Jellyfin/Emby session monitoring (Tautulli replacement). No
                                  # provisioner — all-in-one install self-generates secrets; Plex link is a UI step.
-  romm:
-    script: romm                 # net-new; retro ROM library + EmulatorJS. No provisioner (auto-gen secrets; UI/config).
   shelfmark:
     script: shelfmark            # net-new; ebook discovery/download (calibrain/CWA family). No provisioner (UI config).
   audiobookshelf:
