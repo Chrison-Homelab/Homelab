@@ -60,6 +60,7 @@ public sealed class ProvisionerRegistry
         new SonarrProvisioner(),
         new RadarrProvisioner(),
         new BazarrProvisioner(),
+        new CrossSeedProvisioner(),
     });
 }
 
