@@ -80,7 +80,8 @@ apps:
   flaresolverr:
     script: flaresolverr
   cross-seed:
-    script: cross-seed           # net-new (#178); provisioner added when config wiring lands
+    script: cross-seed           # net-new (#178)
+    provisioner: cross-seed      # render config.js (torznab ← prowlarr, inject → qbittorrent) + restart daemon
 
   # Pangolin — SSO remote-access reverse proxy, the Teleport replacement (ADR-0007).
   # ct/pangolin.sh is a NATIVE systemd install (pinned upstream to 1.18.4). The
