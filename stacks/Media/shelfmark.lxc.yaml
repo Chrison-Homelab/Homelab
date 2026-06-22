@@ -1,0 +1,38 @@
+# Shelfmark — ebook discovery + download (calibrain; the Calibre-Web-Automated family).
+# Searches book sources and downloads to an ingest folder (pairs with CWA, or standalone).
+# Net-new. Uses a captcha bypasser — by default an internal one; can be pointed at the
+# Media stack's existing FlareSolverr (5107) instead (a one-time .env step: USING_EXTERNAL_
+# BYPASSER=true + EXT_BYPASSER_URL=http://flaresolverr:8191).
+#
+# community-scripts: ct/shelfmark.sh (stable). Flask app on port 8084; config at
+# /etc/shelfmark/.env (no DB/Redis). No converge provisioner — the download/ingest target
+# is chosen in the app config (a one-time step), so we just give it a stable NFS dir.
+#
+# Library on NFS: bind the volume4 `books` subpath at /books; point Shelfmark's download/
+# ingest dir there. Same export + pre-start guard as the *arr.
+# INTERNAL-ONLY (no public ingress): reach the UI over the LAN at http://<ct-ip>:8084.
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: shelfmark
+  stack: Media
+  tags: [books, ebooks]
+
+spec:
+  app: shelfmark
+  ctid: 5111
+  cores: 1
+  memory: 2048           # MB — Flask app (+ a bundled headless Chromium if internal bypass is used)
+  disk: 6                # GB — app only; books land on /books (NFS)
+
+  mounts:
+    - type: nfs
+      storage: ds1813-nfs-volume-4
+      source: books                      # volume4 subpath → the ebook library/ingest
+      target: /books
+      acl: true
+      backup: false
+  hookscript: local:snippets/ensure-data-mount.sh   # pre-start guard: volume4 mounted or refuse to start

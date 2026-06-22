@@ -1,0 +1,39 @@
+# RomM — retro ROM library manager + in-browser play (EmulatorJS), with metadata
+# scraping (IGDB/MobyGames/ScreenScraper/RetroAchievements). Net-new (not in the old
+# fleet). The games counterpart to the *arr.
+#
+# community-scripts: ct/romm.sh (stable). Self-contained install — MariaDB + Redis +
+# Nginx (→ backend :5000) served on port 80, Python 3.13 + Node 24. The install
+# auto-generates AUTH_SECRET_KEY and writes /opt/romm/.env with internal DB/Redis →
+# no converge provisioner needed. Metadata-provider API keys are optional and set in
+# /var/lib/romm/config/config.yml (a one-time step if wanted).
+#
+# Library on NFS: RomM reads its ROM library from /var/lib/romm/library/roms — we bind
+# the volume4 `roms` subpath there so the games live on the NAS (BIOS/assets/config stay
+# local). Same export + pre-start guard as the *arr (a volume4 drop refuses start).
+# INTERNAL-ONLY (no public ingress): reach the UI over the LAN at http://<ct-ip>:80.
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: romm
+  stack: Media
+  tags: [games, roms]
+
+spec:
+  app: romm
+  ctid: 5110
+  cores: 2
+  memory: 4096           # MB — bundles MariaDB + Redis + Nginx + the Node/Python app
+  disk: 16               # GB — app + MariaDB; ROM library lives on /var/lib/romm/library/roms (NFS)
+
+  mounts:
+    - type: nfs
+      storage: ds1813-nfs-volume-4
+      source: roms                       # volume4 subpath → the ROM library root (by platform)
+      target: /var/lib/romm/library/roms # where RomM natively scans for games
+      acl: true
+      backup: false
+  hookscript: local:snippets/ensure-data-mount.sh   # pre-start guard: volume4 mounted or refuse to start

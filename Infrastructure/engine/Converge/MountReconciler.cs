@@ -39,6 +39,7 @@ public sealed class MountReconciler
         var sets = new List<string>();
         var changed = new List<string>();
         var skipped = new List<string>();
+        var ensureDirs = new List<(string mount, string source)>();
 
         for (var i = 0; i < sp.Mounts.Count; i++)
         {
@@ -56,6 +57,11 @@ public sealed class MountReconciler
             {
                 sets.Add($"--{key} {Quote(rendered)}");
                 changed.Add($"{key} →{m.Target}");
+                // A path-bind source under the export must exist before the bind, else the
+                // CT binds an empty/absent dir (the rootfs-fill risk). Record it so we can
+                // mkdir it on the host first (guarded by the export actually being mounted).
+                if (m.Type == "nfs" && !string.IsNullOrEmpty(m.Source))
+                    ensureDirs.Add(($"/mnt/pve/{m.Storage}", m.Source!.TrimStart('/')));
             }
         }
 
@@ -73,6 +79,18 @@ public sealed class MountReconciler
             return skipped.Count > 0
                 ? ApplyResult.Skipped($"mounts/hookscript already match{skipNote}")
                 : ApplyResult.NoChange("mounts/hookscript already match");
+
+        // Ensure path-bind source dirs exist on the host BEFORE binding them — but only on
+        // a genuinely-mounted export (never mkdir on an unmounted mountpoint, which would
+        // create the dir on the underlying rootfs and defeat the ensure-data-mount guard).
+        // New subdirs inherit the export's default group ACLs (same as the *arr /data dirs).
+        if (ensureDirs.Count > 0)
+        {
+            var mk = string.Join("; ", ensureDirs.Distinct().Select(d =>
+                $"mountpoint -q {d.mount} && mkdir -p {d.mount}/{d.source} || true"));
+            var mkRes = await _exec.OnNodeAsync(node, mk, ct);
+            if (!mkRes.Ok) return ApplyResult.Failed($"ensure mount source dirs failed: {mkRes.Stderr}");
+        }
 
         var res = await _exec.OnNodeAsync(node, $"pct set {ctid} {string.Join(' ', sets)}", ct);
         return res.Ok
