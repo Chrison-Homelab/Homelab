@@ -27,6 +27,13 @@ spec:
   cores: 1
   memory: 2048           # MB — Flask app (+ a bundled headless Chromium if internal bypass is used)
   disk: 6                # GB — app only; books land on /books (NFS)
+  dependsOn: [prowlarr]  # search source the provisioner wires (reads prowlarr's key live)
+
+  # Post-create wiring (ShelfmarkProvisioner → /etc/shelfmark/.env):
+  #   Prowlarr search source (URL + key read live) + Hardcover metadata (HARDCOVER_API_KEY
+  #   secret) + the audiobook-library nav link below. Books download to /books for sideload.
+  config:
+    audiobookLibraryUrl: https://audiobookshelf.chrison.dev
 
   mounts:
     - type: nfs
