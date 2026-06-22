@@ -2,7 +2,7 @@
 
 Physical inventory for all homelab devices. Auto-documented from the Proxmox +
 UniFi MCP servers (read-only discovery, BL-009).
-**Last updated:** 2026-05-29
+**Last updated:** 2026-06-22
 
 ---
 
@@ -11,10 +11,17 @@ UniFi MCP servers (read-only discovery, BL-009).
 All three nodes run **Proxmox VE 9.2.2** (kernel `7.0.2-6-pve`), each with **16 GB
 RAM**. Synology NFS is mounted at the host level on every node (see [NAS](#nas)).
 
+**Wake-on-LAN:** all three nodes have WoL armed (`ethtool ... wol g`) and made
+persistent via the `wol-arm.service` systemd unit. Wake any node from an
+always-on node with `src/Proxmox/wake-node.sh <node-name>` (MAC registry baked
+in). The Intel-NIC nodes (hpe-01, nuc-01) keep WoL on by `e1000e` default; the
+Realtek node (desktop-01) needs the unit because `r8169` clears WoL each boot.
+
 ### hpe-01 — HP EliteDesk 800 G2 DM
 - **Role:** Primary workload host (most *arr LXCs, Home Assistant, Plex)
 - **CPU:** Intel i5-6500T @ 2.5 GHz — 4 cores / 4 threads
 - **RAM:** 16 GB · **Boot:** UEFI
+- **NIC:** Intel I219 · MAC `c8:d3:ff:9d:da:02` · **WoL:** armed ✅
 - **Local storage:** `local-lvm` ~343 GB (LVM-thin), `local` ~100 GB (dir)
 - **Mgmt IP:** 192.168.179.3 (legacy — migration pending, BL-002)
 
@@ -22,6 +29,7 @@ RAM**. Synology NFS is mounted at the host level on every node (see [NAS](#nas))
 - **Role:** Secondary host (Traefik, Teleport, PDM, *arr overflow)
 - **CPU:** Intel i3-4010U @ 1.7 GHz — 2 cores / 4 threads
 - **RAM:** 16 GB · **Boot:** UEFI
+- **NIC:** Intel I218 · MAC `b8:ae:ed:72:82:fe` · **WoL:** armed ✅
 - **Local storage:** `local-lvm` ~58 GB (LVM-thin), `local` ~41 GB (dir)
 - **Mgmt IP:** 192.168.179.1 (legacy — migration pending)
 
@@ -29,6 +37,7 @@ RAM**. Synology NFS is mounted at the host level on every node (see [NAS](#nas))
 - **Role:** Tertiary / dev + gaming VMs + AI workloads
 - **CPU:** AMD Ryzen 5 3600 — 6 cores / 12 threads
 - **RAM:** 16 GB · **Boot:** Legacy BIOS
+- **NIC:** Realtek RTL8111 · MAC `18:c0:4d:de:9f:82` · **WoL:** armed via `wol-arm.service` ✅ (untested from full power-off — see task)
 - **Local storage:** `local-lvm` ~1.8 TB (LVM-thin), `local` ~100 GB (dir)
 - **Mgmt IP:** 192.168.179.2 (legacy)
 - **VMs (1001–1003, all stopped):** `Plex-VM`, `gaming-vm-01`, `gaming-vm-02`
