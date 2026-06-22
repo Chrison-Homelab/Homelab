@@ -21,14 +21,16 @@ namespace Homelab.Infrastructure.Converge;
 //   torznab[]       ← every Prowlarr indexer's torznab feed (http://prowlarr:9696/{id}/api?apikey=)
 //   torrentClients  ← qbittorrent:http://user:pass@qbit:8090 (creds QBIT_USER/QBIT_PASSWORD)
 //   dataDirs        ← /data/torrents (shared export; same fs as media → hardlink-injectable)
-//   linkDirs        ← /data/torrents/cross-seed (same fs; cross-seed normalises layout here)
+//   linkDirs        ← /data/cross-seed (SIBLING of /data/torrents, NOT nested inside it:
+//                     cross-seed v6 rejects linkDirs inside dataDirs; same /data export → same
+//                     filesystem, so hardlinks still work)
 public sealed class CrossSeedProvisioner : IAppProvisioner
 {
     public string App => "cross-seed";
 
     private const string ConfigDir = "/root/.cross-seed";
     private const string ConfigPath = ConfigDir + "/config.js";
-    private const string LinkDir = "/data/torrents/cross-seed";
+    private const string LinkDir = "/data/cross-seed";
 
     public IEnumerable<string> PlanSteps(Shape s)
     {
