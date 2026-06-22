@@ -4,31 +4,36 @@ using Homelab.Infrastructure.Shapes;
 
 namespace Homelab.Infrastructure.Converge;
 
-// shelfmark (CT 5111) — book search/request hub. Net-new (#186 follow-up). Its
-// integrations are driven by environment variables in /etc/shelfmark/.env (systemd
-// EnvironmentFile), so this provisioner UPSERTS the managed keys there and restarts the
-// `shelfmark` service — idempotent (only writes when a managed key drifts), self-verifying
-// (asserts is-active after). The .env is edited with a base64'd python upserter to dodge
-// shell quoting of the URLs + the Hardcover JWT (python3 is present in the CT); the desired
-// keys travel as base64'd JSON the python decodes, so no quoting of secrets in any layer.
+// shelfmark (CT 5111) — book search/request hub. Net-new (#186 follow-up).
 //
-// What it wires (per user direction): Prowlarr as a search source (URL + key read LIVE
-// from the prowlarr sibling), Hardcover as the metadata provider (token from secrets), and
-// the audiobookshelf nav link. Books download to /books (NFS), sideloaded to Kindle/Apple —
-// no downstream library/reader tool by design.
+// IMPORTANT: shelfmark's integration settings live in its authoritative runtime store
+// /etc/shelfmark/settings.json (CONFIG_DIR), NOT the .env. Env vars only SEED that JSON on
+// first boot; once onboarding_complete is set, settings.json wins. So this provisioner
+// MERGES the managed keys into settings.json (the keys are the same UPPERCASE names the env
+// doc uses, e.g. METADATA_PROVIDER, PROWLARR_ENABLED) and restarts the `shelfmark` service.
+//
+// Idempotent: a read-only python check reports CHANGED/NOCHANGE; only on drift does it
+// stop → write (merge) → start (so shelfmark can't flush a stale in-memory copy over our
+// write), then assert is-active. The desired map travels as base64'd JSON the python merges,
+// so the Hardcover JWT / URLs never hit shell or python quoting.
+//
+// Wires (per user direction): Prowlarr search source (URL + key read LIVE from the prowlarr
+// sibling), Hardcover metadata provider (token from secrets), audiobookshelf nav link.
+// Books download to /books (INGEST_DIR default) for Kindle/Apple sideload — no downstream
+// library/reader tool by design.
 public sealed class ShelfmarkProvisioner : IAppProvisioner
 {
     public string App => "shelfmark";
 
-    private const string EnvPath = "/etc/shelfmark/.env";
+    private const string SettingsPath = "/etc/shelfmark/settings.json";
 
     public IEnumerable<string> PlanSteps(Shape s)
     {
-        yield return "enable Prowlarr search source (PROWLARR_URL/API_KEY read live from the prowlarr sibling)";
+        yield return "enable Prowlarr search source in settings.json (URL/API_KEY read live from the prowlarr sibling)";
         yield return "set Hardcover as metadata provider (HARDCOVER_API_KEY from secrets) — skipped if the token is unset";
         if (s.Spec.Config.Str("audiobookLibraryUrl") is { Length: > 0 } u)
             yield return $"set audiobook library nav link → {u}";
-        yield return "upsert /etc/shelfmark/.env + restart shelfmark if any managed key drifted (self-verifies is-active)";
+        yield return "merge into /etc/shelfmark/settings.json + restart shelfmark only on drift (self-verifies is-active)";
     }
 
     public async Task<ApplyResult> ApplyAsync(Shape s, ConvergeContext ctx)
@@ -43,91 +48,75 @@ public sealed class ShelfmarkProvisioner : IAppProvisioner
         var pwKey = await ArrExec.ApiKeyAsync(ctx, pn, pc, ct);
         if (pwIp is null || pwKey is null) return ApplyResult.Failed("could not resolve prowlarr IP/ApiKey");
 
-        // Managed keys.
-        var desired = new Dictionary<string, string>(StringComparer.Ordinal)
+        // Managed settings (typed — booleans land as JSON true, not "true").
+        var desired = new Dictionary<string, object>(StringComparer.Ordinal)
         {
-            ["PROWLARR_ENABLED"] = "true",
+            ["PROWLARR_ENABLED"] = true,
             ["PROWLARR_URL"] = $"http://{pwIp}:9696",
             ["PROWLARR_API_KEY"] = pwKey,
         };
         if (s.Spec.Config.Str("audiobookLibraryUrl") is { Length: > 0 } absUrl)
             desired["AUDIOBOOK_LIBRARY_URL"] = absUrl;
 
-        // Hardcover metadata provider — only when its token is present (else leave the
-        // provider default; mirrors how other provisioners skip on a missing secret).
         var hc = ctx.Secrets.Get("HARDCOVER_API_KEY");
         if (!string.IsNullOrEmpty(hc))
         {
-            desired["HARDCOVER_ENABLED"] = "true";
+            desired["HARDCOVER_ENABLED"] = true;
             desired["HARDCOVER_API_KEY"] = hc!;
             desired["METADATA_PROVIDER"] = "hardcover";
         }
 
-        // Read current .env (a login-shell MOTD banner may precede it — the strict KEY=
-        // parse below ignores any non KEY=VALUE line, so the banner can't leak in).
-        var cur = await ctx.Exec.InContainerAsync(node, ctid, $"cat {EnvPath} 2>/dev/null", ct);
-        var live = ParseEnv(cur.Stdout);
-        var drifted = desired.Where(kv => !live.TryGetValue(kv.Key, out var v) || v != kv.Value).Select(kv => kv.Key).ToList();
-
-        if (drifted.Count == 0)
-        {
-            // Already converged — still assert the daemon is actually up.
-            var act0 = (await ctx.Exec.InContainerAsync(node, ctid, "systemctl is-active shelfmark", ct)).Stdout.Trim();
-            return act0 == "active"
-                ? ApplyResult.NoChange($"shelfmark .env current ({desired.Count} managed keys){HcNote(hc)} + service active")
-                : ApplyResult.Failed($"shelfmark .env current but service not active (is-active: {act0})");
-        }
-
-        // Upsert managed keys + restart. The desired map travels as base64'd JSON the python
-        // decodes (no quoting of the JWT/URLs anywhere); the whole script is base64'd for ssh.
-        var jsonB64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(desired)));
+        // The python merger embeds the desired map as base64'd JSON and takes a mode arg
+        // (check = report only; write = merge into settings.json). It reads/writes the file
+        // itself, so MOTD banners and JWT/URL quoting are non-issues.
+        var desiredB64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(desired)));
         var py = string.Join("\n", new[]
         {
-            "import json, re, base64",
-            "p = \"/etc/shelfmark/.env\"",
-            $"upd = json.loads(base64.b64decode(\"{jsonB64}\").decode())",
+            "import json, base64, sys",
+            "p = \"/etc/shelfmark/settings.json\"",
+            $"desired = json.loads(base64.b64decode(\"{desiredB64}\").decode())",
             "try:",
-            "    lines = open(p).read().splitlines()",
-            "except FileNotFoundError:",
-            "    lines = []",
-            "seen = set(); out = []",
-            "for ln in lines:",
-            "    m = re.match(r'^([A-Za-z0-9_]+)=', ln)",
-            "    if m and m.group(1) in upd:",
-            "        out.append(m.group(1) + '=' + upd[m.group(1)]); seen.add(m.group(1))",
-            "    else:",
-            "        out.append(ln)",
-            "for k, v in upd.items():",
-            "    if k not in seen: out.append(k + '=' + v)",
-            "open(p, 'w').write('\\n'.join(out) + '\\n')",
+            "    cur = json.load(open(p))",
+            "except Exception:",
+            "    cur = {}",
+            "new = dict(cur); new.update(desired)",
+            "if new == cur:",
+            "    print(\"NOCHANGE\"); sys.exit(0)",
+            "if len(sys.argv) > 1 and sys.argv[1] == \"write\":",
+            "    json.dump(new, open(p, \"w\"), indent=4); print(\"WROTE\")",
+            "else:",
+            "    print(\"CHANGED\")",
         });
         var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(py));
+
+        // Read-only drift check (python reads the file itself → no MOTD/quoting concerns).
+        var check = await ctx.Exec.InContainerAsync(node, ctid, $"echo {b64} | base64 -d | python3 - check", ct);
+        if (!check.Ok) return ApplyResult.Failed($"shelfmark settings check failed: {check.Stderr}");
+
+        var keys = string.Join(", ", desired.Keys);
+        if (check.Stdout.Contains("NOCHANGE"))
+        {
+            var act0 = (await ctx.Exec.InContainerAsync(node, ctid, "systemctl is-active shelfmark", ct)).Stdout.Trim();
+            return act0 == "active"
+                ? ApplyResult.NoChange($"shelfmark settings.json current ({desired.Count} keys){HcNote(hc)} + service active")
+                : ApplyResult.Failed($"shelfmark settings current but service not active (is-active: {act0})");
+        }
+
+        // Drift → stop, merge-write, start (stop/start so shelfmark reloads from disk and
+        // can't flush a stale in-memory copy over our write), then assert is-active.
         var write = await ctx.Exec.InContainerAsync(node, ctid,
-            $"echo {b64} | base64 -d | python3 - && systemctl restart shelfmark && sleep 3", ct);
-        if (!write.Ok) return ApplyResult.Failed($"shelfmark .env upsert/restart failed: {write.Stderr}");
+            $"systemctl stop shelfmark; echo {b64} | base64 -d | python3 - write; systemctl start shelfmark; sleep 4", ct);
+        if (!write.Ok || !write.Stdout.Contains("WROTE"))
+            return ApplyResult.Failed($"shelfmark settings.json merge/restart failed: {write.Stdout} {write.Stderr}");
 
         var act = (await ctx.Exec.InContainerAsync(node, ctid, "systemctl is-active shelfmark", ct)).Stdout.Trim();
         if (act != "active")
         {
             var journal = await ctx.Exec.InContainerAsync(node, ctid, "journalctl -u shelfmark --no-pager -n 20 2>/dev/null", ct);
-            return ApplyResult.Failed($"shelfmark not active after config (is-active: {act}) — journal:\n{journal.Stdout.Trim()}");
+            return ApplyResult.Failed($"shelfmark not active after settings merge (is-active: {act}) — journal:\n{journal.Stdout.Trim()}");
         }
-        return ApplyResult.Applied($"shelfmark wired ({string.Join(", ", drifted)}){HcNote(hc)} + restarted & active");
+        return ApplyResult.Applied($"shelfmark settings merged ({keys}){HcNote(hc)} + restarted & active");
     }
 
     private static string HcNote(string? hc) => string.IsNullOrEmpty(hc) ? " (Hardcover token unset — skipped)" : "";
-
-    // Parse KEY=VALUE lines (strip surrounding quotes); ignore everything else (MOTD, comments).
-    private static Dictionary<string, string> ParseEnv(string text)
-    {
-        var map = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var raw in text.Split('\n'))
-        {
-            var line = raw.Trim();
-            if (line.Length == 0 || line.StartsWith('#')) continue;
-            var m = System.Text.RegularExpressions.Regex.Match(line, @"^([A-Za-z0-9_]+)=(.*)$");
-            if (m.Success) map[m.Groups[1].Value] = m.Groups[2].Value.Trim().Trim('"', '\'');
-        }
-        return map;
-    }
 }
