@@ -20,3 +20,10 @@ spec:
   memory: 1024           # MB
   disk: 8                # GB
   dependsOn: [sonarr, radarr]
+
+  # Post-create wiring (SeerrProvisioner): adds Sonarr + Radarr as default request targets
+  # via the Seerr API (add-only, after the manual Plex/owner setup wizard). The owner/Plex
+  # link is a one-time browser OAuth step — not automatable, so the provisioner Skips until
+  # Seerr reports initialized.
+  config:
+    qualityProfile: HD-1080p   # default profile Seerr requests against (per arr); change as desired
