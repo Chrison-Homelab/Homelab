@@ -97,22 +97,41 @@ public sealed class CrossSeedProvisioner : IAppProvisioner
         var marker = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)))[..12].ToLowerInvariant();
         var body = $"// homelab-managed: {marker}\nmodule.exports = {json};\n";
 
-        // Idempotency: skip when the config already on the CT carries this marker.
+        // Write config only when the marker drifted; the daemon is health-checked either
+        // way (below), so a re-run proves BOTH idempotency (marker) AND runtime liveness.
         var cur = await ctx.Exec.InContainerAsync(node, ctid,
             $"grep -m1 '^// homelab-managed:' {ConfigPath} 2>/dev/null || true", ct);
         var curMarker = cur.Stdout.Contains(':') ? cur.Stdout.Split(':', 2)[1].Trim() : "";
-        if (curMarker == marker)
-            return ApplyResult.NoChange($"cross-seed config current (marker {marker}, {torznab.Count} torznab feed(s))");
+        var configChanged = curMarker != marker;
 
-        // Write config + ensure the link dir on the shared export, then restart the daemon.
-        var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(body));
-        var cmd =
-            $"mkdir -p {ConfigDir} {LinkDir}; " +
-            $"echo {b64} | base64 -d > {ConfigPath}; " +
-            "systemctl restart cross-seed";
-        var res = await ctx.Exec.InContainerAsync(node, ctid, cmd, ct);
-        if (!res.Ok) return ApplyResult.Failed($"write/restart cross-seed failed: {res.Stderr}");
-        return ApplyResult.Applied(
-            $"cross-seed config rendered ({torznab.Count} torznab feed(s) + qbit inject) + daemon restarted (marker {marker})");
+        if (configChanged)
+        {
+            // Write config + ensure the link dir on the shared export, then restart the daemon
+            // (sleep so the follow-up is-active sees the settled state, not 'activating').
+            var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(body));
+            var cmd =
+                $"mkdir -p {ConfigDir} {LinkDir}; " +
+                $"echo {b64} | base64 -d > {ConfigPath}; " +
+                "systemctl restart cross-seed; sleep 3";
+            var res = await ctx.Exec.InContainerAsync(node, ctid, cmd, ct);
+            if (!res.Ok) return ApplyResult.Failed($"write/restart cross-seed failed: {res.Stderr}");
+        }
+
+        // Self-verify: the daemon must actually be running. `cross-seed daemon` exits on a
+        // bad config (e.g. an unreachable client/indexer), and systemctl restart returns 0
+        // before that — so assert is-active and surface the journal tail if it died.
+        var health = await ctx.Exec.InContainerAsync(node, ctid, "systemctl is-active cross-seed", ct);
+        var state = health.Stdout.Trim();
+        if (state != "active")
+        {
+            var journal = await ctx.Exec.InContainerAsync(node, ctid,
+                "journalctl -u cross-seed --no-pager -n 20 2>/dev/null", ct);
+            return ApplyResult.Failed(
+                $"cross-seed daemon not active (is-active: {state}) after {(configChanged ? "config render" : "no-op")} — journal:\n{journal.Stdout.Trim()}");
+        }
+
+        return configChanged
+            ? ApplyResult.Applied($"cross-seed config rendered ({torznab.Count} torznab feed(s) + qbit inject) + daemon restarted & active (marker {marker})")
+            : ApplyResult.NoChange($"cross-seed config current (marker {marker}, {torznab.Count} torznab feed(s)) + daemon active");
     }
 }
