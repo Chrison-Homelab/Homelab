@@ -28,18 +28,19 @@ spec:
 
   # Post-create wiring (converge / BL-010 — ADD-ONLY on Cloudflare):
   # 'dependsOn' names resolve as origin hostnames (e.g. http://sonarr:8989).
-  dependsOn: [prowlarr, sonarr, radarr, bazarr, qbittorrent, seerr]
+  dependsOn: [prowlarr, sonarr, radarr, bazarr, qbittorrent, seerr, audiobookshelf]
   config:
     tunnel: Homelab.Stacks.Media
     # CF Access gating (ADD-ONLY): converge ensures a self-hosted Access app +
-    # allow-by-email policy on EVERY ingress hostname below, so the admin UIs are
-    # never exposed raw. With no other IdP these emails log in via One-Time PIN
+    # allow-by-email policy on every NON-public ingress hostname below, so the admin
+    # UIs are never exposed raw. With no other IdP these emails log in via One-Time PIN
     # (same pattern as PDM/Proxmox). Stage-2 auth (Pangolin/ADR-0007) can replace this.
     access:
       allow: [csimon@chrison.dev]
     # Ingress is a TUNNEL-level property defined ONCE here.
     # flaresolverr is deliberately NOT exposed (internal — Prowlarr calls it).
-    # Each hostname below ALSO gets a CF Access OTP app (created during DNS wiring).
+    # Each hostname below gets a CF Access OTP app during DNS wiring — EXCEPT entries
+    # flagged `public: true` (DNS + routing only, app provides its own auth).
     ingress:
       - { hostname: prowlarr.chrison.dev,    service: "http://prowlarr:9696" }
       - { hostname: sonarr.chrison.dev,      service: "http://sonarr:8989" }
@@ -47,6 +48,9 @@ spec:
       - { hostname: bazarr.chrison.dev,      service: "http://bazarr:6767" }
       - { hostname: qbittorrent.chrison.dev, service: "http://qbittorrent:8090" }
       - { hostname: seerr.chrison.dev,       service: "http://seerr:5055" }
+      # audiobookshelf: PUBLIC/direct — native mobile apps can't do CF Access OTP, and it
+      # carries its own account auth. public: true → routed, but NOT behind the Access gate.
+      - { hostname: audiobookshelf.chrison.dev, service: "http://audiobookshelf:13378", public: true }
   secrets:
     - name: tunnelToken
       valueFrom:

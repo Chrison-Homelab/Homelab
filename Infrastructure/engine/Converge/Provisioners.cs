@@ -283,10 +283,14 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
         // One-Time PIN (no other IdP). Driven by config.access.allow; empty → no gating.
         // App is keyed by domain + policy by name, so this is find-or-create (re-run safe).
         var allowEmails = ParseAccessAllow(s.Spec.Config);
+        var publicHosts = ParsePublicHosts(s.Spec.Config);   // ingress entries with public: true
         var gated = 0;
         foreach (var (host, _, _) in ingress)
         {
             if (allowEmails.Count == 0) break;
+            // public: true → DNS + tunnel routing but NO Access gate (e.g. audiobookshelf,
+            // whose native mobile apps can't do One-Time PIN; it carries its own auth).
+            if (publicHosts.Contains(host)) continue;
             var appId = await api.FindAccessAppIdAsync(zone.AccountId, host, ct);
             if (appId is null)
             {
@@ -331,6 +335,21 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
     }
 
     private const string AccessPolicyName = "allow-homelab-admins";
+
+    // Ingress hostnames flagged `public: true` — routed by the tunnel but deliberately
+    // NOT placed behind the CF Access OTP gate (the app provides its own auth and/or has
+    // native clients that can't satisfy OTP). ADD-ONLY: we simply skip gating these.
+    private static HashSet<string> ParsePublicHosts(Dictionary<string, object?> c)
+    {
+        var hosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (c.TryGetValue("ingress", out var v) && v is IEnumerable<object> items)
+            foreach (var it in items)
+                if (it is System.Collections.IDictionary d
+                    && d["public"] is { } pub && bool.TryParse(pub.ToString(), out var b) && b
+                    && d["hostname"]?.ToString() is { Length: > 0 } h)
+                    hosts.Add(h);
+        return hosts;
+    }
 
     // config.access.allow — emails permitted through the CF Access OTP gate.
     private static List<string> ParseAccessAllow(Dictionary<string, object?> c)

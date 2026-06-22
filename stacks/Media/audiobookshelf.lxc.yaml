@@ -1,0 +1,39 @@
+# audiobookshelf — audiobook + podcast server with native iOS/Android apps. Net-new.
+#
+# community-scripts: ct/audiobookshelf.sh (stable). Self-contained — SQLite (no external
+# DB), FFmpeg for media probing; serves on port 13378. Libraries are added via the web UI
+# (pointing at mounted paths) → no converge provisioner.
+#
+# Library on NFS: bind ONLY the volume4 `audiobooks` subpath (not the whole /data export)
+# at /audiobooks — this CT is PUBLICLY exposed, so we limit its view of the NAS to just
+# the audiobooks. Add the library /audiobooks in the UI. Same pre-start guard as the *arr.
+#
+# EXPOSURE — PUBLIC, DIRECT (no CF Access OTP): audiobookshelf has native mobile apps that
+# can't satisfy One-Time PIN, and it carries its own account auth. So its tunnel ingress is
+# flagged `public: true` in cloudflared.lxc.yaml — DNS + routing, but NOT behind the Access
+# gate (unlike the *arr admin UIs). See task #14 (exposure-surface review).
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: audiobookshelf
+  stack: Media
+  tags: [audiobooks, podcasts]
+
+spec:
+  app: audiobookshelf
+  ctid: 5112
+  cores: 2
+  memory: 2048           # MB — Node app + FFmpeg transcode/probe
+  disk: 8                # GB — app + SQLite + metadata/cache; audiobooks live on /audiobooks (NFS)
+
+  mounts:
+    - type: nfs
+      storage: ds1813-nfs-volume-4
+      source: audiobooks                 # volume4 subpath only (public CT → minimal NAS view)
+      target: /audiobooks
+      acl: true
+      backup: false
+  hookscript: local:snippets/ensure-data-mount.sh   # pre-start guard: volume4 mounted or refuse to start

@@ -85,6 +85,10 @@ apps:
   tracearr:
     script: tracearr             # net-new; Plex/Jellyfin/Emby session monitoring (Tautulli replacement). No
                                  # provisioner — all-in-one install self-generates secrets; Plex link is a UI step.
+  shelfmark:
+    script: shelfmark            # net-new; ebook discovery/download (calibrain/CWA family). No provisioner (UI config).
+  audiobookshelf:
+    script: audiobookshelf       # net-new; audiobook/podcast server (native apps). No provisioner (libraries via UI).
 
   # Pangolin — SSO remote-access reverse proxy, the Teleport replacement (ADR-0007).
   # ct/pangolin.sh is a NATIVE systemd install (pinned upstream to 1.18.4). The

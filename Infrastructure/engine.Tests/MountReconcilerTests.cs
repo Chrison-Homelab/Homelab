@@ -79,6 +79,23 @@ public sealed class MountReconcilerTests
     }
 
     [Fact]
+    public async Task Reconciler_EnsuresPathBindSourceDir_GuardedAndBeforePctSet()
+    {
+        var exec = new FakeExec(cmd => cmd.Contains("pct config")
+            ? new ExecResult(0, "cores: 2", "")   // no mp0 → mount will be applied
+            : new ExecResult(0, "", ""));
+
+        var r = await new MountReconciler(exec).ReconcileAsync(SonarrLike());
+
+        Assert.Equal(ApplyOutcome.Applied, r.Outcome);
+        var mk = exec.Commands.Single(c => c.Contains("mkdir -p"));
+        Assert.Contains("mountpoint -q /mnt/pve/ds1813-nfs-volume-4", mk);   // guarded: only on a mounted export
+        Assert.Contains("mkdir -p /mnt/pve/ds1813-nfs-volume-4/data", mk);
+        Assert.True(exec.Commands.FindIndex(c => c.Contains("mkdir -p"))
+                  < exec.Commands.FindIndex(c => c.Contains("pct set")));   // dir exists before the bind
+    }
+
+    [Fact]
     public async Task Reconciler_SkipsAllocatedVolumeMount()
     {
         var s = new Shape { Metadata = new ShapeMetadata { Name = "forgejo" } };

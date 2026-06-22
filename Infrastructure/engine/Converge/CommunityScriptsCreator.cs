@@ -12,6 +12,15 @@ public sealed class CommunityScriptsCreator
     private readonly INodeExec _exec;
     public CommunityScriptsCreator(INodeExec exec) => _exec = exec;
 
+    // Default stdin answers for the rare community-scripts installs that prompt with a raw
+    // `read` and have no var_/unattended escape. shelfmark asks for a captcha-bypass
+    // "deployment type" — 1 = its internal bypasser (can be switched to the stack's
+    // FlareSolverr later via /etc/shelfmark/.env). Keyed by app so it never touches others.
+    private static readonly Dictionary<string, string> InstallStdin = new(StringComparer.Ordinal)
+    {
+        ["shelfmark"] = @"1\n",
+    };
+
     public async Task<bool> ExistsAsync(string node, string ctid, CancellationToken ct) =>
         (await _exec.OnNodeAsync(node, $"pct status {ctid}", ct)).Ok;
 
@@ -50,6 +59,12 @@ public sealed class CommunityScriptsCreator
         var gitref = sp.Source?.Ref ?? "main";
         var url = $"https://raw.githubusercontent.com/{repo}/{gitref}/ct/{app}.sh";
         var cmd = $"TERM=xterm mode=generated {vars} bash -c \"$(curl -fsSL {url})\"";
+
+        // A few community-scripts installs prompt with a raw `read` under `set -e` and have
+        // no unattended/env escape, so they abort on EOF over non-interactive SSH. Feed the
+        // default answer(s) on stdin (app-scoped — never applied to scripts that don't read).
+        if (InstallStdin.TryGetValue(app, out var answers))
+            cmd = $"printf '{answers}' | {cmd}";
 
         var res = await _exec.OnNodeAsync(node, cmd, ct);
         return res.Ok ? ApplyResult.Applied($"created CT {ctid} ({app}, {channel})")
