@@ -173,4 +173,20 @@ public sealed class CloudflareApi
         var body = new StringContent(json, Encoding.UTF8, "application/json");
         await ResultAsync(await _http.PostAsync($"accounts/{accountId}/access/apps/{appId}/policies", body, ct), ct);
     }
+
+    // A `bypass` policy: requests from the given IP CIDRs skip authentication entirely
+    // (no OTP) — used to exempt a trusted static IP (e.g. home) from the gate. The app's
+    // OWN login (Proxmox/PDM/Pangolin/Seerr) still applies; this only drops the CF layer.
+    // ADD-ONLY: a new named policy alongside the allow policy; callers check existence first.
+    public async Task CreateAccessBypassIpPolicyAsync(string accountId, string appId, string policyName, IReadOnlyList<string> cidrs, CancellationToken ct)
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            name = policyName,
+            decision = "bypass",
+            include = cidrs.Select(c => new { ip = new { ip = c } }).ToArray(),
+        });
+        var body = new StringContent(json, Encoding.UTF8, "application/json");
+        await ResultAsync(await _http.PostAsync($"accounts/{accountId}/access/apps/{appId}/policies", body, ct), ct);
+    }
 }

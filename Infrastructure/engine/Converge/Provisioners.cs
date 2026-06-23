@@ -285,11 +285,12 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
         // One-Time PIN (no other IdP). Driven by config.access.allow; empty → no gating.
         // App is keyed by domain + policy by name, so this is find-or-create (re-run safe).
         var allowEmails = ParseAccessAllow(s.Spec.Config);
+        var bypassIps = ParseAccessBypass(s.Spec.Config);    // config.access.bypass — IP CIDRs that skip OTP
         var publicHosts = ParsePublicHosts(s.Spec.Config);   // ingress entries with public: true
         var gated = 0;
         foreach (var (host, _, _) in ingress)
         {
-            if (allowEmails.Count == 0) break;
+            if (allowEmails.Count == 0 && bypassIps.Count == 0) break;
             // public: true → DNS + tunnel routing but NO Access gate (e.g. audiobookshelf,
             // whose native mobile apps can't do One-Time PIN; it carries its own auth).
             if (publicHosts.Contains(host)) continue;
@@ -299,9 +300,16 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
                 appId = await api.CreateAccessAppAsync(zone.AccountId, $"{host.Split('.')[0]} (Media)", host, "24h", ct);
                 gated++;
             }
-            if (!await api.AccessPolicyExistsAsync(zone.AccountId, appId, AccessPolicyName, ct))
+            if (allowEmails.Count > 0 && !await api.AccessPolicyExistsAsync(zone.AccountId, appId, AccessPolicyName, ct))
             {
                 await api.CreateAccessAllowEmailPolicyAsync(zone.AccountId, appId, AccessPolicyName, allowEmails, ct);
+                gated++;
+            }
+            // Trusted-IP bypass (e.g. home static IP): skip OTP from there. The app's own
+            // login still applies. ADD-ONLY + idempotent by policy name.
+            if (bypassIps.Count > 0 && !await api.AccessPolicyExistsAsync(zone.AccountId, appId, BypassPolicyName, ct))
+            {
+                await api.CreateAccessBypassIpPolicyAsync(zone.AccountId, appId, BypassPolicyName, bypassIps, ct);
                 gated++;
             }
         }
@@ -337,6 +345,7 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
     }
 
     private const string AccessPolicyName = "allow-homelab-admins";
+    private const string BypassPolicyName = "bypass-trusted-ip";
 
     // Ingress hostnames flagged `public: true` — routed by the tunnel but deliberately
     // NOT placed behind the CF Access OTP gate (the app provides its own auth and/or has
@@ -362,6 +371,17 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
             foreach (var it in items)
                 if (it?.ToString() is { Length: > 0 } e) emails.Add(e);
         return emails;
+    }
+
+    // config.access.bypass — IP CIDRs whose requests skip the OTP gate entirely.
+    private static List<string> ParseAccessBypass(Dictionary<string, object?> c)
+    {
+        var cidrs = new List<string>();
+        if (c.TryGetValue("access", out var a) && a is System.Collections.IDictionary ad
+            && ad["bypass"] is IEnumerable<object> items)
+            foreach (var it in items)
+                if (it?.ToString() is { Length: > 0 } ip) cidrs.Add(ip);
+        return cidrs;
     }
 
     // Captures originRequest too (e.g. { noTLSVerify: true }) so a re-push (#165)
