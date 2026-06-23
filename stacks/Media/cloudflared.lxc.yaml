@@ -42,6 +42,9 @@ spec:
     # IdP these emails log in via One-Time PIN (same pattern as PDM/Proxmox).
     access:
       allow: [csimon@chrison.dev]
+      # Trusted home static IP — requests from here skip the OTP gate entirely (the app's
+      # own login still applies). ADD-ONLY: a `bypass-trusted-ip` policy alongside the allow.
+      bypass: [118.67.199.127/32]
     # Ingress is a TUNNEL-level property defined ONCE here. ONLY the user-facing apps
     # are routed; the admin UIs + flaresolverr are internal-only (not listed = not exposed).
     # Entries flagged `public: true` get DNS + routing only (no CF Access — app's own auth).
