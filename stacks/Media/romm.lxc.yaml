@@ -1,0 +1,47 @@
+# RomM — self-hosted ROM / emulation library (browse, manage, in-browser EmulatorJS
+# play). Net-new rebuild of the old hand-built CT 5012.
+#
+# community-scripts: ct/romm.sh (stable). Native install — MariaDB backend + Angie
+# (an nginx fork) reverse proxy serving the web UI on port 80. Admin account and
+# library scan are configured in the web UI on first boot → no converge provisioner.
+#
+# OS — Debian 13 (inherits the stack default). The earlier blocker (RomM's installer
+# pulled nginx + nginx-module-zip from nginx.org, which had no Trixie packages → APT
+# 100, CT auto-rolled back) is GONE: upstream reworked the script to use Angie's repo
+# (angie / angie-module-zip), whose apt line derives the codename dynamically, and the
+# script now defaults var_version=13. So 13 is the upstream-tested path — do NOT pin 12.
+#
+# Library on NFS: bind ONLY the volume4 `roms` subpath at RomM's library root
+# `/var/lib/romm/library/roms` (RomM scans <library>/roms/<platform>). Config, the
+# MariaDB store, cover-art/metadata cache and `bios/` stay on the CT's local disk.
+# Same pre-start guard as the *arr — refuse to start unless volume4 is mounted.
+#
+# EXPOSURE — INTERNAL-ONLY (no tunnel ingress). Reached over VLAN 1010 only; a ROM
+# library is deliberately kept off the public internet. Matches the post-#192 posture
+# (tunnel routes only seerr + audiobookshelf; everything else is internal). To expose
+# later, add an ingress entry in cloudflared.lxc.yaml (+ dependsOn: romm).
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: romm
+  stack: Media
+  tags: [emulation, roms]
+
+spec:
+  app: romm
+  ctid: 5110
+  cores: 2
+  memory: 4096           # MB — RomM (Python) + MariaDB + Angie
+  disk: 15               # GB — app + DB + cover-art/metadata cache; ROMs live on /…/library/roms (NFS)
+
+  mounts:
+    - type: nfs
+      storage: ds1813-nfs-volume-4
+      source: roms                       # volume4 subpath only (self-provisioned by MountReconciler)
+      target: /var/lib/romm/library/roms # RomM's library root scans roms/<platform>
+      acl: true
+      backup: false
+  hookscript: local:snippets/ensure-data-mount.sh   # pre-start guard: volume4 mounted or refuse to start
