@@ -91,6 +91,8 @@ apps:
     provisioner: shelfmark       # upsert /etc/shelfmark/.env: Prowlarr (live) + Hardcover metadata + ABS nav link
   audiobookshelf:
     script: audiobookshelf       # net-new; audiobook/podcast server (native apps). No provisioner (libraries via UI).
+  romm:
+    script: romm                 # net-new; ROM/emulation library (MariaDB + Angie, in-browser EmulatorJS). No provisioner (admin acct + library via UI).
 
   # Pangolin — SSO remote-access reverse proxy, the Teleport replacement (ADR-0007).
   # ct/pangolin.sh is a NATIVE systemd install (pinned upstream to 1.18.4). The
