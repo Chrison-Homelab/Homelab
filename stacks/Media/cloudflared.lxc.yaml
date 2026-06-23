@@ -45,11 +45,20 @@ spec:
     # Ingress is a TUNNEL-level property defined ONCE here. ONLY the user-facing apps
     # are routed; the admin UIs + flaresolverr are internal-only (not listed = not exposed).
     # Entries flagged `public: true` get DNS + routing only (no CF Access — app's own auth).
+    #
+    # ⚠ Origins are PINNED TO THE NEW-STACK IPs, not logical hostnames (Path B cutover).
+    # The old 5000-block fleet runs side-by-side and registers the SAME hostnames on
+    # VLAN 1010 (old seerr 5011 @10.10.48.42, old abs 5014 @10.10.162.226) — DNS lets the
+    # old CT win the `seerr`/`audiobookshelf` name, so `http://seerr:5055` resolved to OLD.
+    # Pinning the new IPs forces the tunnel to the new CTs regardless of the collision.
+    # DEPENDS ON DHCP reservations for these IPs (#13) — until reserved, a new lease on
+    # 5105/5112 would silently break this. Retiring the old fleet later lets this revert
+    # to logical names.
     ingress:
-      - { hostname: seerr.chrison.dev,          service: "http://seerr:5055" }
+      - { hostname: seerr.chrison.dev,          service: "http://10.10.15.6:5055" }   # new seerr CT 5105 (was http://seerr:5055 → old 5011)
       # audiobookshelf: PUBLIC/direct — native mobile apps can't do CF Access OTP, and it
       # carries its own account auth. public: true → routed, but NOT behind the Access gate.
-      - { hostname: audiobookshelf.chrison.dev, service: "http://audiobookshelf:13378", public: true }
+      - { hostname: audiobookshelf.chrison.dev, service: "http://10.10.182.200:13378", public: true }   # new abs CT 5112 (was http://audiobookshelf:13378 → old 5014)
   secrets:
     - name: tunnelToken
       valueFrom:
