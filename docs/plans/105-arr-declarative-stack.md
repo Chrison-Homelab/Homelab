@@ -21,6 +21,12 @@ radarr, bazarr, seerr, qbittorrent`, plus `flaresolverr`, `tracearr`, a `plex` C
 a `Plex-VM`) — but **none are captured in the IaC repo**. So #105 is greenfield *IaC*,
 not greenfield *apps*. There is no `Media`/`Arr` stack submodule yet.
 
+> **qBittorrent settings captured** (2026-06-25) at
+> [`docs/captured-config/qbittorrent/`](../captured-config/qbittorrent/README.md)
+> after a tracker **hit-and-run** near-miss. The 5104 rebuild must bake in the
+> explicit no-H&R seeding policy documented there (`ShareLimitAction=Stop`,
+> global ratio/seed-time limits unlimited) — don't rely on absent-key defaults.
+
 NFS today: Proxmox has `ds1813-nfs-volume-{1,2,3}` (Synology `192.168.179.11`). The
 current library lives on **volume3** (~radarr 1 TB, sonarr 1.8 TB). **volume4 (8 TB,
 unused) is NOT wired** — no Synology export, no Proxmox storage yet.
