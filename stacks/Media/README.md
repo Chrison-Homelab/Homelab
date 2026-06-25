@@ -58,9 +58,9 @@ export is **provisioned via SynoSharp** (reproducible IaC); register it as the P
 `ds1813-nfs-volume-4` (task #1). Wiring all of this at converge/deploy time = task #13.
 
 ```
-/data                        <- one NFS export, identical mount in every *arr CT
-├── torrents/{movies,tv}      <- qBittorrent writes here
-└── media/{movies,tv}         <- *arr import here; Plex reads here
+/data                                 <- one NFS export, identical mount in every *arr CT
+├── torrents/{movies,tv,prowlarr}     <- qBittorrent writes here (prowlarr/ = manual Search-tab grabs)
+└── media/{movies,tv}                 <- *arr import here; Plex reads here
 ```
 
 ## Deploying
