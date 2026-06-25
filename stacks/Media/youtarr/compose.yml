@@ -1,0 +1,70 @@
+# Youtarr — self-contained compose (no upstream repo clone needed).
+#
+# Mirrors github.com/DialmasterOrg/Youtarr docker-compose.yml, trimmed to the
+# bits we drive via .env. Both images are pulled (no build:), and every volume
+# is a data dir, so this runs standalone — see ../youtarr.lxc.yaml.
+#
+# Deploy on the youtarr LXC (CT 5113): see README.md. Run from /opt/youtarr so
+# the relative ./config, ./jobs, ./server/images, ./database resolve to the CT
+# local disk; YOUTUBE_OUTPUT_DIR (.env) points at the NFS mount /mnt/youtube.
+
+services:
+  youtarr-db:
+    image: mariadb:10.3
+    container_name: youtarr-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: ${DB_NAME:-youtarr}
+      MYSQL_TCP_PORT: ${DB_PORT:-3321}
+      MYSQL_CHARSET: utf8mb4
+      MYSQL_COLLATION: utf8mb4_unicode_ci
+    volumes:
+      - ./database:/var/lib/mysql
+    command: --port=${DB_PORT:-3321} --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --innodb-file-per-table=1 --innodb-large-prefix=ON
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-P", "${DB_PORT:-3321}", "-u", "root", "-p${DB_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  youtarr:
+    image: ${YOUTARR_IMAGE:-dialmaster/youtarr:latest}
+    container_name: youtarr
+    restart: unless-stopped
+    user: "${YOUTARR_UID:-0}:${YOUTARR_GID:-0}"
+    depends_on:
+      youtarr-db:
+        condition: service_healthy
+    environment:
+      IN_DOCKER_CONTAINER: 1
+      TZ: ${TZ:-Pacific/Auckland}
+      DB_HOST: youtarr-db
+      DB_PORT: ${DB_PORT:-3321}
+      DB_USER: root
+      DB_PASSWORD: ${DB_ROOT_PASSWORD}
+      DB_NAME: ${DB_NAME:-youtarr}
+      AUTH_ENABLED: ${AUTH_ENABLED:-true}
+      AUTH_PRESET_USERNAME: ${AUTH_PRESET_USERNAME:-}
+      AUTH_PRESET_PASSWORD: ${AUTH_PRESET_PASSWORD:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      YOUTUBE_OUTPUT_DIR: ${YOUTUBE_OUTPUT_DIR:?set YOUTUBE_OUTPUT_DIR in .env}
+      PLEX_URL: ${PLEX_URL:-}
+    ports:
+      - "${YOUTARR_HOST_PORT:-3087}:3011"
+    volumes:
+      - ${YOUTUBE_OUTPUT_DIR}:/usr/src/app/data
+      - ./server/images:/app/server/images
+      - ./config:/app/config
+      - ./jobs:/app/jobs
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "--output", "/dev/null", "http://localhost:3011/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  default:
+    name: youtarr-network
