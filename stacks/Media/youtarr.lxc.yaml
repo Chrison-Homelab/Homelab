@@ -1,0 +1,61 @@
+# Youtarr — self-hosted YouTube channel/playlist downloader that feeds Plex
+# (and Jellyfin/Emby/Kodi). Auto-downloads new videos from subscribed channels,
+# mirrors playlists, and triggers a Plex library refresh on import.
+#
+# ⚠ FIRST DOCKER-BASED MEMBER OF THIS STACK. Youtarr ships ONLY as container
+# images (no community-scripts ct/youtarr.sh exists, and there is no native
+# install). So unlike every other Media member (native community-scripts), this
+# CT is a thin Docker host: app: docker → ct/docker.sh installs Docker Engine,
+# then our own self-contained compose (youtarr/compose.yml) is layered on. The
+# upstream image is self-contained — only `image:` pulls, only data-dir volumes
+# — so we do NOT clone their repo; we ship a minimal compose + .env instead.
+# Keeps the footprint to one small LXC + two containers (app + bundled MariaDB).
+# See youtarr/README.md for the layer-on steps. This host is MEDIA-ONLY: don't
+# colocate unrelated Docker apps here. A heavier orchestrator (e.g. Komodo) is
+# out of scope for now — revisit only if a SECOND media Docker app lands.
+#
+# Docker needs nesting (and keyctl) on an unprivileged LXC — declared below;
+# ct/docker.sh also sets var_nesting itself on create.
+#
+# Library on NFS: bind ONLY the volume4 `youtube` subpath at /mnt/youtube
+# (self-provisioned by MountReconciler, like RomM's `roms`). compose points
+# YOUTUBE_OUTPUT_DIR there; Docker bind-mounts it into the container at
+# /usr/src/app/data. App state (config/jobs/server-images + the bundled MariaDB
+# store) stays on the CT local disk under /opt/youtarr. Same pre-start guard as
+# the *arr — refuse to start unless volume4 is mounted (it checks the export
+# root, so the `youtube` subpath is covered just like RomM's `roms`).
+#
+# EXPOSURE — INTERNAL-ONLY (no tunnel ingress). Reached over VLAN 1010 only; an
+# admin-only YouTube grabber stays off the public net. Matches the post-#192
+# posture (tunnel routes only seerr + audiobookshelf). To expose later, add an
+# ingress entry in cloudflared.lxc.yaml (+ dependsOn: youtarr) and gate with CF
+# Access — note plain-HTTP Youtarr is LAN/VPN-only by design.
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: youtarr
+  stack: Media
+  tags: [youtube, plex, docker]
+
+spec:
+  app: docker            # community-scripts slug → ct/docker.sh (Docker Engine host)
+  ctid: 5113
+  cores: 2
+  memory: 2048           # MB — Docker daemon + Node app + bundled MariaDB; bump if downloads are heavy
+  disk: 15               # GB — Docker image layers + MariaDB store + config/jobs; videos live on /mnt/youtube (NFS)
+
+  features:
+    nesting: true        # required: Docker-in-LXC
+    keyctl: true         # Docker/containerd keyring ops on unprivileged LXC
+
+  mounts:
+    - type: nfs
+      storage: ds1813-nfs-volume-4
+      source: youtube                    # volume4 subpath only (self-provisioned by MountReconciler)
+      target: /mnt/youtube               # compose YOUTUBE_OUTPUT_DIR → container /usr/src/app/data
+      acl: true
+      backup: false
+  hookscript: local:snippets/ensure-data-mount.sh   # pre-start guard: volume4 mounted or refuse to start
