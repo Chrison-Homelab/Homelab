@@ -15,10 +15,14 @@ public sealed class CommunityScriptsCreator
     // Default stdin answers for the rare community-scripts installs that prompt with a raw
     // `read` and have no var_/unattended escape. shelfmark asks for a captcha-bypass
     // "deployment type" — 1 = its internal bypasser (can be switched to the stack's
-    // FlareSolverr later via /etc/shelfmark/.env). Keyed by app so it never touches others.
+    // FlareSolverr later via /etc/shelfmark/.env). docker asks three add-on questions
+    // (Portainer UI → Portainer Agent → expose Docker TCP socket) — decline all three;
+    // the docker-ce install includes the compose plugin regardless. Keyed by app so it
+    // never touches others.
     private static readonly Dictionary<string, string> InstallStdin = new(StringComparer.Ordinal)
     {
         ["shelfmark"] = @"1\n",
+        ["docker"] = @"n\nn\nn\n",
     };
 
     public async Task<bool> ExistsAsync(string node, string ctid, CancellationToken ct) =>
