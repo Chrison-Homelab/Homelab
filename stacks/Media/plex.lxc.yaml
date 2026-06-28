@@ -1,0 +1,64 @@
+# Plex — media server. ADOPTED, NOT REBUILT.
+#
+# Unlike every other member of this stack, Plex is the PRE-EXISTING hand-built
+# legacy CT 5008 (5000-block), kept "as-is" per ADR-0006 (§ "Plex stays as-is").
+# We are NOT recreating it — we are bringing the ONE thing it needs from the new
+# stack into IaC: read access to the shared volume4 media library that the *arr
+# now write into. Converge treats this shape as an UPDATE-ONLY adoption:
+#   - CommunityScriptsCreator.EnsureAsync  → NO-OP (CT 5008 already exists)
+#   - CtConfigReconciler                   → only reconciles fields we DECLARE;
+#       we deliberately OMIT cores/memory so Plex's resources are left untouched
+#   - (no `plex` provisioner)              → no app-level provisioning runs
+#   - MountReconciler                      → applies the mount + hookscript below
+#
+# ctid 5008 sits OUTSIDE this stack's 5100–5199 range ON PURPOSE: it's the adopted
+# legacy member, not a new allocation. The range guard is for NEW members only.
+#
+# ── Library on NFS (read-only, minimal view) ─────────────────────────────────
+# The *arr import into volume4 `data/media/{movies,tv}` (the shared /data export's
+# `media/` subtree — see README "shared /data constraint"). Plex only ever READS
+# the library, so we bind ONLY that subtree, read-only:
+#     /mnt/pve/ds1813-nfs-volume-4/data/media  →  /data/media   (ro)
+# Path mirrors the *arr (`/data/media/...`) so library paths line up across the
+# stack; `ro=1` means Plex can never mutate the library; torrents/ stays invisible
+# to Plex (it's a publicly-reachable consumer — same minimal-view stance as
+# audiobookshelf). Same pre-start guard as the *arr: no NAS → refuse to start
+# (closes the rootfs-fill race; see snippets/ensure-data-mount.sh).
+#
+# ✓ IN SYNC WITH LIVE (verified 2026-06-25, `pct config 5008`): CT 5008 ALREADY
+#   carries this exact mount at mp0 + this hookscript, and cores/memory/tags match
+#   too — so converge is a VERIFIED NO-OP (drift-detector). MountReconciler renders
+#   mounts positionally (this single array → mp0) and SEMANTICALLY compares, so it
+#   matches the live mp0 and issues no `pct set`. This shape codifies the hand-wired
+#   state as IaC; it does not change the running container.
+#
+# NOT MANAGED by this adoption shape (left exactly as-is on the live CT): the iGPU
+#   passthrough for transcoding (dev0 /dev/dri/renderD128, dev1 /dev/dri/card1),
+#   the serial/tty lxc.mount.entry lines, the 2nd NIC (net1, dual-homed mid-migration),
+#   and `features: mount=nfs` (required for the bind). The reconcilers touch only
+#   mpN + hookscript + cores/memory/tags, so none of the above is disturbed.
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: plex
+  stack: Media
+  tags: [plex, media-server]
+
+spec:
+  app: plex
+  ctid: 5008             # ADOPTED legacy CT (5000-block) — see header; not a new 51xx member.
+  # cores/memory intentionally omitted → CtConfigReconciler leaves Plex's live
+  # resources (2 cores / 2 GB) untouched. This shape only adds the media mount.
+
+  mounts:
+    - type: nfs
+      storage: ds1813-nfs-volume-4   # references the storage → ordered on activation
+      source: data/media             # volume4 `data/media` subtree only (read-only consumer)
+      target: /data/media            # mirrors the *arr's /data/media/{movies,tv}
+      ro: true                       # Plex reads the library; never writes it
+      acl: true                      # honor the export's setgid + default group ACLs
+      backup: false                  # data lives on the NAS; keep out of vzdump
+  hookscript: local:snippets/ensure-data-mount.sh   # pre-start guard: volume4 mounted or refuse to start
