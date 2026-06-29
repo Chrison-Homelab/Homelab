@@ -28,12 +28,12 @@ CTID block **5100–5199** (declared in [`stack.yaml`](stack.yaml); members inhe
 | 5111 | [shelfmark](shelfmark.lxc.yaml) | *(internal-only)* | — | `books`‡ | ✅ |
 | 5112 | [audiobookshelf](audiobookshelf.lxc.yaml) | `audiobookshelf` | direct (own auth) | `audiobooks`‡ | ✅ |
 | 5113 | [youtarr](youtarr.lxc.yaml) | *(internal-only)* | — | `youtube`‡ | ✅ |
-| 5008 | [plex](plex.lxc.yaml) | `plex` (direct) | direct (own auth) | `data/media` (ro)§ | adopted |
+| 5008 | [plex](plex.lxc.yaml) | `plex` (direct) | direct (own auth) | `data/media` + `youtube` (ro)§ | adopted |
 
 † Auth is **deferred to stage 2** (CF Access OTP vs Pangolin/ADR-0007 — decided later); the shapes/tunnel ship first.
 Post-#192 the tunnel routes **only** `seerr` + `audiobookshelf`; the *arr admin UIs are internal-only.
 ‡ Binds a **non-`/data`** volume4 subpath (e.g. `roms`/`books`/`audiobooks`/`youtube`) at its own library path, not the shared `/data` export.
-§ **plex (5008) is ADOPTED, not rebuilt** — the pre-existing legacy CT (5000-block, outside the 5100 range on purpose). Its shape is **update-only**: converge no-ops creation and only adds a **read-only** bind of the `data/media` subtree (`/data/media`) so Plex serves the shared library the *arr write into. See [`plex.lxc.yaml`](plex.lxc.yaml).
+§ **plex (5008) is ADOPTED, not rebuilt** — the pre-existing legacy CT (5000-block, outside the 5100 range on purpose). Its shape is **update-only**: converge no-ops creation and only adds **read-only** binds of the `data/media` subtree (`/data/media`, the shared *arr library) and the `youtube` subpath (`/data/youtube`, Youtarr's downloads from CT 5113) so Plex serves both. See [`plex.lxc.yaml`](plex.lxc.yaml).
 
 > **5113 (youtarr) is the stack's first Docker-based member** — no `ct/youtarr.sh`
 > exists, so it's a thin Docker host (`app: docker` → `ct/docker.sh`) with a
