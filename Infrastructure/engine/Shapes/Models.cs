@@ -24,6 +24,10 @@ public sealed class LxcSpec
 {
     public string? Node { get; set; }
     public string? App { get; set; }
+    // Post-create provisioner override. The CT is CREATED via `app` (ct/<app>.sh), but the
+    // post-create provisioner is dispatched by `provisioner ?? app`. Lets a generic Docker
+    // host (app: docker) carry a rich app provisioner (e.g. pangolin) — see ADR-0007 / #168.
+    public string? Provisioner { get; set; }
     public SourceSpec? Source { get; set; }
     public string? Ctid { get; set; }            // int or the literal "auto"
 

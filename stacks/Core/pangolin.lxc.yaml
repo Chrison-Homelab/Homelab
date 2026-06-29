@@ -30,6 +30,7 @@ metadata:
 
 spec:
   app: docker            # community-scripts slug → ct/docker.sh (Docker Engine host)
+  provisioner: pangolin  # post-create dispatched to PangolinProvisioner (not the docker default)
   ctid: 2013             # NEW CT, side-by-side with the legacy native CT 2012 (retired last)
   node: nuc-01           # single instance (not HA — replica of an IdP buys little);
                          # lands on nuc-01, Teleport's old home, which it supersedes.
