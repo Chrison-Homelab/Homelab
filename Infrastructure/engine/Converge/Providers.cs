@@ -171,6 +171,18 @@ public sealed class CloudflareApi
         await ResultAsync(await _http.PostAsync($"zones/{zoneId}/dns_records", body, ct), ct);
     }
 
+    // Grey-cloud (DNS-only, proxied:false) A record — for the *.lab / *.arr wildcard
+    // zones that point straight at the home WAN IP (ADR-0007). proxied MUST be false:
+    // an orange-cloud record would hand TLS back to Cloudflare and re-impose its
+    // one-level wildcard limit. Carries the ManagedComment so #195's prune ignores it.
+    public async Task CreateARecordAsync(string zoneId, string fqdn, string ip, CancellationToken ct)
+    {
+        var body = new StringContent(
+            $"{{\"type\":\"A\",\"name\":\"{fqdn}\",\"content\":\"{ip}\",\"proxied\":false,\"comment\":\"{ManagedComment}\"}}",
+            Encoding.UTF8, "application/json");
+        await ResultAsync(await _http.PostAsync($"zones/{zoneId}/dns_records", body, ct), ct);
+    }
+
     // --- Cloudflare Access (Zero Trust) gating — ADD-ONLY (callers check first) ---
     // A self-hosted Access application keyed by its `domain`, plus an allow-by-email
     // policy. With no other IdP configured these emails authenticate via One-Time PIN.
