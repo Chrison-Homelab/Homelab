@@ -551,6 +551,7 @@ public sealed class ConvergeCoreTests
         var compose = PangolinProvisioner.BuildComposeYaml(PangolinWildcardShape());
         Assert.Contains("image: fosrl/pangolin:ee-1.19.4", compose);
         Assert.Contains("image: traefik:v3.6", compose);
+        Assert.Contains("127.0.0.1:3003:3003", compose);   // integration API on CT-localhost (resource reconcile)
         Assert.Contains("- 443:443", compose);          // traefik publishes :443 itself
         Assert.Contains("http://localhost:3001/api/v1/", compose); // pangolin healthcheck
         Assert.DoesNotContain("gerbil", compose);       // WireGuard off by default
@@ -604,12 +605,31 @@ public sealed class ConvergeCoreTests
             PangolinWildcardShape(), "abc123", "pangolin.chrison.dev",
             "https://pangolin.chrison.dev", "chrison.dev", "cf-token-xyz");
         Assert.Contains("docker compose up -d", cmd);
+        Assert.Contains("get.docker.com", cmd);               // installs Docker on the plain debian CT
+        Assert.Contains("command -v docker", cmd);            // idempotent guard
         Assert.Contains("base64 -d > compose.yml", cmd);
         Assert.Contains("base64 -d > config/traefik/traefik_config.yml", cmd);
         Assert.Contains("base64 -d > .env", cmd);
         Assert.Contains("openssl rand", cmd);                  // server.secret generate-or-preserve
         Assert.Contains("# homelab-managed: abc123", cmd);     // config.yml marker (heredoc, not base64)
         Assert.Contains("cert_resolver: \"letsencrypt\"", cmd);
+        // mark-on-SUCCESS: the marker file is the LAST line, after `docker compose up -d`
+        var composeUp = cmd.IndexOf("docker compose up -d", StringComparison.Ordinal);
+        var markerWrite = cmd.IndexOf("/opt/pangolin/.homelab-managed", StringComparison.Ordinal);
+        Assert.True(composeUp >= 0 && markerWrite > composeUp, "marker must be written after compose up");
+    }
+
+    [Theory]
+    [InlineData("true", true)]
+    [InlineData("false", false)]
+    [InlineData("True", true)]
+    [InlineData("42", 42L)]
+    [InlineData("http://x", "http://x")]
+    public void CoerceScalar_MapsYamlStringsToJsonTypes(string input, object expected)
+    {
+        // YamlDotNet hands scalars as strings; noTLSVerify:true must serialize as a bool,
+        // not "true" (else Cloudflare's ingress push 400s with code 1056).
+        Assert.Equal(expected, CloudflaredProvisioner.CoerceScalar(input));
     }
 
     // ---- CloudflaredProvisioner declarative reconcile / prune (#195) -------
