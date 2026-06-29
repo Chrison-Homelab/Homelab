@@ -65,7 +65,7 @@ spec:
   config:
     dashboardUrl: https://pangolin.chrison.dev   # dashboard stays on the core CF tunnel (plain :80)
     baseDomain: chrison.dev
-    org: chrison                                 # Pangolin org id — resources are created under it
+    org: chrison-dev                             # Pangolin org id (the slug, not the display name) — resources created under it
 
     # EDGE MODE — public-wildcard (ADR-0007 end state): Traefik OWNS public :443 and mints
     # LE wildcard certs via the DNS-01 challenge (Cloudflare) for the zones below. (The
