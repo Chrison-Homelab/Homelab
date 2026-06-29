@@ -35,22 +35,31 @@ public sealed class PowerLoop(
             logger.LogWarning("DRY-RUN: automatic policy will only log decisions, never act. Manual commands still act.");
 
         using var timer = new PeriodicTimer(options.PollInterval);
-        do
+        try
         {
-            try
+            do
             {
-                await PollOnceAsync(stoppingToken).ConfigureAwait(false);
+                // Transient per-cycle failures are logged and retried; cancellation propagates
+                // out to the outer catch so shutdown exits cleanly.
+                try
+                {
+                    await PollOnceAsync(stoppingToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogError(ex, "poll cycle failed; will retry next tick");
+                }
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "poll cycle failed; will retry next tick");
-            }
+            // WaitForNextTickAsync throws OCE when the host is stopping — catch it below, not as
+            // an unhandled exception escaping the while-condition.
+            while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false));
         }
-        while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false));
+        catch (OperationCanceledException)
+        {
+            // graceful shutdown
+        }
+
+        logger.LogInformation("PowerLoop stopped");
     }
 
     private async Task PollOnceAsync(CancellationToken ct)

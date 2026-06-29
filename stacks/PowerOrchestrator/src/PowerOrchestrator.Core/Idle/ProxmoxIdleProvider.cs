@@ -16,6 +16,14 @@ public sealed class ProxmoxIdleProvider(ProxmoxApiClientFactory clientFactory, I
         IEnumerable<string> managedNodes, CancellationToken ct = default)
     {
         var client = clientFactory();
+        if (client is null)
+        {
+            // No Proxmox creds — degrade gracefully rather than throwing every poll. Reporting
+            // offline is safe: the policy treats away+offline as NoOp, never a spurious action.
+            logger.LogWarning("No Proxmox credentials; reporting managed nodes as offline.");
+            return managedNodes.Select(n => new NodeState(n, IsOnline: false, RunningGuests: 0)).ToList();
+        }
+
         var snapshot = await new ProxmoxDiscovery(client).DiscoverAsync(ct).ConfigureAwait(false);
 
         var result = new List<NodeState>();
@@ -45,7 +53,8 @@ public sealed class ProxmoxIdleProvider(ProxmoxApiClientFactory clientFactory, I
 }
 
 /// <summary>
-/// Factory for a fresh ProxmoxApiClient. A delegate (not a singleton client) so a transient
-/// auth/TLS failure on one poll doesn't poison every subsequent poll.
+/// Factory for a fresh ProxmoxApiClient, or null when no Proxmox credentials are configured.
+/// A delegate (not a singleton client) so a transient auth/TLS failure on one poll doesn't
+/// poison every subsequent poll.
 /// </summary>
-public delegate ProxmoxApiClient ProxmoxApiClientFactory();
+public delegate ProxmoxApiClient? ProxmoxApiClientFactory();

@@ -49,10 +49,13 @@ builder.Services.AddSingleton(options);
 builder.Services.AddSingleton<OrchestratorState>();
 builder.Services.AddSingleton<Telemetry>();
 builder.Services.AddSingleton<Func<ProxmoxClientOptions?>>(LoadPve);
+// Null when creds are absent — the idle provider degrades to "offline" rather than throwing,
+// and SleepAsync refuses (won't poweroff without the ability to stop guests first).
 builder.Services.AddSingleton<ProxmoxApiClientFactory>(() =>
-    ProxmoxApi.Create(LoadPve()
-        ?? throw new InvalidOperationException(
-            "Proxmox credentials missing (PROXMOX_BASE_URL / PROXMOX_TOKEN_ID / PROXMOX_TOKEN_SECRET).")));
+{
+    var pve = LoadPve();
+    return pve is null ? null : ProxmoxApi.Create(pve);
+});
 builder.Services.AddSingleton(new SshExec(options.SshUser, options.SshKeyPath));
 builder.Services.AddSingleton<NodePowerController>();
 builder.Services.AddSingleton<ProxmoxIdleProvider>();

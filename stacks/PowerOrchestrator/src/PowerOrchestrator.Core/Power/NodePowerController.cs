@@ -36,7 +36,15 @@ public sealed class NodePowerController(
     /// <summary>Gracefully stop the node's guests, then power the host off. Returns guests stopped.</summary>
     public async Task<int> SleepAsync(string node, CancellationToken ct = default)
     {
-        var stopped = await StopGuestsAsync(node, ct).ConfigureAwait(false);
+        // Refuse to sleep when we can't gracefully stop guests first: a bare host poweroff on a
+        // mis-configured (no-creds) install risks killing running guests / data loss. Wake needs
+        // no creds, but sleep does.
+        var pve = pveFactory()
+            ?? throw new InvalidOperationException(
+                $"refusing to sleep {node}: no Proxmox credentials to gracefully stop guests first " +
+                "(set PROXMOX_BASE_URL / PROXMOX_TOKEN_ID / PROXMOX_TOKEN_SECRET).");
+
+        var stopped = await StopGuestsAsync(node, pve, ct).ConfigureAwait(false);
 
         var host = ResolveAddress(node);
         logger.LogInformation("poweroff {Node} ({Host}) — {Stopped} guest(s) stopped", node, host, stopped);
@@ -52,17 +60,8 @@ public sealed class NodePowerController(
         return stopped;
     }
 
-    private async Task<int> StopGuestsAsync(string node, CancellationToken ct)
+    private async Task<int> StopGuestsAsync(string node, ProxmoxClientOptions pve, CancellationToken ct)
     {
-        var pve = pveFactory();
-        if (pve is null)
-        {
-            logger.LogWarning(
-                "No Proxmox credentials; skipping graceful guest shutdown for {Node} (host poweroff will stop them).",
-                node);
-            return 0;
-        }
-
         var snapshot = await new ProxmoxDiscovery(ProxmoxApi.Create(pve)).DiscoverAsync(ct).ConfigureAwait(false);
         var target = snapshot.Nodes.FirstOrDefault(n =>
             string.Equals(n.Node, node, StringComparison.OrdinalIgnoreCase));
