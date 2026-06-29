@@ -487,6 +487,25 @@ public sealed class ConvergeCoreTests
         Assert.NotEqual(PangolinProvisioner.DesiredMarker(a), PangolinProvisioner.DesiredMarker(b));
     }
 
+    // ---- Provisioner override dispatch (#168: docker host + pangolin provisioner) --
+
+    [Fact]
+    public void Registry_DispatchesByProvisionerOverride_ElseApp()
+    {
+        var reg = ProvisionerRegistry.Default();
+        // app: docker + provisioner: pangolin → PangolinProvisioner (the create path still
+        // uses ct/docker.sh via app, but post-create is dispatched by the override).
+        var s = Lxc("pangolin", "2013");
+        s.Spec.App = "docker";
+        s.Spec.Provisioner = "pangolin";
+        Assert.Equal("pangolin", reg.For(s.Spec.Provisioner ?? s.Spec.App).App);
+
+        // No override → dispatch by app (docker has no provisioner → DefaultProvisioner "*").
+        var y = Lxc("youtarr", "5113");
+        y.Spec.App = "docker";
+        Assert.Equal("*", reg.For(y.Spec.Provisioner ?? y.Spec.App).App);
+    }
+
     // ---- PangolinProvisioner Docker-EE public-wildcard (#168 / ADR-0007) --
 
     private static Shape PangolinWildcardShape()

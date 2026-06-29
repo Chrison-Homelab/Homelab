@@ -453,6 +453,7 @@
       "properties": {
         "node": { "type": "string", "description": "Target Proxmox node (e.g. 'desktop-01'). Required to deploy; may be inherited from the stack's defaults." },
         "app": { "type": "string", "description": "community-scripts slug selecting ct/<app>.sh (e.g. 'forgejo', 'forgejo-runner', 'github-runner', 'docker', 'debian'). Required for the community-scripts create path." },
+        "provisioner": { "type": "string", "description": "Post-create provisioner override. The CT is CREATED via 'app' (ct/<app>.sh) but the post-create provisioner is dispatched by 'provisioner' instead — lets a generic Docker host (app: docker) run a rich app provisioner (e.g. 'pangolin'). Defaults to 'app' when omitted." },
         "source": { "$ref": "#/$defs/source" },
         "ctid": {
           "description": "Container ID. REQUIRED — omission is an error (no silent allocation). Use an integer (the norm; validated to fall within the owning stack's ctidRange), or the literal 'auto' to draw the next free ID from the stack range (the rare, explicit exception).",

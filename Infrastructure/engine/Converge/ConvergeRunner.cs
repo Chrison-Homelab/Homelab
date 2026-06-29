@@ -99,7 +99,7 @@ public sealed class ConvergeRunner
                 Console.WriteLine($"    secret {mark} {r.Name}: {r.Description}");
             }
 
-            foreach (var step in registry.For(sp.App).PlanSteps(s))
+            foreach (var step in registry.For(sp.Provisioner ?? sp.App).PlanSteps(s))
                 Console.WriteLine($"    post-create: {step}");
 
             Console.WriteLine();
@@ -244,7 +244,7 @@ public sealed class ConvergeRunner
 
             try
             {
-                var result = await registry.For(sp.App).ApplyAsync(s, ctx);
+                var result = await registry.For(sp.Provisioner ?? sp.App).ApplyAsync(s, ctx);
                 Console.WriteLine($"    {result.Outcome.ToString().ToUpperInvariant()}: {result.Message}");
                 switch (result.Outcome)
                 {
