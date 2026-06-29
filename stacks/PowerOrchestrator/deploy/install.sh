@@ -55,10 +55,10 @@ grep -q '^ASPNETCORE_URLS=' "$ENV_TMP" || echo 'ASPNETCORE_URLS=http://0.0.0.0:8
 
 echo "==> Installing to ${USER}@${HOST}:${TARGET}"
 $SSH "mkdir -p ${TARGET}"
-scp -q "$PUBLISH_DIR/power-orchestrator" "${USER}@${HOST}:${TARGET}/power-orchestrator"
-# appsettings.json ships alongside the single-file binary (not embedded) — without it the
-# service falls back to default logging levels.
-scp -q "$PUBLISH_DIR/appsettings.json" "${USER}@${HOST}:${TARGET}/appsettings.json"
+# Sync the whole publish output, not just the binary: appsettings.json (logging config) and the
+# Blazor static-asset manifest (power-orchestrator.staticwebassets.endpoints.json) + wwwroot ship
+# alongside the single-file binary and are needed at runtime for the web dashboard.
+scp -rq "$PUBLISH_DIR/." "${USER}@${HOST}:${TARGET}/"
 scp -q "$HERE/power-orchestrator.service" "${USER}@${HOST}:/etc/systemd/system/power-orchestrator.service"
 scp -q "$ENV_TMP" "${USER}@${HOST}:${TARGET}/power-orchestrator.env"
 

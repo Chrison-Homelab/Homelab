@@ -77,6 +77,9 @@ else
 
 builder.Services.AddHostedService<PowerLoop>();
 
+// Blazor web dashboard (PR2) — control + monitor UI on the same host.
+builder.Services.AddRazorComponents().AddInteractiveServerComponents();
+
 // --- OpenTelemetry → OTLP collector (stacks/monitoring). Only export when an endpoint is set,
 //     so local dry-runs don't spam connection errors. ---
 var otlpEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
@@ -103,7 +106,11 @@ var app = builder.Build();
 // Force the Telemetry singleton to construct now so its observable gauges register at startup.
 _ = app.Services.GetRequiredService<Telemetry>();
 
+app.UseAntiforgery();
+app.MapStaticAssets();
 app.MapStatusEndpoints();
 app.MapCommandEndpoints();
+app.MapRazorComponents<PowerOrchestrator.Service.Components.App>()
+    .AddInteractiveServerRenderMode();
 
 app.Run();

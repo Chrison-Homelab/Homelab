@@ -1,0 +1,182 @@
+@page "/"
+@rendermode InteractiveServer
+@implements IDisposable
+@inject OrchestratorState State
+@inject OrchestratorOptions Options
+@inject PowerActions Actions
+@inject ILogger<Dashboard> Logger
+
+<PageTitle>Node Power Orchestrator</PageTitle>
+
+<div class="wrap">
+    <div class="row" style="justify-content:space-between; align-items:flex-start">
+        <div>
+            <h1>Node Power Orchestrator</h1>
+            <p class="sub">
+                presence + idle → sleep/wake ·
+                @Options.SentinelNode sentinel ·
+                poll @((int)Options.PollInterval.TotalSeconds)s ·
+                debounce @((int)Options.AwayDebounce.TotalMinutes)m
+            </p>
+        </div>
+        <div class="card">
+            @if (report.Armed)
+            {
+                <span class="badge armed">ARMED</span>
+                <div class="reason">automatic policy acts</div>
+            }
+            else
+            {
+                <span class="badge dry">DRY-RUN</span>
+                <div class="reason">automatic policy only logs; manual buttons act</div>
+            }
+        </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+        <div class="kv">
+            <span class="k">Presence</span>
+            <span><span class="dot @(report.PresentCount > 0 ? "on" : "off")"></span>@(report.PresentCount > 0 ? $"{report.PresentCount} home" : "away")</span>
+        </div>
+        @if (report.PresentCount == 0 && report.AwaySince is { } since)
+        {
+            <div class="kv"><span class="k">Away since</span><span class="mono">@since.ToLocalTime().ToString("HH:mm:ss")</span></div>
+        }
+        @if (Options.PresenceMacs.Count == 0)
+        {
+            <div class="reason">No presence MACs configured (<span class="mono">ORCH_PRESENCE_MACS</span>) — treated as always away.</div>
+        }
+        <div class="kv"><span class="k">Last poll</span><span class="mono">@(report.LastPollUtc?.ToLocalTime().ToString("HH:mm:ss") ?? "—")</span></div>
+    </div>
+
+    <div class="row" style="margin-top:16px">
+        @foreach (var n in report.Nodes)
+        {
+            <div class="card grow">
+                <div class="kv">
+                    <strong><span class="dot @(n.Online ? "on" : "off")"></span>@n.Name</strong>
+                    <span class="muted">@(n.Online ? "online" : "asleep")</span>
+                </div>
+                <div class="kv"><span class="k">Running guests</span><span>@n.RunningGuests</span></div>
+                <div class="kv"><span class="k">Idle</span><span>@(n.Idle ? "yes" : "no")</span></div>
+                <div class="kv"><span class="k">Last decision</span><span>@n.LastDecision</span></div>
+                <div class="reason">@n.LastReason</div>
+                <div class="btns">
+                    <button class="wake" @onclick="() => Wake(n.Name)" disabled="@busy">Wake</button>
+                    @if (!string.Equals(n.Name, Options.SentinelNode, StringComparison.OrdinalIgnoreCase))
+                    {
+                        <button class="sleep" @onclick="() => AskSleep(n.Name)" disabled="@busy">Sleep…</button>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="card" style="margin-top:16px">
+        <div class="kv">
+            <strong>Automatic sleep</strong>
+            <button @onclick="TryArm" disabled="@(busy || !canArm)">Arm</button>
+        </div>
+        @if (!canArm)
+        {
+            <div class="reason">Blocked by #191 preconditions:</div>
+            @foreach (var p in report.ArmPreconditions.Where(p => !p.Met))
+            {
+                <div class="pre"><strong>@p.Name</strong> — @p.Detail</div>
+            }
+        }
+    </div>
+
+    @if (confirmSleepNode is not null)
+    {
+        <div class="card" style="margin-top:16px; border-color: var(--bad)">
+            <strong>Sleep @confirmSleepNode?</strong>
+            <div class="reason">Gracefully stops its guests, then powers the host off. It won't return until woken (WoL).</div>
+            <div class="btns">
+                <button class="sleep" @onclick="ConfirmSleep" disabled="@busy">Yes, sleep @confirmSleepNode</button>
+                <button @onclick="() => confirmSleepNode = null" disabled="@busy">Cancel</button>
+            </div>
+        </div>
+    }
+</div>
+
+@if (toast is not null)
+{
+    <div class="toast">@toast</div>
+}
+
+@code {
+    private StatusReport report = default!;
+    private bool busy;
+    private bool canArm;
+    private string? confirmSleepNode;
+    private string? toast;
+    private Timer? refreshTimer;
+    private Timer? toastTimer;
+
+    protected override void OnInitialized()
+    {
+        Refresh();
+        // Live status: re-read the shared state every 3s (the background loop owns the writes).
+        refreshTimer = new Timer(_ => InvokeAsync(() => { Refresh(); StateHasChanged(); }), null, 3000, 3000);
+    }
+
+    private void Refresh()
+    {
+        report = State.Current;
+        canArm = ArmGuard.CanArm(out _);
+    }
+
+    private Task Wake(string node) => Run($"WoL sent to {node}", () => Actions.WakeAsync(node, "manual"));
+
+    private void AskSleep(string node) => confirmSleepNode = node;
+
+    private Task ConfirmSleep()
+    {
+        var node = confirmSleepNode!;
+        confirmSleepNode = null;
+        return Run($"Sleeping {node}…", () => Actions.SleepAsync(node, "manual"));
+    }
+
+    private void TryArm()
+    {
+        Flash(ArmGuard.CanArm(out var unmet)
+            ? "Preconditions met — set ORCH_ARMED=true and restart to arm."
+            : $"Cannot arm: {unmet.Count} precondition(s) unmet.");
+    }
+
+    private async Task Run(string okMessage, Func<Task> action)
+    {
+        busy = true;
+        StateHasChanged();
+        try
+        {
+            await action();
+            Flash(okMessage);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "dashboard action failed");
+            Flash($"Error: {ex.Message}");
+        }
+        finally
+        {
+            busy = false;
+            Refresh();
+        }
+    }
+
+    private void Flash(string message)
+    {
+        toast = message;
+        toastTimer?.Dispose();
+        toastTimer = new Timer(_ => InvokeAsync(() => { toast = null; StateHasChanged(); }), null, 4000, Timeout.Infinite);
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        refreshTimer?.Dispose();
+        toastTimer?.Dispose();
+    }
+}
