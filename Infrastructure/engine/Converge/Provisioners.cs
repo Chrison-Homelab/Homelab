@@ -222,11 +222,12 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
         }
         else
         {
-            yield return $"ensure tunnel '{tunnel}' + DNS exist (ADD-ONLY — never touch existing; CLAUDE.md)";
+            yield return $"ensure tunnel '{tunnel}' + DNS exist (hand-managed records untouched; CLAUDE.md)";
             yield return $"apply {ingressCount} ingress rule(s); install tunnel token; start cloudflared";
             var allow = ParseAccessAllow(s.Spec.Config);
             if (allow.Count > 0)
-                yield return $"ensure a CF Access OTP app per hostname (allow {string.Join(", ", allow)}) — ADD-ONLY";
+                yield return $"ensure a CF Access OTP app per gated hostname (allow {string.Join(", ", allow)})";
+            yield return "reconcile: prune our managed CNAMEs + Access apps that left the shape (#195)";
         }
     }
 
@@ -287,6 +288,9 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
         var allowEmails = ParseAccessAllow(s.Spec.Config);
         var bypassIps = ParseAccessBypass(s.Spec.Config);    // config.access.bypass — IP CIDRs that skip OTP
         var publicHosts = ParsePublicHosts(s.Spec.Config);   // ingress entries with public: true
+        // Access apps WE create are named "<sub> (<Stack>)" — the suffix scopes the prune
+        // (#195) to this stack's apps, never the hand-managed ones (e.g. Core's pdm/proxmox).
+        var stack = s.Metadata.Stack ?? "";
         var gated = 0;
         foreach (var (host, _, _) in ingress)
         {
@@ -297,7 +301,7 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
             var appId = await api.FindAccessAppIdAsync(zone.AccountId, host, ct);
             if (appId is null)
             {
-                appId = await api.CreateAccessAppAsync(zone.AccountId, $"{host.Split('.')[0]} (Media)", host, "24h", ct);
+                appId = await api.CreateAccessAppAsync(zone.AccountId, $"{host.Split('.')[0]} ({stack})", host, "24h", ct);
                 gated++;
             }
             if (allowEmails.Count > 0 && !await api.AccessPolicyExistsAsync(zone.AccountId, appId, AccessPolicyName, ct))
@@ -315,8 +319,26 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
         }
         var gateNote = allowEmails.Count > 0 ? $", {ingress.Count} host(s) Access-gated" : "";
 
-        // Idempotency (ADD-ONLY): tunnel + all DNS + active connector + gating + ingress in place → done.
-        if (tunnelId is not null && dnsPresent && svcActive && gated == 0 && !ingressDrift)
+        // Declarative reconcile (#195): a converge makes live CF state match the shape, so
+        // hostnames removed from the shape must not regress on the next run. ADD-ONLY still
+        // holds for HAND-managed resources — we only ever delete (a) a CNAME carrying OUR
+        // managed comment that points at THIS tunnel, and (b) an Access app WE named
+        // "<sub> (<Stack>)". Anything we didn't create (other comment / other name) is left
+        // alone. Decisions are pure (CnamesToPrune/AccessAppsToPrune) + tested; execution
+        // is deferred until after the desired state is in place, below.
+        var shapeHosts = ingress.Select(i => i.host).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var gatedHosts = ingress.Where(i => !publicHosts.Contains(i.host)).Select(i => i.host)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var cnamesToPrune = tunnelId is null
+            ? new List<CfDnsRecord>()
+            : CnamesToPrune(await api.ListCnamesAsync(zone.ZoneId, ct), tunnelId, shapeHosts);
+        var appsToPrune = tunnelId is null || string.IsNullOrEmpty(stack)
+            ? new List<CfAccessApp>()
+            : AccessAppsToPrune(await api.ListAccessAppsAsync(zone.AccountId, ct), $" ({stack})", gatedHosts);
+        var pruneCount = cnamesToPrune.Count + appsToPrune.Count;
+
+        // Idempotency: tunnel + all DNS + active connector + gating + ingress + nothing-to-prune → done.
+        if (tunnelId is not null && dnsPresent && svcActive && gated == 0 && !ingressDrift && pruneCount == 0)
             return ApplyResult.NoChange($"tunnel '{tunnelName}' + DNS present, cloudflared active{gateNote}");
 
         // (Re)provision the connector only when the tunnel is absent or not running —
@@ -340,12 +362,43 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
             if (!await api.DnsExistsAsync(zone.ZoneId, host, ct))
                 await api.CreateCnameAsync(zone.ZoneId, host, $"{tunnelId}.cfargotunnel.com", ct);
 
-        var changes = (gated > 0 ? $"; {gated} Access change(s)" : "") + (ingressDrift ? "; ingress re-pushed" : "");
+        // Prune what left the shape (decided read-only above) now the desired state is in place.
+        foreach (var rec in cnamesToPrune) await api.DeleteDnsRecordAsync(zone.ZoneId, rec.Id, ct);
+        foreach (var app in appsToPrune) await api.DeleteAccessAppAsync(zone.AccountId, app.Id, ct);
+
+        var changes = (gated > 0 ? $"; {gated} Access change(s)" : "") + (ingressDrift ? "; ingress re-pushed" : "")
+            + (pruneCount > 0 ? $"; pruned {cnamesToPrune.Count} CNAME(s) + {appsToPrune.Count} Access app(s)" : "");
         return ApplyResult.Applied($"tunnel '{tunnelName}' ensured ({ingress.Count} ingress){changes}");
     }
 
     private const string AccessPolicyName = "allow-homelab-admins";
     private const string BypassPolicyName = "bypass-trusted-ip";
+
+    // --- Pure prune decisions (#195) — no I/O, so the rules are unit-tested directly. ---
+
+    // CNAMEs to delete: ours (managed comment) AND pointing at THIS tunnel AND whose host
+    // is no longer in the shape's ingress. The comment + tunnel-content guard means a
+    // hand-managed record, or one of ours pointing at a DIFFERENT tunnel (e.g. a hostname
+    // migrated onto another stack's tunnel), is never touched — only true orphans go.
+    public static List<CfDnsRecord> CnamesToPrune(
+        IEnumerable<CfDnsRecord> live, string tunnelId, IReadOnlySet<string> shapeHosts)
+    {
+        var tunnelContent = $"{tunnelId}.cfargotunnel.com";
+        return live.Where(r =>
+            r.Comment == CloudflareApi.ManagedComment
+            && string.Equals(r.Content, tunnelContent, StringComparison.OrdinalIgnoreCase)
+            && !shapeHosts.Contains(r.Name)).ToList();
+    }
+
+    // Access apps to delete: ours (name ends with the stack suffix " (<Stack>)") AND whose
+    // domain is no longer a GATED shape host (an ingress host that isn't public: true). So
+    // removing a host from the shape, or flipping it to public, retires its Access app;
+    // hand-managed apps (different name) are never matched.
+    public static List<CfAccessApp> AccessAppsToPrune(
+        IEnumerable<CfAccessApp> live, string stackSuffix, IReadOnlySet<string> gatedHosts)
+        => live.Where(a =>
+            a.Name.EndsWith(stackSuffix, StringComparison.Ordinal)
+            && !gatedHosts.Contains(a.Domain)).ToList();
 
     // Ingress hostnames flagged `public: true` — routed by the tunnel but deliberately
     // NOT placed behind the CF Access OTP gate (the app provides its own auth and/or has
