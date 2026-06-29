@@ -25,12 +25,15 @@
 # audiobookshelf). Same pre-start guard as the *arr: no NAS → refuse to start
 # (closes the rootfs-fill race; see snippets/ensure-data-mount.sh).
 #
-# ✓ IN SYNC WITH LIVE (verified 2026-06-25, `pct config 5008`): CT 5008 ALREADY
-#   carries this exact mount at mp0 + this hookscript, and cores/memory/tags match
-#   too — so converge is a VERIFIED NO-OP (drift-detector). MountReconciler renders
-#   mounts positionally (this single array → mp0) and SEMANTICALLY compares, so it
-#   matches the live mp0 and issues no `pct set`. This shape codifies the hand-wired
-#   state as IaC; it does not change the running container.
+# PARTIAL SYNC WITH LIVE: CT 5008 already carries the data/media mount at mp0 + this
+#   hookscript (verified 2026-06-25, `pct config 5008`), so mp0 is a no-op. The NEW
+#   youtube mount (mp1) is the one change converge applies — a single `pct set --mp1`.
+#   MountReconciler renders mounts positionally (mp0=data/media, mp1=youtube) and
+#   SEMANTICALLY compares, so mp0 matches live and only mp1 is set. It issues no
+#   restart, so the running container is not bounced (the bind activates immediately
+#   if Proxmox can hotplug it, else on Plex's next start). PRECONDITION: mp1 must be
+#   free on the live CT — verified before apply so the `pct set` can't clobber an
+#   existing mountpoint.
 #
 # NOT MANAGED by this adoption shape (left exactly as-is on the live CT): the iGPU
 #   passthrough for transcoding (dev0 /dev/dri/renderD128, dev1 /dev/dri/card1),
@@ -59,6 +62,17 @@ spec:
       source: data/media             # volume4 `data/media` subtree only (read-only consumer)
       target: /data/media            # mirrors the *arr's /data/media/{movies,tv}
       ro: true                       # Plex reads the library; never writes it
+      acl: true                      # honor the export's setgid + default group ACLs
+      backup: false                  # data lives on the NAS; keep out of vzdump
+    # Youtarr's YouTube library (CT 5113 downloads to the volume4 `youtube` subpath).
+    # Read-only consumer, like data/media — Plex serves it; Youtarr owns the writes.
+    # MUST stay AFTER data/media: mounts render positionally, so data/media=mp0 (live,
+    # no-op) and youtube=mp1 (the one new `pct set` this shape now issues).
+    - type: nfs
+      storage: ds1813-nfs-volume-4   # same export, different subpath
+      source: youtube                # volume4 `youtube` subpath (≠ the shared /data tree)
+      target: /data/youtube          # add a Plex library here (Other Videos / TV Shows)
+      ro: true                       # Plex reads the library; Youtarr writes it
       acl: true                      # honor the export's setgid + default group ACLs
       backup: false                  # data lives on the NAS; keep out of vzdump
   hookscript: local:snippets/ensure-data-mount.sh   # pre-start guard: volume4 mounted or refuse to start
