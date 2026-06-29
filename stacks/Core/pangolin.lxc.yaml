@@ -12,9 +12,12 @@
 # CT 2012 (add-only, reversible). 2012 keeps serving the old behind-cloudflared model
 # until cutover; retire it LAST (proxmoxsharp lxc delete 2012) once nothing rides it.
 #
-# app: docker → ct/docker.sh installs Docker Engine; the `pangolin` provisioner then
+# app: debian → ct/debian.sh creates a plain base CT (var_nesting + var_keyctl make it
+# Docker-capable); the `pangolin` provisioner then INSTALLS Docker non-interactively and
 # RENDERS the compose (pangolin + traefik [+ optional gerbil]) + config + Traefik
-# config and runs `docker compose up -d` (no manual layer-on). The dashboard
+# config and runs `docker compose up -d` (no manual layer-on). We deliberately avoid
+# ct/docker.sh — its interactive Portainer/socket prompts hang over non-interactive SSH.
+# The dashboard
 # (pangolin.chrison.dev) still arrives via the core CF tunnel on plain :80; the
 # *.lab/*.arr resources are served on public :443. EE license activation is a one-time
 # manual /admin/license step (UI-only). Validate against
@@ -29,8 +32,8 @@ metadata:
   tags: [network, proxy, sso, remote-access, docker]
 
 spec:
-  app: docker            # community-scripts slug → ct/docker.sh (Docker Engine host)
-  provisioner: pangolin  # post-create dispatched to PangolinProvisioner (not the docker default)
+  app: debian            # plain base CT (ct/debian.sh) — Docker-capable via nesting+keyctl below
+  provisioner: pangolin  # post-create dispatched to PangolinProvisioner (installs Docker + EE)
   ctid: 2013             # NEW CT, side-by-side with the legacy native CT 2012 (retired last)
   node: nuc-01           # single instance (not HA — replica of an IdP buys little);
                          # lands on nuc-01, Teleport's old home, which it supersedes.
@@ -53,6 +56,10 @@ spec:
     ipv4: 10.10.0.13/16
     gateway: 10.10.0.1
     ipv6: none
+  # Static IPs don't get a resolver from DHCP, and VLAN 1010 firewalls outbound public DNS
+  # (8.8.8.8 is unreachable) — so point the CT at the gateway's resolver, which works. Without
+  # this, in-CT apt/curl + the docker install fail to resolve (network unreachable).
+  nameserver: 10.10.0.1
 
   # ── Post-create wiring applied by the `pangolin` converge provisioner.
   config:

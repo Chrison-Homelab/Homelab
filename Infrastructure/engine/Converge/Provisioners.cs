@@ -450,8 +450,12 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
                     string? origin = null;
                     if (d.Contains("originRequest") && d["originRequest"] is System.Collections.IDictionary od)
                     {
+                        // YamlDotNet hands us scalars as STRINGS — so noTLSVerify:true arrives
+                        // as "true". Cloudflare's ingress schema needs a real bool/number, so
+                        // coerce before serializing (else the re-push 400s with code 1056).
                         var map = new Dictionary<string, object?>();
-                        foreach (System.Collections.DictionaryEntry e in od) map[e.Key?.ToString() ?? ""] = e.Value;
+                        foreach (System.Collections.DictionaryEntry e in od)
+                            map[e.Key?.ToString() ?? ""] = CoerceScalar(e.Value);
                         origin = JsonSerializer.Serialize(map);
                     }
                     list.Add((d["hostname"]?.ToString() ?? "", d["service"]?.ToString() ?? "", origin));
@@ -472,6 +476,19 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
         }
         sb.Append("{\"service\":\"http_status:404\"}]");
         return sb.ToString();
+    }
+
+    // YAML scalars arrive as strings (YamlDotNet); coerce "true"/"false" → bool and
+    // integers → long so the Cloudflare ingress JSON carries the types its schema wants
+    // (originRequest.noTLSVerify is a bool; connectTimeout etc. are numbers). Exposed for tests.
+    internal static object? CoerceScalar(object? v)
+    {
+        if (v is null or bool or int or long or double) return v;
+        var s = v.ToString();
+        if (string.Equals(s, "true", StringComparison.OrdinalIgnoreCase)) return true;
+        if (string.Equals(s, "false", StringComparison.OrdinalIgnoreCase)) return false;
+        if (long.TryParse(s, out var l)) return l;
+        return s;
     }
 }
 
@@ -584,10 +601,17 @@ public sealed class PangolinProvisioner : IAppProvisioner
         var edge = s.Spec.Config.Str("edge") ?? "cloudflared";
         var marker = DesiredMarker(s);
 
-        // Config: re-seed only when the managed marker drifted.
-        var cur = await ctx.Exec.InContainerAsync(node, ctid,
-            "grep -m1 '^# homelab-managed:' /opt/pangolin/config/config.yml 2>/dev/null || true");
-        var curMarker = cur.Stdout.Contains(':') ? cur.Stdout.Split(':', 2)[1].Trim() : "";
+        // Re-deploy only when the managed marker drifted. public-wildcard stamps the marker
+        // to a dedicated file as the LAST deploy step (mark-on-SUCCESS) — so a partial failure
+        // (e.g. image pull) leaves no "current" marker and the next converge re-runs. The
+        // legacy native path keeps the marker in config.yml's first line.
+        string markerRead = edge == PublicWildcard
+            ? "cat /opt/pangolin/.homelab-managed 2>/dev/null || true"
+            : "grep -m1 '^# homelab-managed:' /opt/pangolin/config/config.yml 2>/dev/null || true";
+        var cur = await ctx.Exec.InContainerAsync(node, ctid, markerRead);
+        var curMarker = edge == PublicWildcard
+            ? cur.Stdout.Trim()
+            : (cur.Stdout.Contains(':') ? cur.Stdout.Split(':', 2)[1].Trim() : "");
         string? configMsg = null;
         if (curMarker != marker)
         {
@@ -878,6 +902,13 @@ public sealed class PangolinProvisioner : IAppProvisioner
 
         var sb = new StringBuilder();
         sb.Append("set -e\n");
+        // Ensure Docker + compose (the CT is a plain debian base; we install Docker here
+        // rather than via ct/docker.sh, whose interactive prompts hang over SSH). Idempotent.
+        sb.Append("if ! command -v docker >/dev/null 2>&1; then\n");
+        sb.Append("  export DEBIAN_FRONTEND=noninteractive\n");
+        sb.Append("  apt-get update -qq && apt-get install -y -qq curl ca-certificates\n");
+        sb.Append("  curl -fsSL https://get.docker.com | sh\n");
+        sb.Append("fi\n");
         sb.Append("mkdir -p /opt/pangolin/config/traefik /opt/pangolin/config/letsencrypt\n");
         sb.Append("cd /opt/pangolin\n");
         sb.Append("SECRET=$(grep -m1 -oP 'secret:[[:space:]]*\"\\K[^\"]+' config/config.yml 2>/dev/null || true)\n");
@@ -887,7 +918,10 @@ public sealed class PangolinProvisioner : IAppProvisioner
         sb.Append($"echo {env} | base64 -d > .env && chmod 600 .env\n");
         sb.Append($"echo {tStatic} | base64 -d > config/traefik/traefik_config.yml\n");
         sb.Append($"echo {tDynamic} | base64 -d > config/traefik/dynamic_config.yml\n");
-        sb.Append("docker compose up -d");
+        sb.Append("docker compose up -d\n");
+        // Mark-on-SUCCESS: only reached if everything above (incl. compose up) exited 0 under
+        // `set -e`. A partial failure leaves no marker → next converge re-runs the deploy.
+        sb.Append($"printf '%s' '{marker}' > /opt/pangolin/.homelab-managed");
         return sb.ToString();
     }
 
@@ -942,6 +976,10 @@ public sealed class PangolinProvisioner : IAppProvisioner
             $"    image: {image}",
             "    container_name: pangolin",
             "    restart: unless-stopped",
+            "    ports:",
+            // Integration API on CT-localhost ONLY — the resource reconcile curls
+            // localhost:3003 via pct exec (in the CT netns). Not exposed beyond the CT.
+            "      - 127.0.0.1:3003:3003",
             "    volumes:",
             "      - ./config:/app/config",
             "    healthcheck:",
