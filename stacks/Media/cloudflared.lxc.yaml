@@ -9,8 +9,10 @@
 # are public — seerr (request UI, CF Access OTP) + audiobookshelf (direct, mobile apps).
 # The admin UIs (sonarr/radarr/prowlarr/bazarr/qbittorrent) + flaresolverr are INTERNAL
 # only — reachable over the LAN/VLAN 1010, never through the tunnel. (Removing a hostname
-# here stops the tunnel routing it; the leftover DNS CNAME + CF Access app are add-only
-# remnants that now resolve to a 404 — optional manual cleanup on Cloudflare.)
+# here stops the tunnel routing it AND the next converge prunes its managed DNS CNAME +
+# CF Access app — declarative reconcile, #195. Only OUR records — the `managed by
+# homelab-infra converge` CNAMEs pointing at THIS tunnel and the `<sub> (Media)` Access
+# apps — are touched; hand-managed Cloudflare resources are never disturbed.)
 # NOTE: the seerr/audiobookshelf hostnames currently resolve via DNS to the OLD-fleet
 # namesakes (collision) — public URLs serve the old instances until the cutover (#10).
 #

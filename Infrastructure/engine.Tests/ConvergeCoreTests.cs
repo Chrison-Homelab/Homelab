@@ -486,4 +486,54 @@ public sealed class ConvergeCoreTests
         b.Spec.Config["edge"] = "letsencrypt";
         Assert.NotEqual(PangolinProvisioner.DesiredMarker(a), PangolinProvisioner.DesiredMarker(b));
     }
+
+    // ---- CloudflaredProvisioner declarative reconcile / prune (#195) -------
+
+    private const string Managed = CloudflareApi.ManagedComment;
+    private const string TunnelId = "11111111-2222-3333-4444-555555555555";
+    private static string Content(string id) => $"{id}.cfargotunnel.com";
+    private static IReadOnlySet<string> Hosts(params string[] h) =>
+        new HashSet<string>(h, StringComparer.OrdinalIgnoreCase);
+
+    [Fact]
+    public void CnamesToPrune_RemovesOurOrphans_KeepsShapeHosts()
+    {
+        var live = new[]
+        {
+            new CfDnsRecord("r1", "seerr.chrison.dev", Content(TunnelId), Managed),          // in shape → keep
+            new CfDnsRecord("r2", "prowlarr.chrison.dev", Content(TunnelId), Managed),       // ours, gone from shape → prune
+        };
+        var pruned = CloudflaredProvisioner.CnamesToPrune(live, TunnelId, Hosts("seerr.chrison.dev"));
+        Assert.Equal(new[] { "prowlarr.chrison.dev" }, pruned.Select(r => r.Name));
+    }
+
+    [Fact]
+    public void CnamesToPrune_NeverTouchesHandManagedOrOtherTunnels()
+    {
+        var other = "99999999-0000-0000-0000-000000000000";
+        var live = new[]
+        {
+            new CfDnsRecord("r1", "hand.chrison.dev", Content(TunnelId), ""),                // no managed comment → leave
+            new CfDnsRecord("r2", "blog.chrison.dev", "some.other.host", "managed by hand"), // not our comment → leave
+            new CfDnsRecord("r3", "moved.chrison.dev", Content(other), Managed),             // ours but points at ANOTHER tunnel → leave
+        };
+        // shape has no hosts: everything would be an orphan if scoping were wrong.
+        var pruned = CloudflaredProvisioner.CnamesToPrune(live, TunnelId, Hosts());
+        Assert.Empty(pruned);
+    }
+
+    [Fact]
+    public void AccessAppsToPrune_RemovesOurDegatedApps_BySuffix()
+    {
+        var live = new[]
+        {
+            new CfAccessApp("a1", "seerr (Media)", "seerr.chrison.dev"),         // still gated → keep
+            new CfAccessApp("a2", "prowlarr (Media)", "prowlarr.chrison.dev"),   // ours, no longer gated → prune
+            new CfAccessApp("a3", "audiobookshelf (Media)", "audiobookshelf.chrison.dev"), // flipped public (ungated) → prune
+            new CfAccessApp("a4", "pdm", "pdm.chrison.dev"),                     // hand-managed (no suffix) → keep
+            new CfAccessApp("a5", "traefik (Core)", "traefik.chrison.dev"),      // another stack's suffix → keep
+        };
+        var pruned = CloudflaredProvisioner.AccessAppsToPrune(live, " (Media)", Hosts("seerr.chrison.dev"));
+        Assert.Equal(new[] { "prowlarr.chrison.dev", "audiobookshelf.chrison.dev" }, pruned.Select(a => a.Domain));
+    }
 }
