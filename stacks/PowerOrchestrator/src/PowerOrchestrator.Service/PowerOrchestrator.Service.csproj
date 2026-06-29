@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>PowerOrchestrator.Service</RootNamespace>
+    <AssemblyName>power-orchestrator</AssemblyName>
+    <!-- This is the repo's first long-running Generic-Host service. ASP.NET host so the
+         same process carries the BackgroundService poll loop, the control/status API, the
+         OTLP exporter, and (PR2) the Blazor dashboard. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PowerOrchestrator.Core\PowerOrchestrator.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- OpenTelemetry: OTLP export to the collector in stacks/monitoring. 1.16.0 is the latest
+         and clears the NU1902 advisories that affected the 1.10–1.12 line. -->
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.16.0" />
+    <!-- Runtime instrumentation versions independently; 1.15.1 is its latest. -->
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
+  </ItemGroup>
+
+</Project>
