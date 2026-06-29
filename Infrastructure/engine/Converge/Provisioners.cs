@@ -475,28 +475,58 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
     }
 }
 
-// Pangolin — SSO remote-access reverse proxy (ADR-0007). Runs on-prem behind the
-// `core` Cloudflare tunnel, so the stock community-scripts install (which makes
-// Traefik own public ingress via Let's Encrypt) is reshaped for "behind cloudflared":
-// every Traefik router moves onto the plain-HTTP `web` (:80) entrypoint, dropping TLS
-// + the http→https redirect — cloudflared provides the public TLS. Seeds
-// /opt/pangolin/config/config.yml, GENERATING + PRESERVING server.secret on the CT
-// (so no manual secrets.env step), and for the cloudflared edge rewrites
-// traefik/dynamic_config.yml (Traefik's file provider hot-reloads it). Idempotent via
-// a managed marker stamped into config.yml. The one-time admin/org setup stays manual.
+// Pangolin — SSO remote-access reverse proxy (ADR-0007). Two edge modes:
+//
+//  • edge: public-wildcard (the ACCEPTED end state) — Docker ENTERPRISE EDITION
+//    (fosrl/pangolin:ee, OIDC/RBAC need the EE license; the native OSS install can't
+//    activate one — #168). The CT is a Docker host (app: docker → ct/docker.sh) and
+//    this provisioner RENDERS the compose (pangolin/gerbil/traefik) + config + Traefik
+//    config and runs `docker compose up -d`. Traefik OWNS public :443 with Let's
+//    Encrypt WILDCARD certs (DNS-01 via Cloudflare) for *.lab / *.arr, reached over a
+//    home-IP :443 port-forward. The dashboard (pangolin.chrison.dev) still comes via the
+//    core CF tunnel on plain :80, so only the Traefik STATIC config is new; resource
+//    routers are injected by Pangolin's own HTTP provider (pangolin:3001).
+//
+//  • edge: cloudflared (legacy / rollback) — the native systemd OSS install behind the
+//    core tunnel; every Traefik router on plain-HTTP :80, cloudflared provides TLS.
+//
+// Both GENERATE + PRESERVE server.secret on the CT (no manual secrets.env step) and are
+// idempotent via a managed marker stamped into config.yml. EE license activation is a
+// one-time manual /admin/license step (UI-only — no API/env path).
 public sealed class PangolinProvisioner : IAppProvisioner
 {
     public string App => "pangolin";
+
+    // Docker EE defaults (public-wildcard mode). The image/version pins are the pieces
+    // to confirm during the live rollout (Phase 3) — all overridable via spec.config.
+    internal const string DefaultImage = "fosrl/pangolin:ee-1.19.4";
+    internal const string DefaultGerbilImage = "fosrl/gerbil:1.1.0";
+    internal const string DefaultTraefikImage = "traefik:v3.6";
+    internal const string DefaultBadgerVersion = "v1.2.0";
+    internal const string PublicWildcard = "public-wildcard";
+    private const string LeProd = "https://acme-v02.api.letsencrypt.org/directory";
+    private const string LeStaging = "https://acme-staging-v02.api.letsencrypt.org/directory";
 
     public IEnumerable<string> PlanSteps(Shape s)
     {
         var url = s.Spec.Config.Str("dashboardUrl") ?? "(dashboardUrl)";
         var edge = s.Spec.Config.Str("edge") ?? "cloudflared";
-        yield return $"seed /opt/pangolin/config/config.yml (dashboard_url {url}; generate+preserve server.secret; flags)";
-        yield return edge == "cloudflared"
-            ? "rewrite traefik/dynamic_config.yml for behind-cloudflared (HTTP :80, no Let's Encrypt, no https-redirect)"
-            : $"edge '{edge}': leave stock Traefik (Let's Encrypt public ingress)";
-        yield return "restart pangolin + gerbil if config changed (idempotent via managed marker)";
+        if (edge == PublicWildcard)
+        {
+            var img = s.Spec.Config.Str("image") ?? DefaultImage;
+            yield return $"render /opt/pangolin/{{compose.yml,.env,config/*}} — Docker EE {img}; generate+preserve server.secret";
+            yield return $"Traefik owns :443 with LE wildcard certs (DNS-01 via Cloudflare) for {string.Join(" + ", WildcardFqdns(s))}";
+            yield return "docker compose up -d (idempotent via managed marker) — then activate EE once at /admin/license (manual)";
+        }
+        else
+        {
+            yield return $"seed /opt/pangolin/config/config.yml (dashboard_url {url}; generate+preserve server.secret; flags)";
+            yield return edge == "cloudflared"
+                ? "rewrite traefik/dynamic_config.yml for behind-cloudflared (HTTP :80, no Let's Encrypt, no https-redirect)"
+                : $"edge '{edge}': leave stock Traefik (Let's Encrypt public ingress)";
+            yield return "restart pangolin + gerbil if config changed (idempotent via managed marker)";
+        }
+        yield return "reconcile declared resources via the integration API (add-only by fullDomain)";
     }
 
     // Stable marker over the managed inputs — when unchanged, apply is a no-op.
@@ -511,8 +541,39 @@ public sealed class PangolinProvisioner : IAppProvisioner
             Flag(c, "allowRawResources", true),
             Flag(c, "disableSignupWithoutInvite", true),
             Flag(c, "disableUserCreateOrg", false),
-            Flag(c, "enableIntegrationApi", false));
+            Flag(c, "enableIntegrationApi", false),
+            // public-wildcard inputs — a change to the image/versions/zones/ACME server
+            // re-renders the compose + Traefik config on the next converge.
+            c.Str("image") ?? DefaultImage,
+            c.Str("gerbilImage") ?? DefaultGerbilImage,
+            c.Str("traefikImage") ?? DefaultTraefikImage,
+            c.Str("badgerVersion") ?? DefaultBadgerVersion,
+            c.Str("letsEncryptEmail") ?? "",
+            CBool(c, "leStaging", false),
+            string.Join(",", WildcardZones(s)));
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..12].ToLowerInvariant();
+    }
+
+    // The wildcard zones (e.g. ["lab","arr"]) — from config.wildcardZones, else derived
+    // from the distinct zones declared on resources[]. Drives the LE wildcard SANs.
+    internal static List<string> WildcardZones(Shape s)
+    {
+        var c = s.Spec.Config;
+        var zones = new List<string>();
+        if (c.TryGetValue("wildcardZones", out var wz) && wz is IEnumerable<object> items)
+            foreach (var z in items) if (z?.ToString() is { Length: > 0 } zs && !zones.Contains(zs)) zones.Add(zs);
+        if (zones.Count == 0 && c.TryGetValue("resources", out var rv) && rv is IEnumerable<object> res)
+            foreach (var it in res)
+                if (it is System.Collections.IDictionary rd && rd["zone"]?.ToString() is { Length: > 0 } z && !zones.Contains(z))
+                    zones.Add(z);
+        return zones;
+    }
+
+    // The wildcard FQDNs requested as LE SANs, e.g. *.lab.chrison.dev.
+    internal static List<string> WildcardFqdns(Shape s)
+    {
+        var b = BaseDomain(s);
+        return WildcardZones(s).Select(z => $"*.{z}.{b}").ToList();
     }
 
     public async Task<ApplyResult> ApplyAsync(Shape s, ConvergeContext ctx)
@@ -530,12 +591,27 @@ public sealed class PangolinProvisioner : IAppProvisioner
         string? configMsg = null;
         if (curMarker != marker)
         {
-            var ipRes = await ctx.Exec.InContainerAsync(node, ctid, "hostname -I | awk '{print $1}'");
-            if (!ipRes.Ok || ipRes.Stdout.Trim().Length == 0) return ApplyResult.Failed("could not resolve CT IP");
-            var cmd = BuildWrite(s, marker, host, dashboardUrl, BaseDomain(s), edge, ipRes.Stdout.Trim());
+            string cmd, mode;
+            if (edge == PublicWildcard)
+            {
+                // Docker EE: Traefik reaches the app by compose service name (no CT IP needed).
+                // The Cloudflare DNS token (for Traefik's DNS-01 wildcard challenge) is required.
+                var cfToken = ctx.Secrets.Get("CF_DNS_API_TOKEN") ?? ctx.Secrets.Get("CF_API_TOKEN");
+                if (string.IsNullOrEmpty(cfToken))
+                    return ApplyResult.Failed("public-wildcard needs CF_DNS_API_TOKEN (or CF_API_TOKEN) for Traefik's DNS-01 challenge");
+                cmd = BuildDockerDeploy(s, marker, host, dashboardUrl, BaseDomain(s), cfToken);
+                mode = "rendered compose + config + LE-wildcard Traefik; docker compose up";
+            }
+            else
+            {
+                var ipRes = await ctx.Exec.InContainerAsync(node, ctid, "hostname -I | awk '{print $1}'");
+                if (!ipRes.Ok || ipRes.Stdout.Trim().Length == 0) return ApplyResult.Failed("could not resolve CT IP");
+                cmd = BuildWrite(s, marker, host, dashboardUrl, BaseDomain(s), edge, ipRes.Stdout.Trim());
+                mode = $"seeded config.yml + {(edge == "cloudflared" ? "behind-cloudflared Traefik" : "stock Traefik")}; restarted";
+            }
             var res = await ctx.Exec.InContainerAsync(node, ctid, cmd);
-            if (!res.Ok) return ApplyResult.Failed($"write/restart failed: {res.Stderr}");
-            configMsg = $"seeded config.yml + {(edge == "cloudflared" ? "behind-cloudflared Traefik" : "stock Traefik")}; restarted (marker {marker})";
+            if (!res.Ok) return ApplyResult.Failed($"write/deploy failed: {res.Stderr}");
+            configMsg = $"{mode} (marker {marker})";
         }
 
         // Resources (declarative, #136): reconcile declared admin-UI resources via the
@@ -551,9 +627,10 @@ public sealed class PangolinProvisioner : IAppProvisioner
 
     // Reconcile declared Pangolin resources (admin UIs) via the integration API on the
     // CT (:3003, Bearer org key). Add-only: find-or-create by fullDomain, set the target
-    // (via a local-type site) and ssl=false (behind-cloudflared). Returns (msg, changed,
-    // failedReason). Each resource's public hostname is wired separately in the cloudflared
-    // ingress (#165 makes that push idempotently).
+    // (via a local-type site). A resource may carry a wildcard `zone` (lab|arr) →
+    // fullDomain = <subdomain>.<zone>.<baseDomain>. ssl follows the edge mode:
+    // public-wildcard → Traefik terminates TLS (true); cloudflared → CF does (false).
+    // Returns (msg, changed, failedReason).
     private static async Task<(string? msg, bool changed, string? failed)> ReconcileResourcesAsync(
         Shape s, ConvergeContext ctx, string node, string ctid)
     {
@@ -566,6 +643,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
             return (null, false, "resources declared but config.org (Pangolin org id) is missing");
 
         var baseDomain = BaseDomain(s);
+        var publicWildcard = (c.Str("edge") ?? "cloudflared") == PublicWildcard;
         var ct = CancellationToken.None;
         var pg = new PangolinClient(ctx.Exec, node, ctid, key);
 
@@ -605,7 +683,12 @@ public sealed class PangolinProvisioner : IAppProvisioner
             if (it is not System.Collections.IDictionary rd) continue;
             total++;
             var sub = rd["subdomain"]?.ToString() ?? "";
-            if (existing.Contains($"{sub}.{baseDomain}")) continue;
+            // wildcard zone (lab|arr) → register the resource under subdomain "<sub>.<zone>"
+            // so fullDomain = <sub>.<zone>.<baseDomain> (covered by the *.<zone> wildcard cert).
+            var zone = rd["zone"]?.ToString();
+            var pgSub = string.IsNullOrEmpty(zone) ? sub : $"{sub}.{zone}";
+            var fqdn = $"{pgSub}.{baseDomain}";
+            if (existing.Contains(fqdn)) continue;
             var name = rd["name"]?.ToString() ?? sub;
             var tgt = rd["target"] as System.Collections.IDictionary;
             var tip = tgt?["ip"]?.ToString() ?? "localhost";
@@ -613,13 +696,14 @@ public sealed class PangolinProvisioner : IAppProvisioner
             var tport = int.TryParse(tgt?["port"]?.ToString(), out var pp) ? pp : 80;
 
             var (rok, rroot) = await pg.CallAsync("PUT", $"/org/{org}/resource",
-                JsonSerializer.Serialize(new { name, subdomain = sub, http = true, protocol = "tcp", domainId }), ct);
+                JsonSerializer.Serialize(new { name, subdomain = pgSub, http = true, protocol = "tcp", domainId }), ct);
             if (!rok || !Data(rroot).TryGetProperty("resourceId", out var rid))
-                return (null, false, $"pangolin: failed to create resource {sub}.{baseDomain}");
+                return (null, false, $"pangolin: failed to create resource {fqdn}");
             var resourceId = rid.GetInt32();
             await pg.CallAsync("PUT", $"/resource/{resourceId}/target",
                 JsonSerializer.Serialize(new { siteId, ip = tip, method = tmethod, port = tport, enabled = true }), ct);
-            await pg.CallAsync("POST", $"/resource/{resourceId}", "{\"ssl\":false}", ct); // behind-cloudflared
+            // ssl: public-wildcard → Traefik terminates TLS (true); cloudflared → CF does (false).
+            await pg.CallAsync("POST", $"/resource/{resourceId}", JsonSerializer.Serialize(new { ssl = publicWildcard }), ct);
             created++;
         }
         return ($"{total} resource(s) declared, {created} created", created > 0, null);
@@ -680,6 +764,18 @@ public sealed class PangolinProvisioner : IAppProvisioner
         if (c.TryGetValue("flags", out var f) && f is System.Collections.IDictionary d && d.Contains(key))
         {
             var v = d[key];
+            if (v is bool b) return b;
+            if (bool.TryParse(v?.ToString(), out var pb)) return pb;
+        }
+        return dflt;
+    }
+
+    // Top-level config bool (vs Flag(), which reads the Pangolin `flags:` sub-block) —
+    // for engine-side knobs like includeGerbil / leStaging.
+    private static bool CBool(Dictionary<string, object?> c, string key, bool dflt)
+    {
+        if (c.TryGetValue(key, out var v))
+        {
             if (v is bool b) return b;
             if (bool.TryParse(v?.ToString(), out var pb)) return pb;
         }
@@ -763,5 +859,247 @@ public sealed class PangolinProvisioner : IAppProvisioner
         }
         sb.Append("systemctl restart pangolin gerbil");
         return sb.ToString();
+    }
+
+    // ── Docker EE public-wildcard deploy (ADR-0007) ─────────────────────────────
+    // Renders compose + .env + Traefik config + config.yml onto the CT and runs
+    // `docker compose up -d`. config.yml goes via an UNQUOTED heredoc so $SECRET
+    // expands (generate-or-preserve, as the native path does); the other artifacts go
+    // via base64 -d (quote-safe — Traefik rule backticks need no escaping). Idempotent
+    // via the managed marker in config.yml. Image/version pins + the exact gerbil/badger
+    // wiring are confirmed live in the rollout (Phase 3); all overridable via config.
+    internal static string BuildDockerDeploy(Shape s, string marker, string host, string url, string baseDomain, string cfToken)
+    {
+        var compose = B64(BuildComposeYaml(s));
+        var env = B64($"CF_DNS_API_TOKEN={cfToken}\n");
+        var tStatic = B64(BuildTraefikStatic(s, baseDomain));
+        var tDynamic = B64(BuildTraefikDynamic(host));
+        var cfg = string.Join("\n", BuildConfigLines(s, marker, host, url, baseDomain));
+
+        var sb = new StringBuilder();
+        sb.Append("set -e\n");
+        sb.Append("mkdir -p /opt/pangolin/config/traefik /opt/pangolin/config/letsencrypt\n");
+        sb.Append("cd /opt/pangolin\n");
+        sb.Append("SECRET=$(grep -m1 -oP 'secret:[[:space:]]*\"\\K[^\"]+' config/config.yml 2>/dev/null || true)\n");
+        sb.Append("if [ -z \"$SECRET\" ]; then SECRET=$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 32); fi\n");
+        sb.Append("cat > config/config.yml <<EOF\n").Append(cfg).Append("\nEOF\n");
+        sb.Append($"echo {compose} | base64 -d > compose.yml\n");
+        sb.Append($"echo {env} | base64 -d > .env && chmod 600 .env\n");
+        sb.Append($"echo {tStatic} | base64 -d > config/traefik/traefik_config.yml\n");
+        sb.Append($"echo {tDynamic} | base64 -d > config/traefik/dynamic_config.yml\n");
+        sb.Append("docker compose up -d");
+        return sb.ToString();
+    }
+
+    private static string B64(string s) => Convert.ToBase64String(Encoding.UTF8.GetBytes(s));
+
+    // config.yml lines (shared shape with the native path; cert_resolver points Pangolin's
+    // HTTP-provider routers at Traefik's `letsencrypt` resolver). secret is "$SECRET".
+    private static List<string> BuildConfigLines(Shape s, string marker, string host, string url, string baseDomain)
+    {
+        var c = s.Spec.Config;
+        string B(bool x) => x ? "true" : "false";
+        return new List<string>
+        {
+            $"# homelab-managed: {marker}",
+            "gerbil:",
+            "    start_port: 51820",
+            $"    base_endpoint: \"{host}\"",
+            "app:",
+            $"    dashboard_url: \"{url}\"",
+            "    log_level: \"info\"",
+            "domains:",
+            "    domain1:",
+            $"        base_domain: \"{baseDomain}\"",
+            "        cert_resolver: \"letsencrypt\"",
+            "server:",
+            "    secret: \"$SECRET\"",
+            "flags:",
+            "    require_email_verification: false",
+            $"    disable_signup_without_invite: {B(Flag(c, "disableSignupWithoutInvite", true))}",
+            $"    disable_user_create_org: {B(Flag(c, "disableUserCreateOrg", false))}",
+            $"    allow_raw_resources: {B(Flag(c, "allowRawResources", true))}",
+            $"    enable_integration_api: {B(Flag(c, "enableIntegrationApi", true))}",
+        };
+    }
+
+    // docker-compose.yml. Default: pangolin + traefik (traefik publishes :80/:443
+    // directly). includeGerbil=true adds the WireGuard topology (gerbil owns the ports,
+    // traefik shares its netns) for the future VPS/Newt graduation (#137) — off by
+    // default since WireGuard is unused in the home-IP-port-forward trial.
+    internal static string BuildComposeYaml(Shape s)
+    {
+        var c = s.Spec.Config;
+        var image = c.Str("image") ?? DefaultImage;
+        var traefik = c.Str("traefikImage") ?? DefaultTraefikImage;
+        var gerbil = c.Str("gerbilImage") ?? DefaultGerbilImage;
+        var withGerbil = CBool(c, "includeGerbil", false);
+
+        var L = new List<string>
+        {
+            "services:",
+            "  pangolin:",
+            $"    image: {image}",
+            "    container_name: pangolin",
+            "    restart: unless-stopped",
+            "    volumes:",
+            "      - ./config:/app/config",
+            "    healthcheck:",
+            "      test: [\"CMD\", \"curl\", \"-f\", \"http://localhost:3001/api/v1/\"]",
+            "      interval: 10s",
+            "      timeout: 10s",
+            "      retries: 15",
+        };
+        if (withGerbil)
+        {
+            L.AddRange(new[]
+            {
+                "  gerbil:",
+                $"    image: {gerbil}",
+                "    container_name: gerbil",
+                "    restart: unless-stopped",
+                "    depends_on:",
+                "      pangolin:",
+                "        condition: service_healthy",
+                "    command:",
+                "      - --reachableAt=http://gerbil:3004",
+                "      - --generateAndSaveKeyTo=/var/config/key",
+                "      - --remoteConfig=http://pangolin:3001/api/v1/gerbil/get-config",
+                "      - --reportBandwidthTo=http://pangolin:3001/api/v1/gerbil/receive-bandwidth",
+                "    volumes:",
+                "      - ./config/:/var/config",
+                "    cap_add:",
+                "      - NET_ADMIN",
+                "      - SYS_MODULE",
+                "    ports:",
+                "      - 51820:51820/udp",
+                "      - 21820:21820/udp",
+                "      - 443:443",
+                "      - 443:443/udp",
+                "      - 80:80",
+            });
+        }
+        L.AddRange(new[]
+        {
+            "  traefik:",
+            $"    image: {traefik}",
+            "    container_name: traefik",
+            "    restart: unless-stopped",
+            "    depends_on:",
+            "      pangolin:",
+            "        condition: service_healthy",
+            "    env_file:",
+            "      - .env",
+            "    command:",
+            "      - --configFile=/etc/traefik/traefik_config.yml",
+        });
+        // Without gerbil, traefik publishes the public ports itself; with gerbil it shares
+        // gerbil's network namespace (gerbil owns the ports above).
+        if (withGerbil)
+            L.Add("    network_mode: service:gerbil");
+        else
+            L.AddRange(new[] { "    ports:", "      - 80:80", "      - 443:443" });
+        L.AddRange(new[]
+        {
+            "    volumes:",
+            "      - ./config/traefik:/etc/traefik:ro",
+            "      - ./config/letsencrypt:/letsencrypt",
+        });
+        return string.Join("\n", L) + "\n";
+    }
+
+    // Traefik STATIC config — Pangolin's HTTP provider (injects resource routers) + file
+    // provider (the dashboard) + the badger auth plugin + a `letsencrypt` resolver doing
+    // the DNS-01 challenge (Cloudflare) for WILDCARD certs (*.<zone>.<base>), requested up
+    // front via websecure's tls.domains so every resource under a zone is covered.
+    internal static string BuildTraefikStatic(Shape s, string baseDomain)
+    {
+        var c = s.Spec.Config;
+        var badger = c.Str("badgerVersion") ?? DefaultBadgerVersion;
+        var email = c.Str("letsEncryptEmail") ?? "";
+        var ca = CBool(c, "leStaging", false) ? LeStaging : LeProd;
+
+        var L = new List<string>
+        {
+            "api:",
+            "  insecure: true",
+            "  dashboard: true",
+            "providers:",
+            "  http:",
+            "    endpoint: \"http://pangolin:3001/api/v1/traefik-config\"",
+            "    pollInterval: \"5s\"",
+            "  file:",
+            "    filename: \"/etc/traefik/dynamic_config.yml\"",
+            "experimental:",
+            "  plugins:",
+            "    badger:",
+            "      moduleName: \"github.com/fosrl/badger\"",
+            $"      version: \"{badger}\"",
+            "log:",
+            "  level: \"INFO\"",
+            "certificatesResolvers:",
+            "  letsencrypt:",
+            "    acme:",
+            "      dnsChallenge:",
+            "        provider: cloudflare",
+            $"      email: \"{email}\"",
+            "      storage: \"/letsencrypt/acme.json\"",
+            $"      caServer: \"{ca}\"",
+            "entryPoints:",
+            "  web:",
+            "    address: \":80\"",
+            "  websecure:",
+            "    address: \":443\"",
+            "    http:",
+            "      tls:",
+            "        certResolver: \"letsencrypt\"",
+            "        domains:",
+        };
+        foreach (var z in WildcardZones(s))
+        {
+            L.Add($"          - main: \"{z}.{baseDomain}\"");
+            L.Add($"            sans: [\"*.{z}.{baseDomain}\"]");
+        }
+        L.AddRange(new[] { "serversTransport:", "  insecureSkipVerify: true" });
+        return string.Join("\n", L) + "\n";
+    }
+
+    // Traefik DYNAMIC config (file provider) — ONLY the dashboard, on plain :80. The
+    // dashboard (pangolin.chrison.dev) still arrives via the core CF tunnel (CF provides
+    // its TLS), so no certResolver and no badger here (Pangolin's own session gates it;
+    // badger would loop on the login UI). Resource routers (with badger + the wildcard
+    // cert on :443) are injected separately by Pangolin's HTTP provider.
+    internal static string BuildTraefikDynamic(string host)
+    {
+        var L = new List<string>
+        {
+            "http:",
+            "  routers:",
+            "    next-router:",
+            $"      rule: \"Host(`{host}`) && !PathPrefix(`/api/v1`)\"",
+            "      service: next-service",
+            "      entryPoints:",
+            "        - web",
+            "    api-router:",
+            $"      rule: \"Host(`{host}`) && PathPrefix(`/api/v1`)\"",
+            "      service: api-service",
+            "      entryPoints:",
+            "        - web",
+            "    ws-router:",
+            $"      rule: \"Host(`{host}`)\"",
+            "      service: api-service",
+            "      entryPoints:",
+            "        - web",
+            "  services:",
+            "    next-service:",
+            "      loadBalancer:",
+            "        servers:",
+            "          - url: \"http://pangolin:3002\"",
+            "    api-service:",
+            "      loadBalancer:",
+            "        servers:",
+            "          - url: \"http://pangolin:3000\"",
+        };
+        return string.Join("\n", L) + "\n";
     }
 }

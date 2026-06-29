@@ -10,6 +10,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Let the test project exercise internal render helpers (e.g. the Pangolin
+         Docker-EE compose/Traefik renderers) directly. -->
+    <InternalsVisibleTo Include="Homelab.Infrastructure.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Consume the published ProxmoxSharp package from GitHub Packages. Pinned to an
          exact prerelease for deterministic restores: the `0.2.0-preview.*` float is
          non-deterministic across runners (a stale NuGet cache resolves an older preview),

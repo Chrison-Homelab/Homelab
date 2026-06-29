@@ -95,11 +95,13 @@ apps:
     script: romm                 # net-new; ROM/emulation library (MariaDB + Angie, in-browser EmulatorJS). No provisioner (admin acct + library via UI).
 
   # Pangolin — SSO remote-access reverse proxy, the Teleport replacement (ADR-0007).
-  # ct/pangolin.sh is a NATIVE systemd install (pinned upstream to 1.18.4). The
-  # provisioner is NOT yet implemented engine-side (follow-up): it must reconfigure
-  # Traefik for behind-cloudflared (plain HTTP on :80, no Let's Encrypt — CF provides
-  # public TLS), seed config.yml (dashboard_url, server.secret, flags), and run the
-  # one-time admin/org setup. See stacks/Core/pangolin.lxc.yaml.
+  # Runs as Docker ENTERPRISE EDITION (fosrl/pangolin:ee — OIDC/RBAC need the EE
+  # license, which only ships on the Docker image; the native community-scripts
+  # install is OSS-only and can't activate a license — see #168). So the CT is a
+  # Docker host (script: docker → ct/docker.sh) and the `pangolin` provisioner
+  # renders the compose (pangolin/gerbil/traefik) + config + Traefik (DNS-01 wildcard
+  # certs for the public-ingress model) and brings the stack up. See
+  # stacks/Core/pangolin.lxc.yaml.
   pangolin:
-    script: pangolin
+    script: docker
     provisioner: pangolin

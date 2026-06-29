@@ -487,6 +487,112 @@ public sealed class ConvergeCoreTests
         Assert.NotEqual(PangolinProvisioner.DesiredMarker(a), PangolinProvisioner.DesiredMarker(b));
     }
 
+    // ---- PangolinProvisioner Docker-EE public-wildcard (#168 / ADR-0007) --
+
+    private static Shape PangolinWildcardShape()
+    {
+        var s = Lxc("pangolin", "2013");
+        s.Spec.Node = "nuc-01";
+        s.Spec.Config["dashboardUrl"] = "https://pangolin.chrison.dev";
+        s.Spec.Config["baseDomain"] = "chrison.dev";
+        s.Spec.Config["edge"] = "public-wildcard";
+        s.Spec.Config["letsEncryptEmail"] = "csimon@chrison.dev";
+        s.Spec.Config["resources"] = new List<object>
+        {
+            new Dictionary<object, object> { ["name"] = "Radarr", ["subdomain"] = "radarr", ["zone"] = "arr" },
+            new Dictionary<object, object> { ["name"] = "Grafana", ["subdomain"] = "grafana", ["zone"] = "lab" },
+        };
+        return s;
+    }
+
+    [Fact]
+    public void Pangolin_Marker_DiffersByEdgeAndImage()
+    {
+        var cf = PangolinShape();                       // edge: cloudflared
+        var wc = PangolinWildcardShape();               // edge: public-wildcard
+        Assert.NotEqual(PangolinProvisioner.DesiredMarker(cf), PangolinProvisioner.DesiredMarker(wc));
+
+        var wc2 = PangolinWildcardShape();
+        wc2.Spec.Config["image"] = "fosrl/pangolin:ee-1.20.0";
+        Assert.NotEqual(PangolinProvisioner.DesiredMarker(wc), PangolinProvisioner.DesiredMarker(wc2));
+    }
+
+    [Fact]
+    public void Pangolin_WildcardZones_DeriveFromResources()
+    {
+        var s = PangolinWildcardShape();
+        Assert.Equal(new[] { "arr", "lab" }, PangolinProvisioner.WildcardZones(s).OrderBy(z => z));
+        Assert.Contains("*.arr.chrison.dev", PangolinProvisioner.WildcardFqdns(s));
+        Assert.Contains("*.lab.chrison.dev", PangolinProvisioner.WildcardFqdns(s));
+    }
+
+    [Fact]
+    public void Pangolin_ComposeYaml_PinsEeImage_TraefikPublishesPorts_NoGerbilByDefault()
+    {
+        var compose = PangolinProvisioner.BuildComposeYaml(PangolinWildcardShape());
+        Assert.Contains("image: fosrl/pangolin:ee-1.19.4", compose);
+        Assert.Contains("image: traefik:v3.6", compose);
+        Assert.Contains("- 443:443", compose);          // traefik publishes :443 itself
+        Assert.Contains("http://localhost:3001/api/v1/", compose); // pangolin healthcheck
+        Assert.DoesNotContain("gerbil", compose);       // WireGuard off by default
+        Assert.DoesNotContain("network_mode", compose);
+    }
+
+    [Fact]
+    public void Pangolin_ComposeYaml_IncludesGerbilTopology_WhenOptedIn()
+    {
+        var s = PangolinWildcardShape();
+        s.Spec.Config["includeGerbil"] = true;
+        var compose = PangolinProvisioner.BuildComposeYaml(s);
+        Assert.Contains("gerbil:", compose);
+        Assert.Contains("network_mode: service:gerbil", compose); // traefik shares gerbil's netns
+        Assert.Contains("- 51820:51820/udp", compose);
+    }
+
+    [Fact]
+    public void Pangolin_TraefikStatic_UsesDnsChallengeWildcards_NotHttpChallenge()
+    {
+        var s = PangolinWildcardShape();
+        var st = PangolinProvisioner.BuildTraefikStatic(s, "chrison.dev");
+        Assert.Contains("dnsChallenge:", st);
+        Assert.Contains("provider: cloudflare", st);
+        Assert.Contains("sans: [\"*.arr.chrison.dev\"]", st);
+        Assert.Contains("sans: [\"*.lab.chrison.dev\"]", st);
+        Assert.Contains("github.com/fosrl/badger", st);      // auth plugin loaded
+        Assert.Contains("acme-v02.api.letsencrypt.org", st); // PROD CA by default
+        Assert.DoesNotContain("httpChallenge", st);          // wildcards need DNS-01
+
+        s.Spec.Config["leStaging"] = true;
+        Assert.Contains("acme-staging-v02", PangolinProvisioner.BuildTraefikStatic(s, "chrison.dev"));
+    }
+
+    [Fact]
+    public void Pangolin_TraefikDynamic_IsDashboardOnly_PlainHttp_NoBadgerLoop()
+    {
+        var dyn = PangolinProvisioner.BuildTraefikDynamic("pangolin.chrison.dev");
+        Assert.Contains("Host(`pangolin.chrison.dev`)", dyn);
+        Assert.Contains("http://pangolin:3002", dyn);   // reaches app by service name
+        Assert.Contains("- web", dyn);                  // dashboard on plain :80 (core tunnel fronts it)
+        Assert.DoesNotContain("websecure", dyn);
+        Assert.DoesNotContain("badger", dyn);           // no auth loop on the login UI
+        Assert.DoesNotContain("certResolver", dyn);
+    }
+
+    [Fact]
+    public void Pangolin_DockerDeploy_RendersArtifacts_AndRunsCompose()
+    {
+        var cmd = PangolinProvisioner.BuildDockerDeploy(
+            PangolinWildcardShape(), "abc123", "pangolin.chrison.dev",
+            "https://pangolin.chrison.dev", "chrison.dev", "cf-token-xyz");
+        Assert.Contains("docker compose up -d", cmd);
+        Assert.Contains("base64 -d > compose.yml", cmd);
+        Assert.Contains("base64 -d > config/traefik/traefik_config.yml", cmd);
+        Assert.Contains("base64 -d > .env", cmd);
+        Assert.Contains("openssl rand", cmd);                  // server.secret generate-or-preserve
+        Assert.Contains("# homelab-managed: abc123", cmd);     // config.yml marker (heredoc, not base64)
+        Assert.Contains("cert_resolver: \"letsencrypt\"", cmd);
+    }
+
     // ---- CloudflaredProvisioner declarative reconcile / prune (#195) -------
 
     private const string Managed = CloudflareApi.ManagedComment;
