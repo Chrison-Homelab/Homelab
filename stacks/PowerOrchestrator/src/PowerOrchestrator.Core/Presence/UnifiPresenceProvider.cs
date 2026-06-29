@@ -33,15 +33,39 @@ public sealed class UnifiPresenceProvider(
         foreach (var site in sites)
         {
             if (site.Id is not Guid id) continue;
-            var clients = (await client.V1.Sites[id].Clients.GetAsync(cancellationToken: ct)
-                .ConfigureAwait(false))?.Data ?? [];
+            var clientsBuilder = client.V1.Sites[id].Clients;
 
-            foreach (var c in clients)
+            // The clients endpoint pages (default 25); a busy network easily exceeds one page, so
+            // walk every page or the tracked device hides past page 1. Early-exit once all found.
+            const int pageSize = 200;
+            var offset = 0;
+            while (true)
             {
-                var mac = MacOf(c);
-                if (mac is null) continue;
-                var norm = OrchestratorOptions.NormalizeMac(mac);
-                if (_tracked.Contains(norm)) present.Add(norm);
+                var page = await clientsBuilder.GetAsync(rc =>
+                {
+                    rc.QueryParameters.Limit = pageSize;
+                    rc.QueryParameters.Offset = offset;
+                }, ct).ConfigureAwait(false);
+
+                var data = page?.Data ?? [];
+                foreach (var c in data)
+                {
+                    if (MacOf(c) is { } mac)
+                    {
+                        var norm = OrchestratorOptions.NormalizeMac(mac);
+                        if (_tracked.Contains(norm)) present.Add(norm);
+                    }
+                }
+
+                if (present.Count == _tracked.Count)
+                {
+                    logger.LogDebug("Presence: all {Tracked} tracked device(s) online", _tracked.Count);
+                    return new PresenceState(present.Count, present.ToList());
+                }
+
+                offset += data.Count;
+                var total = page?.TotalCount ?? data.Count;
+                if (data.Count == 0 || offset >= total) break;
             }
         }
 

@@ -27,14 +27,15 @@ echo "==> Publishing self-contained linux-x64 binary"
 dotnet publish "$PROJECT" -c Release -r linux-x64 --self-contained true \
     -p:PublishSingleFile=true -p:DebugType=none -o "$PUBLISH_DIR"
 
-# Build the systemd EnvironmentFile from the repo secrets.env (strip `export `, drop comments).
-# Existing env on the node is preserved (we only overwrite if the operator re-runs).
+# Build the systemd EnvironmentFile from the repo secrets.env. Scope it to ONLY the keys this
+# service needs (minimal creds — don't ship Cloudflare/GitHub/Synology tokens to the node):
+# Proxmox (idle/guest-shutdown), UniFi (presence), ORCH_* tunables, OTEL endpoint, bind URL.
 ENV_TMP="$(mktemp)"
 trap 'rm -f "$ENV_TMP"' EXIT
+ORCH_KEY_RE='^[[:space:]]*(export[[:space:]]+)?(PROXMOX_|UNIFI_|ORCH_|OTEL_EXPORTER|ASPNETCORE_URLS)'
 if [[ -f "$REPO_ROOT/secrets.env" ]]; then
-    echo "==> Deriving EnvironmentFile from secrets.env"
-    sed -E 's/^[[:space:]]*export[[:space:]]+//; /^[[:space:]]*#/d; /^[[:space:]]*$/d' \
-        "$REPO_ROOT/secrets.env" > "$ENV_TMP"
+    echo "==> Deriving EnvironmentFile from secrets.env (orchestrator keys only)"
+    grep -E "$ORCH_KEY_RE" "$REPO_ROOT/secrets.env" | sed -E 's/^[[:space:]]*export[[:space:]]+//' > "$ENV_TMP"
 else
     echo "!! secrets.env not found at repo root — writing a template; edit on the node before arming." >&2
     cat > "$ENV_TMP" <<'EOF'
@@ -54,7 +55,9 @@ fi
 grep -q '^ASPNETCORE_URLS=' "$ENV_TMP" || echo 'ASPNETCORE_URLS=http://0.0.0.0:8080' >> "$ENV_TMP"
 
 echo "==> Installing to ${USER}@${HOST}:${TARGET}"
-$SSH "mkdir -p ${TARGET}"
+# Stop first: you can't overwrite a running executable on Linux (ETXTBSY), so an upgrade scp
+# over a live binary fails. Stopping is safe — the service is restarted at the end.
+$SSH "systemctl stop power-orchestrator.service 2>/dev/null || true; mkdir -p ${TARGET}"
 # Sync the whole publish output, not just the binary: appsettings.json (logging config) and the
 # Blazor static-asset manifest (power-orchestrator.staticwebassets.endpoints.json) + wwwroot ship
 # alongside the single-file binary and are needed at runtime for the web dashboard.
@@ -62,9 +65,11 @@ scp -rq "$PUBLISH_DIR/." "${USER}@${HOST}:${TARGET}/"
 scp -q "$HERE/power-orchestrator.service" "${USER}@${HOST}:/etc/systemd/system/power-orchestrator.service"
 scp -q "$ENV_TMP" "${USER}@${HOST}:${TARGET}/power-orchestrator.env"
 
+# restart (not just enable --now) so re-running the installer actually rolls the new binary.
 $SSH "chmod 0700 ${TARGET}/power-orchestrator && chmod 0600 ${TARGET}/power-orchestrator.env \
    && systemctl daemon-reload \
-   && systemctl enable --now power-orchestrator.service \
+   && systemctl enable power-orchestrator.service \
+   && systemctl restart power-orchestrator.service \
    && systemctl --no-pager --full status power-orchestrator.service | head -n 12"
 
 echo "==> Done. Tail logs:  ${SSH} 'journalctl -u power-orchestrator -f'"
