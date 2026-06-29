@@ -39,7 +39,39 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}
     volumes:
       - ./data/grafana:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning 
+      - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboards:/var/lib/grafana/dashboards
+    restart: unless-stopped
+
+  # --- OpenTelemetry pipeline (PowerOrchestrator, ADR/#191) ---
+  # OTLP in from the orchestrator → Prometheus (metrics) / Tempo (traces) / Loki (logs).
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector
+    command: ["--config=/etc/otelcol/config.yml"]
+    volumes:
+      - ./config/otel-collector.yml:/etc/otelcol/config.yml
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8889:8889"   # Prometheus exporter (scraped by prometheus)
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:latest
+    container_name: tempo
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    volumes:
+      - ./config/tempo.yml:/etc/tempo/tempo.yml
+      - ./data/tempo:/var/tempo
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    command: ["-config.file=/etc/loki/loki-config.yml"]
+    volumes:
+      - ./config/loki-config.yml:/etc/loki/loki-config.yml
+      - ./data/loki:/loki
     restart: unless-stopped
 
