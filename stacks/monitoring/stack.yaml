@@ -1,0 +1,44 @@
+# Monitoring stack — the homelab's observability host (#222).
+#
+# A single dedicated Docker LXC on hpe-01 (an always-on sentinel) running the
+# stacks/monitoring compose: Prometheus + Grafana + the OTel pipeline
+# (collector → Tempo/Loki) added for the PowerOrchestrator work (#191, #218/#220).
+# Deliberately NOT co-located on the media Docker host (CT 5113/youtarr) so the
+# observability stack has its own lifecycle and can migrate/resize independently.
+#
+# The CT is created via community-scripts (ct/docker.sh, like youtarr); the
+# compose is layered on by the scripted deploy/install.sh (rsync stack → CT,
+# materialise sample.* configs, docker compose up) — no manual steps. The
+# orchestrator on nuc-01 then points OTEL_EXPORTER_OTLP_ENDPOINT at :4317 here.
+#
+# Validate members against ../../Infrastructure/schema/shape.schema.json.
+# CTID allocation policy: members set ctid EXPLICITLY (omission is an error).
+
+apiVersion: homelab/v1
+kind: Stack
+
+metadata:
+  name: Monitoring
+  tags: [monitoring, observability, infra]
+
+spec:
+  ctidRange:
+    start: 4000           # guard rail: a dedicated observability block, clear of
+    end: 4099             # Core (2010–2099) and Media (5100–5199).
+  defaults:
+    node: hpe-01          # always-on sentinel — suits a monitoring host
+    source:
+      channel: stable     # → community-scripts/ProxmoxVE (ct/docker.sh)
+      ref: main
+    os: debian
+    osVersion: 13
+    unprivileged: true
+    storage: local-lvm
+    templateStorage: local
+    onboot: true
+    network:
+      bridge: vmbr0
+      vlan: 1010          # Homelab — real tag → interface name=vlan1010,tag=1010
+      ipv6: none
+    timezone: Pacific/Auckland
+    tags: [monitoring, observability, community-script]
