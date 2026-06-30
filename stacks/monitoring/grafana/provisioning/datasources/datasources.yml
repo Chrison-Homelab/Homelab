@@ -1,17 +1,23 @@
 apiVersion: 1
 
 datasources:
+  # Stable uids — the provisioned dashboards reference datasources by uid
+  # (node-power.json pins uid "prometheus"). Without these, Grafana assigns a
+  # random uid and every panel renders empty ("datasource not found").
   - name: Prometheus
+    uid: prometheus
     type: prometheus
     access: proxy
     url: http://prometheus:9090
     isDefault: true
   # Traces + logs from the OTel collector (PowerOrchestrator / #191).
   - name: Tempo
+    uid: tempo
     type: tempo
     access: proxy
     url: http://tempo:3200
   - name: Loki
+    uid: loki
     type: loki
     access: proxy
     url: http://loki:3100
