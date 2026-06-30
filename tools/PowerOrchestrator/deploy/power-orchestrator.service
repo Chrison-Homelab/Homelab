@@ -7,7 +7,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 # Proxmox/UniFi creds + ORCH_* config + OTEL_EXPORTER_OTLP_ENDPOINT live here (installed by
-# deploy/install.sh, gitignored). KEY=VALUE, no `export`, no surrounding quotes needed.
+# deploy/deploy.sh, gitignored). KEY=VALUE, no `export`, no surrounding quotes needed.
 EnvironmentFile=/opt/power-orchestrator/power-orchestrator.env
 ExecStart=/opt/power-orchestrator/power-orchestrator
 WorkingDirectory=/opt/power-orchestrator

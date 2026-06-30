@@ -55,7 +55,7 @@ reasons shown. Live status refreshes every ~3s. Rich charts still come from Graf
 
 ```bash
 set -a && . ./secrets.env && set +a          # PROXMOX_* + UNIFI_* + ORCH_*
-dotnet run --project stacks/PowerOrchestrator/src/PowerOrchestrator.Service
+dotnet run --project tools/PowerOrchestrator/src/PowerOrchestrator.Service
 # Dashboard: http://localhost:8080/   ·   API: http://localhost:8080/status
 curl -s localhost:8080/status | jq
 ```
@@ -65,18 +65,30 @@ real presence flips in `/status`.
 
 ## Deploy to nuc-01
 
+Driven by the repo's [Fallout build](../../build) — Fallout owns build → test → publish (native
+`dotnet`); the node-side copy + systemd wiring is the `deploy/deploy.sh` sugar:
+
 ```bash
-stacks/PowerOrchestrator/deploy/install.sh    # publish linux-x64 → scp → systemd enable --now
+./build.sh DeployPowerOrchestrator            # publish linux-x64 → copy to node → systemd enable --now
 ssh root@nuc-01 'journalctl -u power-orchestrator -f'
 ```
 
-Installs as a systemd service (`/opt/power-orchestrator`), dry-run until you set `ORCH_ARMED=true`
-in `/opt/power-orchestrator/power-orchestrator.env` and restart.
+(`./build.sh PublishPowerOrchestrator` stops after producing `publish/`; `deploy/deploy.sh` then
+copies that onto the node — it does not build.) Installs as a systemd service
+(`/opt/power-orchestrator`), dry-run until you set `ORCH_ARMED=true` in
+`/opt/power-orchestrator/power-orchestrator.env` and restart.
+
+## Build & test
+
+```bash
+./build.sh CompilePowerOrchestrator           # dotnet build the solution
+./build.sh TestPowerOrchestrator              # + xUnit suite (what CI runs)
+```
 
 ## Telemetry
 
 The service exports OTLP (metrics + traces) when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. The
-collector lives in [`stacks/monitoring`](../monitoring) (`otel-collector` → Prometheus / Tempo /
+collector lives in [`stacks/monitoring`](../../stacks/monitoring) (`otel-collector` → Prometheus / Tempo /
 Loki) with a **Node Power** Grafana dashboard. Metrics: `orchestrator_armed`,
 `orchestrator_presence_present_count`, `orchestrator_node_online{node}`,
 `orchestrator_node_running_guests{node}`, `orchestrator_actions_total{node,action,trigger,result}`.
@@ -87,8 +99,11 @@ Loki) with a **Node Power** Grafana dashboard. Metrics: `orchestrator_armed`,
 src/PowerOrchestrator.Core      domain: config, presence, idle, WoL, sleep, policy, arm-guard
 src/PowerOrchestrator.Service   ASP.NET host: BackgroundService loop + control API + OTel + Blazor (Components/)
 src/PowerOrchestrator.Tests     xUnit: policy/debounce, WoL bytes, options, arm-guard
-deploy/                         systemd unit + install.sh
+deploy/                         systemd unit + deploy.sh (copy + systemd; build is Fallout's job)
 ```
+
+Build/test/publish/deploy targets live in the repo's Fallout build ([`build/Build.cs`](../../build/Build.cs)):
+`CompilePowerOrchestrator` → `TestPowerOrchestrator` → `PublishPowerOrchestrator` → `DeployPowerOrchestrator`.
 
 ## Roadmap
 
