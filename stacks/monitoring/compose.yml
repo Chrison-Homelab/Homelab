@@ -16,7 +16,10 @@ services:
     restart: unless-stopped
 
   snmp_exporter:
-    image: prom/snmp-exporter
+    # Pinned: the snmp.yml config format is version-coupled to the exporter
+    # (the 0.20 "auth split" broke the old version:/auth: module format). Keep
+    # this in lockstep with the generator used to produce config/snmp.yml.
+    image: prom/snmp-exporter:v0.30.1
     ports:
       - "9116:9116"
     volumes:
