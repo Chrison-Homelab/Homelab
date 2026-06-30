@@ -7,12 +7,11 @@
 # Cloud Gateway. It's also arm64-native (no emulation on Apple Silicon) and
 # self-contained (no external MongoDB).
 #
-# Quick start:
-#   docker compose up -d
-#   open https://localhost:11443  → first-run wizard (create a local admin)
-#   Settings → Control Plane → Integrations → create an API key for UnifiSharp
+# Quick start (reproducible, no manual wizard):
+#   ./bootstrap.sh          → up + scripted first-run setup + verify + write credentials.env
+#   ./bootstrap.sh --reset  → wipe (down -v) and bootstrap from scratch
 #
-# See README.md.
+# See README.md — incl. why the legacy write API uses session (user/pass) auth.
 
 services:
   unifi-os-server:
