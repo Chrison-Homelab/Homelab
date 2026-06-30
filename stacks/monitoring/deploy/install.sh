@@ -34,10 +34,16 @@ trap 'rm -f "$TAR_TMP"' EXIT
 # COPYFILE_DISABLE + --exclude '._*': macOS bsdtar otherwise embeds AppleDouble
 # (._foo) sidecar files; grafana then tries to parse ._dashboards.yml as a
 # provisioning config and crashes ("control characters are not allowed").
+# Ship .env.local too when it exists — it holds the REAL secrets (Grafana admin
+# password, servarr keys) that override the safe .env defaults. Gitignored, so
+# it only travels host→CT, never into git. Without it Grafana runs on the
+# changeme default — never acceptable on a live host.
+ENV_LOCAL=()
+[ -f "$STACK_DIR/.env.local" ] && ENV_LOCAL=(.env.local)
 COPYFILE_DISABLE=1 tar czf "$TAR_TMP" -C "$STACK_DIR" \
-    --exclude='./data' --exclude='./.git' --exclude='./deploy' --exclude='./.env.local' \
+    --exclude='./data' --exclude='./.git' --exclude='./deploy' \
     --exclude='._*' --exclude='.DS_Store' \
-    compose.yml .env config grafana
+    compose.yml .env "${ENV_LOCAL[@]}" config grafana
 
 echo "==> Pushing into CT ${CTID} on ${NODE_HOST}:${TARGET}"
 $SSH "pct exec ${CTID} -- mkdir -p ${TARGET}"
@@ -58,7 +64,8 @@ $SSH "pct exec ${CTID} -- bash -c 'cd ${TARGET} && mkdir -p data/grafana data/lo
     && chown -R 472:472 data/grafana && chown -R 10001:10001 data/loki data/tempo'"
 
 echo "==> docker compose up -d (${SERVICES})"
-$SSH "pct exec ${CTID} -- bash -c 'cd ${TARGET} && docker compose up -d ${SERVICES}'"
+# Layer .env.local over .env (later --env-file wins) so real secrets apply.
+$SSH "pct exec ${CTID} -- bash -c 'cd ${TARGET} && ef=\"--env-file .env\"; [ -f .env.local ] && ef=\"\$ef --env-file .env.local\"; docker compose \$ef up -d ${SERVICES}'"
 $SSH "pct exec ${CTID} -- bash -c 'cd ${TARGET} && docker compose ps'"
 
 echo "==> Done. Grafana: http://10.10.0.40:3000 (admin / see .env)  ·  OTLP: 10.10.0.40:4317"
