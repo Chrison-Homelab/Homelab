@@ -1,0 +1,31 @@
+# BuildLab stack — Windows dev/build VMs for the Fallout build project.
+#
+# Owns VMID block 1100–1199. Members are kind: VM provisioned by the ProxmoxSharp
+# write path (the same path the Gaming stack uses), NOT by the community-scripts
+# (LXC) Deploy-Shape.ps1 path. Validate against
+# ../../Infrastructure/schema/shape.schema.json.
+#
+# VMID allocation policy: members set vmid EXPLICITLY (omission is an error).
+#
+# NOTE: spec.defaults reuses the LXC spec shape (per the schema), so only fields
+# common to both (node/timezone/tags) live here. VM-shape fields (machine/bios/cpu)
+# stay in the member shape — same convention as the Gaming stack.
+
+apiVersion: homelab/v1
+kind: Stack
+
+metadata:
+  name: BuildLab
+  tags: [buildlab, dev]
+  description: >-
+    Windows dev/build VMs for testing the Fallout build project across multiple
+    Visual Studio toolchains. Build agents and other dev VMs may join later.
+
+spec:
+  ctidRange:
+    start: 1100           # guard rail: a member vmid outside this block is rejected
+    end: 1199
+  defaults:
+    node: desktop-01      # strongest CPU (Ryzen 5 3600) + the proven Win11 recipe
+    timezone: Pacific/Auckland
+    tags: [buildlab]

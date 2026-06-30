@@ -1,0 +1,291 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  BuildLab — Windows 11 unattended answer file (buildvm, VMID 1100).
+
+  Drives a fully silent Win11 install on Proxmox/KVM. Baked to the ROOT of the
+  custom ISO by scripts/build-iso.ps1 (Windows setup auto-detects \autounattend.xml on
+  any attached media). What it does:
+    - WinPE: loads the virtio-scsi driver (so setup sees the virtio disk), wipes
+      disk 0, lays out a UEFI/GPT layout, installs "Windows 11 Pro".
+    - Skips the product key page with the public KMS *client setup key* → installs
+      and runs UNACTIVATED (by decision — throwaway dev box). No real key embedded.
+    - Bypasses the MS-account/OOBE screens, creates a local admin, enables RDP.
+    - Auto-logs in once and runs C:\BuildLab\provision-vs.ps1 (the Phase-C VS
+      installer), which build-iso.ps1 stages on disk via the sources\$OEM$ tree.
+
+  EDIT BEFORE USE — these depend on YOUR base ISO and are flagged inline:
+    * <ImageInstall>…/IMAGE/NAME — must match an edition in your ISO's install.wim
+      (run `dism /Get-WimInfo /WimFile:<mnt>\sources\install.wim` to list names).
+    * DriverPaths — the drive letter of the install media in WinPE is not fixed;
+      we list the common candidates (D:, E:) for the virtio vioscsi Win11 amd64
+      folder. Adjust if your bake puts drivers elsewhere.
+    * AdministratorPassword / the 'builder' account password below — a documented
+      default for an INTERNAL, throwaway box. Change it (or have build-iso.ps1
+      substitute one from the environment) if this box ever leaves the lab VLAN.
+
+  References: Microsoft autounattend schema + the virtio-win unattended recipe.
+-->
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+
+  <!-- ============================ windowsPE ============================ -->
+  <settings pass="windowsPE">
+
+    <!-- Load the virtio-scsi storage driver so WinPE can see the OS disk.
+         The custom ISO carries the virtio-win tree; these are best-effort paths
+         (non-existent ones are ignored). vioscsi\w11\amd64 is the Win11 x64 SCSI
+         driver folder in the virtio-win ISO layout. -->
+    <component name="Microsoft-Windows-PnpCustomizationsWinPE"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral"
+               versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <DriverPaths>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="1">
+          <Path>D:\virtio\vioscsi\w11\amd64</Path>
+        </PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="2">
+          <Path>E:\virtio\vioscsi\w11\amd64</Path>
+        </PathAndCredentials>
+        <!-- virtio-net + balloon too, so the NIC works in WinPE/first boot -->
+        <PathAndCredentials wcm:action="add" wcm:keyValue="3">
+          <Path>D:\virtio\NetKVM\w11\amd64</Path>
+        </PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="4">
+          <Path>E:\virtio\NetKVM\w11\amd64</Path>
+        </PathAndCredentials>
+      </DriverPaths>
+    </component>
+
+    <component name="Microsoft-Windows-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral"
+               versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+
+      <!-- Defensive Win11 requirement bypass. We DO provide TPM 2.0 + Secure Boot
+           + an ovmf/q35 machine, so this is normally unnecessary — kept as a
+           harmless safety net for CPU-allowlist quirks under cpu=host. -->
+      <RunSynchronous>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassTPMCheck /t REG_DWORD /d 1 /f</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>2</Order>
+          <Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassSecureBootCheck /t REG_DWORD /d 1 /f</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>3</Order>
+          <Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassCPUCheck /t REG_DWORD /d 1 /f</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>4</Order>
+          <Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassRAMCheck /t REG_DWORD /d 1 /f</Path>
+        </RunSynchronousCommand>
+      </RunSynchronous>
+
+      <DiskConfiguration>
+        <Disk wcm:action="add">
+          <DiskID>0</DiskID>
+          <WillWipeDisk>true</WillWipeDisk>
+          <CreatePartitions>
+            <!-- EFI System Partition -->
+            <CreatePartition wcm:action="add">
+              <Order>1</Order>
+              <Type>EFI</Type>
+              <Size>300</Size>
+            </CreatePartition>
+            <!-- Microsoft Reserved (MSR) -->
+            <CreatePartition wcm:action="add">
+              <Order>2</Order>
+              <Type>MSR</Type>
+              <Size>16</Size>
+            </CreatePartition>
+            <!-- Windows partition — fills the rest of the disk -->
+            <CreatePartition wcm:action="add">
+              <Order>3</Order>
+              <Type>Primary</Type>
+              <Extend>true</Extend>
+            </CreatePartition>
+          </CreatePartitions>
+          <ModifyPartitions>
+            <ModifyPartition wcm:action="add">
+              <Order>1</Order>
+              <PartitionID>1</PartitionID>
+              <Format>FAT32</Format>
+              <Label>System</Label>
+            </ModifyPartition>
+            <ModifyPartition wcm:action="add">
+              <Order>2</Order>
+              <PartitionID>2</PartitionID>
+            </ModifyPartition>
+            <ModifyPartition wcm:action="add">
+              <Order>3</Order>
+              <PartitionID>3</PartitionID>
+              <Format>NTFS</Format>
+              <Label>Windows</Label>
+              <Letter>C</Letter>
+            </ModifyPartition>
+          </ModifyPartitions>
+        </Disk>
+        <WillShowUI>OnError</WillShowUI>
+      </DiskConfiguration>
+
+      <ImageInstall>
+        <OSImage>
+          <InstallFrom>
+            <MetaData wcm:action="add">
+              <Key>/IMAGE/NAME</Key>
+              <!-- EDIT to match your ISO (e.g. "Windows 11 Pro"). -->
+              <Value>Windows 11 Pro</Value>
+            </MetaData>
+          </InstallFrom>
+          <InstallTo>
+            <DiskID>0</DiskID>
+            <PartitionID>3</PartitionID>
+          </InstallTo>
+        </OSImage>
+      </ImageInstall>
+
+      <UserData>
+        <!-- Public KMS client setup key for Win11 Pro: lets setup skip the key
+             page and proceed; the box stays UNACTIVATED (no genuine key here). -->
+        <ProductKey>
+          <Key>W269N-WFGWX-YVC9B-4J6C9-T83GX</Key>
+          <WillShowUI>OnError</WillShowUI>
+        </ProductKey>
+        <AcceptEula>true</AcceptEula>
+      </UserData>
+    </component>
+
+    <component name="Microsoft-Windows-International-Core-WinPE"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral"
+               versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <SetupUILanguage>
+        <UILanguage>en-US</UILanguage>
+      </SetupUILanguage>
+      <InputLocale>en-NZ</InputLocale>
+      <SystemLocale>en-NZ</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UserLocale>en-NZ</UserLocale>
+    </component>
+  </settings>
+
+  <!-- ============================ specialize ============================ -->
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral"
+               versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <ComputerName>buildvm</ComputerName>
+      <TimeZone>New Zealand Standard Time</TimeZone>
+    </component>
+
+    <!-- Enable RDP + open the firewall (headless build box). -->
+    <component name="Microsoft-Windows-TerminalServices-LocalSessionManager"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral"
+               versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <fDenyTSConnections>false</fDenyTSConnections>
+    </component>
+    <component name="Microsoft-Windows-TerminalServices-RDP-WinStationExtensions"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral"
+               versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <UserAuthentication>0</UserAuthentication>
+    </component>
+    <component name="Networking-MPSSVC-Svc"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral"
+               versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <FirewallGroups>
+        <FirewallGroup wcm:action="add" wcm:keyValue="RemoteDesktop">
+          <Active>true</Active>
+          <Group>Remote Desktop</Group>
+          <Profile>all</Profile>
+        </FirewallGroup>
+      </FirewallGroups>
+    </component>
+  </settings>
+
+  <!-- ============================ oobeSystem ============================ -->
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral"
+               versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+
+      <!-- Skip the entire OOBE / Microsoft-account flow. -->
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideLocalAccountScreen>true</HideLocalAccountScreen>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <ProtectYourPC>3</ProtectYourPC>
+        <SkipMachineOOBE>true</SkipMachineOOBE>
+        <SkipUserOOBE>true</SkipUserOOBE>
+      </OOBE>
+
+      <!-- Local admin account. INTERNAL/throwaway default password — change for
+           anything beyond the lab VLAN (or have build-iso.ps1 substitute one). -->
+      <UserAccounts>
+        <LocalAccounts>
+          <LocalAccount wcm:action="add">
+            <Name>builder</Name>
+            <Group>Administrators</Group>
+            <DisplayName>BuildLab Builder</DisplayName>
+            <Password>
+              <Value>BuildLab!2026</Value>
+              <PlainText>true</PlainText>
+            </Password>
+          </LocalAccount>
+        </LocalAccounts>
+      </UserAccounts>
+
+      <!-- Auto-logon a few times so the VS install survives reboots and the
+           FirstLogonCommands fire unattended. provision-vs.ps1 disables this when
+           it finishes. -->
+      <AutoLogon>
+        <Enabled>true</Enabled>
+        <Username>builder</Username>
+        <LogonCount>5</LogonCount>
+        <Password>
+          <Value>BuildLab!2026</Value>
+          <PlainText>true</PlainText>
+        </Password>
+      </AutoLogon>
+
+      <FirstLogonCommands>
+        <SynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <Description>Install QEMU guest agent + virtio drivers</Description>
+          <!-- virtio-win-guest-tools.exe is staged on the ISO root by build-iso.ps1 -->
+          <CommandLine>cmd /c if exist C:\BuildLab\virtio-win-guest-tools.exe C:\BuildLab\virtio-win-guest-tools.exe /install /quiet /norestart</CommandLine>
+        </SynchronousCommand>
+        <SynchronousCommand wcm:action="add">
+          <Order>2</Order>
+          <Description>Run the Visual Studio provisioner</Description>
+          <CommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BuildLab\provision-vs.ps1</CommandLine>
+        </SynchronousCommand>
+      </FirstLogonCommands>
+    </component>
+
+    <component name="Microsoft-Windows-International-Core"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral"
+               versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <InputLocale>en-NZ</InputLocale>
+      <SystemLocale>en-NZ</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UserLocale>en-NZ</UserLocale>
+    </component>
+  </settings>
+</unattend>

@@ -1,0 +1,11 @@
+{
+  "_comment": "BuildLab — MINIMAL .NET MSBuild workloads for the standalone VS Build Tools (vs_buildtools), applied to 2019/2022/2026. The single tuning point: add workloads/components here to widen the install. No native/C++ (Fallout is a .NET build framework). Component IDs are stable across VS 16/17/18; if a version rejects one, copy this to <year>.buildtools.vsconfig and adjust.",
+  "version": "1.0",
+  "components": [
+    "Microsoft.VisualStudio.Workload.MSBuildTools",
+    "Microsoft.VisualStudio.Workload.ManagedDesktopBuildTools",
+    "Microsoft.NetCore.Component.SDK",
+    "Microsoft.Net.Component.4.8.SDK",
+    "Microsoft.Net.Component.4.8.TargetingPack"
+  ]
+}
