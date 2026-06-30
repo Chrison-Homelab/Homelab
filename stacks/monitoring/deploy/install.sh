@@ -22,6 +22,9 @@ NODE_HOST="${MON_NODE_HOST:-hpe-01}"          # Proxmox node the CT lives on (ss
 NODE_USER="${MON_NODE_USER:-root}"
 CTID="${MON_CTID:-4000}"
 TARGET="${MON_TARGET:-/opt/monitoring}"
+# snmp_exporter is intentionally NOT in the default set yet: config/snmp.yml is a
+# stub (no generated Synology module), so the exporter would crash-loop on
+# v0.30.1. Add it back here once a real module is generated (see README / #222).
 SERVICES="${MON_SERVICES:-prometheus grafana otel-collector tempo loki}"
 SSH="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new ${NODE_USER}@${NODE_HOST}"
 
@@ -52,9 +55,12 @@ $SSH "cat > /tmp/monitoring.tgz" < "$TAR_TMP"
 $SSH "pct push ${CTID} /tmp/monitoring.tgz /tmp/monitoring.tgz && rm -f /tmp/monitoring.tgz"
 $SSH "pct exec ${CTID} -- tar xzf /tmp/monitoring.tgz -C ${TARGET} && pct exec ${CTID} -- rm -f /tmp/monitoring.tgz"
 
-echo "==> Materialising sample.* configs (idempotent — only fills missing real names)"
-# sample.<name>.yml → <name>.yml (loki-config keeps its suffix), per the stack README.
-$SSH "pct exec ${CTID} -- bash -c 'cd ${TARGET}/config && for s in sample.*.yml; do real=\"\${s#sample.}\"; [ -f \"\$real\" ] || cp \"\$s\" \"\$real\"; done && ls *.yml'"
+echo "==> Materialising sample.* configs (repo is authoritative — overwrites)"
+# sample.<name>.yml → <name>.yml. Overwrite so the repo is the source of truth:
+# config changes (e.g. the snmp/prometheus scrape jobs) actually redeploy rather
+# than being skipped because a stale real file already exists. Secrets live in
+# .env/.env.local, never in these configs, so overwriting is safe.
+$SSH "pct exec ${CTID} -- bash -c 'cd ${TARGET}/config && for s in sample.*.yml; do cp -f \"\$s\" \"\${s#sample.}\"; done && ls *.yml'"
 
 # Bind-mounted data dirs are created root-owned, but grafana (uid 472) and
 # loki/tempo (uid 10001) run non-root and must own their volumes — else they
@@ -66,6 +72,10 @@ $SSH "pct exec ${CTID} -- bash -c 'cd ${TARGET} && mkdir -p data/grafana data/lo
 echo "==> docker compose up -d (${SERVICES})"
 # Layer .env.local over .env (later --env-file wins) so real secrets apply.
 $SSH "pct exec ${CTID} -- bash -c 'cd ${TARGET} && ef=\"--env-file .env\"; [ -f .env.local ] && ef=\"\$ef --env-file .env.local\"; docker compose \$ef up -d ${SERVICES}'"
+# Prometheus reads its config only at start; a bind-mount content change doesn't
+# trigger a recreate, so restart it to pick up scrape-config edits.
+echo "==> Reloading prometheus config"
+$SSH "pct exec ${CTID} -- bash -c 'cd ${TARGET} && docker compose restart prometheus >/dev/null 2>&1'"
 $SSH "pct exec ${CTID} -- bash -c 'cd ${TARGET} && docker compose ps'"
 
 echo "==> Done. Grafana: http://10.10.0.40:3000 (admin / see .env)  ·  OTLP: 10.10.0.40:4317"

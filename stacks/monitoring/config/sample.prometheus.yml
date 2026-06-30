@@ -1,10 +1,22 @@
 scrape_configs:
+  # Synology NAS via SNMP. Prometheus scrapes the snmp_exporter, passing the NAS
+  # as ?target=; the exporter does the SNMP walk (module 'synology' in snmp.yml,
+  # community 'homelab'). The relabel rewrites the scrape address to the exporter
+  # while keeping the NAS as the target/instance — the standard snmp_exporter
+  # pattern (without it, prometheus would try to scrape the NAS directly).
   - job_name: 'synology'
-    static_configs:
-      - targets: ['192.168.1.10']  # your DSM IP
     metrics_path: /snmp
     params:
       module: [synology]
+    static_configs:
+      - targets: ['192.168.179.11']   # DS1813 NAS (SNMP v2c, community 'homelab')
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: snmp_exporter:9116
   - job_name: 'servarr'
     static_configs:
       - targets: ['servarr_exporter:9707']
