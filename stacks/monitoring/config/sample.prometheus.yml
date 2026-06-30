@@ -7,7 +7,9 @@ scrape_configs:
   - job_name: 'synology'
     metrics_path: /snmp
     params:
-      module: [synology]
+      # new-format snmp_exporter: auth name (from snmp.yml `auths:`) + modules.
+      auth: [synology]
+      module: [if_mib, synology]
     static_configs:
       - targets: ['192.168.179.11']   # DS1813 NAS (SNMP v2c, community 'homelab')
     relabel_configs:
