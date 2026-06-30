@@ -14,8 +14,8 @@
     },
     "kind": {
       "type": "string",
-      "enum": ["Node", "LXC", "VM", "NASShare", "Stack"],
-      "description": "What this shape describes. 'Node' is a physical Proxmox host (described, not provisioned). 'Stack' groups LXC/VM members and owns a CTID range + defaults."
+      "enum": ["Node", "LXC", "VM", "NASShare", "Stack", "UnifiNetwork"],
+      "description": "What this shape describes. 'Node' is a physical Proxmox host (described, not provisioned). 'Stack' groups LXC/VM members and owns a CTID range + defaults. 'UnifiNetwork' declares UniFi network resources (port-forwards) reconciled by converge-unifi (#221/#102)."
     },
     "metadata": {
       "type": "object",
@@ -81,10 +81,46 @@
         "required": ["spec"],
         "properties": { "spec": { "$ref": "#/$defs/stackSpec" } }
       }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "UnifiNetwork" } } },
+      "then": {
+        "required": ["spec"],
+        "properties": { "spec": { "$ref": "#/$defs/unifiNetworkSpec" } }
+      }
     }
   ],
 
   "$defs": {
+    "unifiNetworkSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "UniFi network desired-state (#221/#102), reconciled by `converge-unifi` via UnifiSharp's legacy write API. Add-only — converge creates declared resources missing by name and never deletes hand-managed ones.",
+      "properties": {
+        "portForwards": {
+          "type": "array",
+          "description": "WAN→LAN port-forwards.",
+          "items": { "$ref": "#/$defs/portForward" }
+        }
+      }
+    },
+    "portForward": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "destinationPort", "forwardIp", "forwardPort"],
+      "description": "A single WAN→LAN port-forward. Matched (for add-only idempotency) by name.",
+      "properties": {
+        "name": { "type": "string", "description": "Unique rule name — the add-only match key." },
+        "enabled": { "type": "boolean" },
+        "interface": { "type": "string", "enum": ["wan", "wan2", "both"], "description": "The WAN the rule binds to." },
+        "source": { "type": "string", "description": "Permitted source — 'any' or a CIDR/IP." },
+        "destinationPort": { "type": ["string", "integer"], "description": "WAN port or range. Canonically a string (e.g. '443' or '8080-8090'); a bare integer is also accepted." },
+        "forwardIp": { "type": "string", "description": "Forward-to LAN IP." },
+        "forwardPort": { "type": ["string", "integer"], "description": "Forward-to LAN port or range. Canonically a string; a bare integer is also accepted." },
+        "protocol": { "type": "string", "enum": ["tcp", "udp", "tcp_udp"] },
+        "log": { "type": "boolean" }
+      }
+    },
     "source": {
       "type": "object",
       "additionalProperties": false,
