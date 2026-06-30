@@ -1,6 +1,6 @@
 # OpenTelemetry Collector — receives OTLP from the power-orchestrator (and any future
 # OTLP emitters) and fans out: metrics → Prometheus (scraped off :8889), traces → Tempo,
-# logs → Loki. See stacks/PowerOrchestrator/README.md.
+# logs → Loki. See tools/PowerOrchestrator/README.md.
 receivers:
   otlp:
     protocols:

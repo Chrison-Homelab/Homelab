@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
-# install.sh — publish the power-orchestrator as a self-contained linux-x64 binary and install
-# it as a systemd service on the sentinel node (nuc-01). Idempotent: re-run to upgrade.
+# deploy.sh — the "deploy sugar": copy the already-published power-orchestrator binary onto the
+# sentinel node (nuc-01) and (re)install it as a systemd service. Idempotent: re-run to upgrade.
 #
-# Run from the dev box (needs the .NET SDK + ssh access to the node, and a populated secrets.env).
+# Fallout owns the build/test/publish (native dotnet). This script consumes Fallout's publish/
+# output — it does NOT build. Drive it through the Fallout target so publish always runs first:
 #
-#   ./install.sh                      # deploy to nuc-01 (192.168.179.1)
-#   ORCH_DEPLOY_HOST=192.168.179.1 ORCH_DEPLOY_USER=root ./install.sh
+#   ./build.sh DeployPowerOrchestrator                          # publish → copy → systemd (recommended)
+#   ORCH_DEPLOY_HOST=192.168.179.1 ./build.sh DeployPowerOrchestrator
+#
+# Running this script directly is supported too, but only after a publish exists:
+#   ./build.sh PublishPowerOrchestrator && tools/PowerOrchestrator/deploy/deploy.sh
 #
 # The service starts in DRY-RUN (ORCH_ARMED unset/false): it observes + logs + emits telemetry
 # but never powers anything off. Manual wake/sleep via the HTTP API still act. Arm later by
@@ -15,7 +19,6 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../../.." && pwd)"
-PROJECT="$HERE/../src/PowerOrchestrator.Service/PowerOrchestrator.Service.csproj"
 PUBLISH_DIR="$HERE/../publish"
 
 HOST="${ORCH_DEPLOY_HOST:-192.168.179.1}"   # nuc-01
@@ -23,9 +26,12 @@ USER="${ORCH_DEPLOY_USER:-root}"
 TARGET=/opt/power-orchestrator
 SSH="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new ${USER}@${HOST}"
 
-echo "==> Publishing self-contained linux-x64 binary"
-dotnet publish "$PROJECT" -c Release -r linux-x64 --self-contained true \
-    -p:PublishSingleFile=true -p:DebugType=none -o "$PUBLISH_DIR"
+# Require Fallout's publish output — this script copies, it never builds.
+if [[ ! -x "$PUBLISH_DIR/power-orchestrator" ]]; then
+    echo "!! No published binary at $PUBLISH_DIR — run the publish first:" >&2
+    echo "     ./build.sh PublishPowerOrchestrator   (or just ./build.sh DeployPowerOrchestrator)" >&2
+    exit 1
+fi
 
 # Build the systemd EnvironmentFile from the repo secrets.env. Scope it to ONLY the keys this
 # service needs (minimal creds — don't ship Cloudflare/GitHub/Synology tokens to the node):
