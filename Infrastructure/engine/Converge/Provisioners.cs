@@ -534,6 +534,8 @@ public sealed class PangolinProvisioner : IAppProvisioner
             yield return $"render /opt/pangolin/{{compose.yml,.env,config/*}} — Docker EE {img}; generate+preserve server.secret";
             yield return $"Traefik owns :443 with LE wildcard certs (DNS-01 via Cloudflare) for {string.Join(" + ", WildcardFqdns(s))}";
             yield return "docker compose up -d (idempotent via managed marker) — then activate EE once at /admin/license (manual)";
+            if (s.Spec.Config.Str("publicIp") is { Length: > 0 } pip)
+                yield return $"ensure grey-cloud A record(s) {string.Join(" + ", WildcardFqdns(s))} → {pip} (add-only)";
         }
         else
         {
@@ -593,6 +595,17 @@ public sealed class PangolinProvisioner : IAppProvisioner
         return WildcardZones(s).Select(z => $"*.{z}.{b}").ToList();
     }
 
+    // The grey-cloud A records public-wildcard mode declares (#221): one per wildcard SAN,
+    // *.<zone>.<baseDomain> → the home WAN IP (config.publicIp). Each LE wildcard cert Traefik
+    // mints is useless unless the hostname actually resolves to the home :443 port-forward.
+    // Empty in cloudflared mode (no public :443) or when publicIp is unset.
+    internal static IReadOnlyList<(string Fqdn, string Ip)> WildcardARecords(Shape s)
+    {
+        if ((s.Spec.Config.Str("edge") ?? "cloudflared") != PublicWildcard) return Array.Empty<(string, string)>();
+        if (s.Spec.Config.Str("publicIp") is not { Length: > 0 } ip) return Array.Empty<(string, string)>();
+        return WildcardFqdns(s).Select(f => (f, ip)).ToList();
+    }
+
     public async Task<ApplyResult> ApplyAsync(Shape s, ConvergeContext ctx)
     {
         if (s.Spec.Node is not { } node || s.Spec.Ctid is not { } ctid) return ApplyResult.Failed("missing node/ctid");
@@ -638,15 +651,53 @@ public sealed class PangolinProvisioner : IAppProvisioner
             configMsg = $"{mode} (marker {marker})";
         }
 
+        // Wildcard DNS (#221): in public-wildcard mode, declare the grey-cloud A records that
+        // point each *.<zone> hostname at the home WAN IP. Add-only, idempotent by existence.
+        // Skipped — not failed — when publicIp or the CF token is absent (so a plan/dev run
+        // without the WAN IP or creds still converges the rest).
+        var (dnsMsg, dnsChanged, dnsFailed) = await ReconcileWildcardDnsAsync(s, ctx);
+        if (dnsFailed is not null) return ApplyResult.Failed(dnsFailed);
+
         // Resources (declarative, #136): reconcile declared admin-UI resources via the
         // integration API (add-only, idempotent by fullDomain). Skipped — not failed —
         // until the org PANGOLIN_API_KEY exists, since that's a post-setup bootstrap secret.
         var (resMsg, resChanged, resFailed) = await ReconcileResourcesAsync(s, ctx, node, ctid);
         if (resFailed is not null) return ApplyResult.Failed(resFailed);
 
-        if (configMsg is null && !resChanged)
-            return ApplyResult.NoChange($"config current (marker {marker})" + (resMsg is null ? "" : $"; {resMsg}"));
-        return ApplyResult.Applied(string.Join("; ", new[] { configMsg, resMsg }.Where(x => x is not null)));
+        if (configMsg is null && !dnsChanged && !resChanged)
+            return ApplyResult.NoChange($"config current (marker {marker})"
+                + (dnsMsg is null ? "" : $"; {dnsMsg}") + (resMsg is null ? "" : $"; {resMsg}"));
+        return ApplyResult.Applied(string.Join("; ", new[] { configMsg, dnsMsg, resMsg }.Where(x => x is not null)));
+    }
+
+    // Reconcile the grey-cloud wildcard A records (#221): one proxied:false A record per
+    // wildcard zone, *.<zone>.<baseDomain> → the home WAN IP, so the LE wildcard hostnames
+    // resolve to the home :443 port-forward. Add-only + ManagedComment-stamped (so #195's
+    // prune leaves hand-managed records alone), idempotent by existence. Skipped — not failed —
+    // when publicIp or the CF token is absent. Returns (msg, changed, failedReason).
+    private static async Task<(string? msg, bool changed, string? failed)> ReconcileWildcardDnsAsync(Shape s, ConvergeContext ctx)
+    {
+        if ((s.Spec.Config.Str("edge") ?? "cloudflared") != PublicWildcard) return (null, false, null);
+        if (WildcardFqdns(s).Count == 0) return (null, false, null);
+
+        var want = WildcardARecords(s);   // gated on edge=public-wildcard + publicIp set
+        if (want.Count == 0)
+            return ("wildcard zone(s) declared but config.publicIp unset — DNS skipped (set the home WAN IP, then re-run)", false, null);
+        // Traefik already needs this token for its DNS-01 challenge, so it's the same secret.
+        if ((ctx.Secrets.Get("CF_DNS_API_TOKEN") ?? ctx.Secrets.Get("CF_API_TOKEN")) is not { Length: > 0 } token)
+            return ("wildcard A record(s) declared but CF_DNS_API_TOKEN/CF_API_TOKEN unset — DNS skipped", false, null);
+
+        var ct = CancellationToken.None;
+        var api = new CloudflareApi(token);
+        var zone = await api.GetZoneAsync(BaseDomain(s), ct);
+        int created = 0;
+        foreach (var (fqdn, ip) in want)
+            if (!await api.DnsExistsAsync(zone.ZoneId, fqdn, ct))
+            {
+                await api.CreateARecordAsync(zone.ZoneId, fqdn, ip, ct);
+                created++;
+            }
+        return ($"{want.Count} wildcard A record(s) declared, {created} created", created > 0, null);
     }
 
     // Reconcile declared Pangolin resources (admin UIs) via the integration API on the

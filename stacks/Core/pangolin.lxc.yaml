@@ -73,6 +73,12 @@ spec:
     # the provisioner for rollback.)
     edge: public-wildcard
     wildcardZones: [lab, arr]                    # → *.lab.chrison.dev + *.arr.chrison.dev LE SANs
+    # Home WAN IP the public :443 port-forward lives behind (#221, ADR-0007). The provisioner
+    # declares a grey-cloud (proxied:false) A record per wildcard zone → this IP, so every
+    # *.<zone> hostname Traefik mints a cert for actually resolves to the home edge. Add-only +
+    # ManagedComment-stamped (so #195's prune leaves hand-managed records alone). Update if the
+    # WAN IP changes. The UniFi :443 port-forward itself is still hand-managed (gated on #102).
+    publicIp: 118.67.199.127
     letsEncryptEmail: csimon@chrison.dev
     leStaging: false                             # flip true to use the LE STAGING CA while iterating
     # includeGerbil: false                       # WireGuard idle in the home-IP trial; enable for the

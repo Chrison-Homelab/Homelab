@@ -546,6 +546,29 @@ public sealed class ConvergeCoreTests
     }
 
     [Fact]
+    public void Pangolin_WildcardARecords_OnePerZone_ToPublicIp_WhenPublicWildcard()
+    {
+        var s = PangolinWildcardShape();
+        s.Spec.Config["publicIp"] = "118.67.199.127";
+        var recs = PangolinProvisioner.WildcardARecords(s);
+        Assert.Equal(2, recs.Count);
+        Assert.Contains(("*.arr.chrison.dev", "118.67.199.127"), recs);
+        Assert.Contains(("*.lab.chrison.dev", "118.67.199.127"), recs);
+    }
+
+    [Fact]
+    public void Pangolin_WildcardARecords_Empty_WhenPublicIpUnset_OrCloudflaredEdge()
+    {
+        // publicIp unset → nothing to declare (the reconcile reports a skip, never an A record).
+        Assert.Empty(PangolinProvisioner.WildcardARecords(PangolinWildcardShape()));
+
+        // cloudflared edge has no public :443, so no grey-cloud A records even with publicIp set.
+        var cf = PangolinShape();
+        cf.Spec.Config["publicIp"] = "118.67.199.127";
+        Assert.Empty(PangolinProvisioner.WildcardARecords(cf));
+    }
+
+    [Fact]
     public void Pangolin_ComposeYaml_PinsEeImage_TraefikPublishesPorts_NoGerbilByDefault()
     {
         var compose = PangolinProvisioner.BuildComposeYaml(PangolinWildcardShape());
