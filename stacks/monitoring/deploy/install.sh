@@ -22,10 +22,7 @@ NODE_HOST="${MON_NODE_HOST:-hpe-01}"          # Proxmox node the CT lives on (ss
 NODE_USER="${MON_NODE_USER:-root}"
 CTID="${MON_CTID:-4000}"
 TARGET="${MON_TARGET:-/opt/monitoring}"
-# snmp_exporter is intentionally NOT in the default set yet: config/snmp.yml is a
-# stub (no generated Synology module), so the exporter would crash-loop on
-# v0.30.1. Add it back here once a real module is generated (see README / #222).
-SERVICES="${MON_SERVICES:-prometheus grafana otel-collector tempo loki}"
+SERVICES="${MON_SERVICES:-prometheus grafana otel-collector tempo loki snmp_exporter}"
 SSH="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new ${NODE_USER}@${NODE_HOST}"
 
 echo "==> Packing ${STACK_DIR} (compose + sample configs + grafana provisioning + .env)"
