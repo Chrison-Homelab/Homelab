@@ -1,0 +1,45 @@
+# Leapmotor Mate — self-hosted TeslaMate-style companion for the C10.
+#
+# Docker-only app (no community-scripts ct/leapmotor-mate.sh, no native install),
+# so — exactly like Media/youtarr — this CT is a thin Docker host: app: docker →
+# ct/docker.sh installs Docker Engine, then our self-contained compose
+# (leapmotor-mate/compose.yml) is layered on. The upstream image is
+# self-contained (only `image:` pulls, only a data-dir volume) so we ship a
+# minimal compose + .env instead of cloning the repo. See README.md for the
+# layer-on steps. Run the stack from /opt/leapmotor so compose's ./data + ./certs
+# resolve to the CT local disk.
+#
+# Docker needs nesting (and keyctl) on an unprivileged LXC — declared below;
+# ct/docker.sh also sets var_nesting itself on create.
+#
+# NO NFS MOUNT. All state (SQLite DB, uploaded certs, secret key) lives on the CT
+# local disk under /opt/leapmotor/data — a few MB of telemetry. So unlike the
+# *arr/youtarr there is no volume4 dependency and no pre-start mount guard.
+#
+# EXPOSURE — INTERNAL-ONLY (no tunnel ingress). Reached over VLAN 1010 only; it
+# stores the dedicated Leapmotor account credentials, so it stays off the public
+# net (set MATE_AUTH_PASSWORD in .env regardless). To expose later, add a
+# cloudflared member to this stack (+ dependsOn) and gate with CF Access.
+# Validate against ../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: leapmotor-mate
+  stack: Leapmotor
+  tags: [leapmotor, car, ev, docker]
+
+spec:
+  app: docker            # community-scripts slug → ct/docker.sh (Docker Engine host)
+  ctid: 4000
+  cores: 1               # light: FastAPI web + a single polling loop
+  memory: 1024           # MB — Docker daemon + one Python container + SQLite
+  disk: 10               # GB — Docker image layers + tiny SQLite store under /opt/leapmotor
+
+  features:
+    nesting: true        # required: Docker-in-LXC
+    keyctl: true         # Docker/containerd keyring ops on unprivileged LXC
+
+  # node / network / os / source / timezone inherited from stack.yaml defaults.
+  # No mounts, no hookscript — state is CT-local (see header).

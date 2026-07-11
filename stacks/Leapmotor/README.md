@@ -55,10 +55,14 @@ You upload them in Mate's first-run wizard.
 
 ## Deploy
 
-On the Leapmotor LXC:
+The CT itself is defined declaratively: `stack.yaml` (stack defaults + CTID
+block 4000–4099) and `leapmotor-mate.lxc.yaml` (a Docker host on CT **4000**,
+Homelab VLAN 1010, internal-only). It's provisioned via community-scripts like
+the rest of the fleet (see `../Infrastructure/deploy/`), then the compose is
+layered on. On the resulting LXC:
 
 ```bash
-# from a copy of this folder, e.g. /opt/leapmotor
+# from a copy of this folder at /opt/leapmotor
 cp .env.example .env      # then edit: set MATE_AUTH_PASSWORD if exposing it
 docker compose up -d
 docker compose logs -f    # watch first boot
@@ -88,9 +92,11 @@ curl -fsSL -o app.key https://raw.githubusercontent.com/markoceri/leapmotor-cert
 
 ## Files
 
-| Path              | Purpose                                                        |
-|-------------------|----------------------------------------------------------------|
-| `compose.yml`     | The single-service stack.                                      |
-| `.env.example`    | Runtime knobs — copy to `.env` (gitignored) and fill in.       |
-| `certs/`          | `app.crt` + `app.key` for mTLS (uploaded in the wizard).       |
-| `data/`           | Created on first run — SQLite, stored creds, secret key.       |
+| Path                       | Purpose                                                   |
+|----------------------------|-----------------------------------------------------------|
+| `stack.yaml`               | Stack defaults + CTID block (4000–4099).                  |
+| `leapmotor-mate.lxc.yaml`  | The LXC definition — Docker host on CT 4000, internal.    |
+| `compose.yml`              | The single-service stack.                                 |
+| `.env.example`             | Runtime knobs — copy to `.env` (gitignored) and fill in.  |
+| `certs/`                   | `app.crt` + `app.key` for mTLS (uploaded in the wizard).  |
+| `data/`                    | Created on first run — SQLite, stored creds, secret key.  |

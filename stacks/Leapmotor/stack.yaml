@@ -1,0 +1,51 @@
+# Leapmotor stack — self-hosted companion for the Leapmotor C10.
+#
+# Single-member stack today: leapmotor-mate (ProtossBlaster/leapmotor-mate), a
+# TeslaMate-style app that polls Leapmotor's unofficial cloud API (mTLS certs +
+# a dedicated account) and serves a local web UI. Same shape as Media/youtarr —
+# the app ships ONLY as a container image with no community-scripts installer,
+# so the CT is a thin Docker host (app: docker → ct/docker.sh) with our own
+# self-contained compose (leapmotor-mate/compose.yml) layered on. We do NOT
+# clone upstream; the image is self-contained (only `image:` pulls, only a
+# data-dir volume) so a minimal compose + .env is all we ship.
+#
+# EXPOSURE — INTERNAL-ONLY (no tunnel ingress). Reached over VLAN 1010 only.
+# It carries the dedicated Leapmotor account's stored credentials, so it stays
+# off the public net. To expose later, stand up a dedicated cloudflared member
+# here (mirroring Media/cloudflared.lxc.yaml) and gate with CF Access — never
+# extend an existing tunnel (repo add-only policy).
+#
+# Deployed via community-scripts over SSH — see ../Infrastructure/deploy/.
+# Validate members against ../Infrastructure/schema/shape.schema.json.
+#
+# CTID allocation policy: members set ctid EXPLICITLY (omission is an error).
+
+apiVersion: homelab/v1
+kind: Stack
+
+metadata:
+  name: Leapmotor
+  tags: [leapmotor, car, ev]
+
+spec:
+  ctidRange:
+    start: 4000           # guard rail: a member ctid outside this block is rejected.
+    end: 4099             # fresh block — Core=20xx, DevOps=30xx, Media=51xx were taken.
+  defaults:
+    node: hpe-01          # general compute (same as Media); override per-member if needed.
+    source:
+      channel: stable     # → community-scripts/ProxmoxVE (ct/docker.sh)
+      ref: main
+    os: debian
+    osVersion: 13
+    unprivileged: true
+    storage: local-lvm
+    templateStorage: local
+    onboot: true
+    network:
+      bridge: vmbr0
+      vlan: 1010          # Homelab — real tag → interface name=vlan1010,tag=1010
+      ipv4: dhcp          # internal-only, nothing targets it by IP → DHCP is fine.
+      ipv6: none
+    timezone: Pacific/Auckland
+    tags: [leapmotor, community-script]
