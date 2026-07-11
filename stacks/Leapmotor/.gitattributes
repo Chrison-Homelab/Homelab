@@ -1,0 +1,4 @@
+# PEM certs must keep LF endings — they're consumed on the Linux LXC and by
+# OpenSSL/mTLS clients. Don't let Windows autocrlf rewrite them.
+certs/app.crt text eol=lf
+certs/app.key text eol=lf
