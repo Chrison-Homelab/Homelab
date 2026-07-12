@@ -8,9 +8,10 @@
 # out-of-range adopted member (see stack.yaml), mirroring Gaming's adopted VMs.
 #
 # Two reasons apply is intentionally not wired yet:
-#   1. HA has THREE NICs (below); the converge path maps only the single
-#      `network` (→ net0) today — `networks[]` is "not mapped yet" in
-#      VmConverger — so an apply can't faithfully reconcile net1/net2.
+#   1. HA has THREE NICs (below), expressed via `networks[]`. VmConverger only
+#      reconciles the single-NIC `network` sugar today, so `networks[]` is purely
+#      descriptive — an apply would make NO NIC changes (leaves net0/1/2 as-is).
+#      Faithful documentation now; real multi-NIC converge lands with the engine.
 #   2. There is no `managed:false` flag in the schema yet, so this file IS a
 #      converge member — a `Deploy --stack SmartHome` WOULD include it. Until an
 #      exclude flag lands, deploy the broker with `--stack` targeting is fine but
@@ -59,18 +60,23 @@ spec:
     source: vm-2000-disk-1      # existing efidisk (adopted)
     efitype: 4m
 
-  # net0 (untagged/native on vmbr0) is HA's ACTIVE NIC → guest enp6s18,
-  # 192.168.179.102 (legacy net). This is the one the converge path maps.
-  network:
-    bridge: vmbr0
-    hwaddr: "02:1F:98:8B:6F:6A"
-
-  # --- ADDITIONAL NICs (documented; not converge-mapped yet — see header) ---
-  # net1: virtio BC:24:11:C0:7F:BB, bridge vmbr0, tag=1040 (IoT), firewall=1,
-  #       link_down=1 → guest enp6s19. Provisioned for HA↔IoT-device L2 comms
-  #       but currently ADMINISTRATIVELY DOWN and unconfigured inside HAOS.
-  #       (Not needed for MQTT — HA reaches the broker via net0/legacy.)
-  # net2: virtio BC:24:11:3C:03:54, bridge vmbr0, tag=1010 (Homelab), firewall=1,
-  #       link_down=1 → guest enp6s20. Also administratively down.
+  # All THREE NICs, faithfully (array index → netN, model virtio). Only net0 is
+  # up; net1/net2 are provisioned but administratively DOWN (Proxmox link_down).
+  # NOTE: converge maps only the single-NIC `network` sugar today — `networks[]`
+  # is descriptive (not reconciled), which is exactly right for this describe-only
+  # adopted VM. It documents reality without the engine trying to manage the NICs.
+  networks:
+    - bridge: vmbr0                     # net0 — untagged/native → guest enp6s18
+      hwaddr: "02:1F:98:8B:6F:6A"       #        ACTIVE, legacy net 192.168.179.102 (HA reaches the broker here)
+    - bridge: vmbr0                     # net1 — IoT VLAN → guest enp6s19
+      hwaddr: "BC:24:11:C0:7F:BB"       #        for future HA↔IoT-device L2 comms; NOT needed for MQTT
+      tag: 1040
+      firewall: true
+      linkDown: true                    #        administratively DOWN + unconfigured inside HAOS
+    - bridge: vmbr0                     # net2 — Homelab VLAN → guest enp6s20
+      hwaddr: "BC:24:11:3C:03:54"
+      tag: 1010
+      firewall: true
+      linkDown: true                    #        administratively DOWN
 
   tags: [hpe-01, smart-home, vlan-1010, vlan-1040]   # preserve the existing Proxmox tags
