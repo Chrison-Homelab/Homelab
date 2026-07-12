@@ -1,9 +1,11 @@
 using System.Text.Json;
 using ProxmoxSharp;
 using UnifiSharp;
+using UnifiSharp.Legacy;
 using Homelab.Infrastructure;
 using Homelab.Infrastructure.Converge;
 using Homelab.Infrastructure.Shapes;
+using Homelab.Infrastructure.Unifi;
 
 // Homelab.Infrastructure engine — the hub's first consumer of the ProxmoxSharp
 // package. Reads live Proxmox state via the generated client.
@@ -12,6 +14,8 @@ using Homelab.Infrastructure.Shapes;
 //   homelab-infra discover               # dump a structured ClusterSnapshot as JSON
 //   homelab-infra discover-diff a.json b.json   # Markdown table of state changes
 //   homelab-infra discover-unifi         # dump a UniFi network snapshot as JSON
+//   homelab-infra converge-unifi <file>           # plan UniFi network desired-state (dry run)
+//   homelab-infra converge-unifi <file> --apply   # reconcile it (add-only, legacy write API)
 //   homelab-infra converge <stack-dir>            # state-diff plan (dry run, read-only)
 //   homelab-infra converge <stack-dir> --apply    # create + reconcile config + provision
 //   homelab-infra converge <stack-dir> --destroy           # destroy plan (read-only)
@@ -37,10 +41,12 @@ switch (command)
         return await DiscoverUnifiAsync();
     case "converge":
         return await RunConverge(args);
+    case "converge-unifi":
+        return await RunConvergeUnifi(args);
     case "validate":
         return RunValidate(args);
     default:
-        Console.Error.WriteLine($"Unknown command '{command}'. Supported: discover, discover-diff, discover-unifi, converge, validate");
+        Console.Error.WriteLine($"Unknown command '{command}'. Supported: discover, discover-diff, discover-unifi, converge, converge-unifi, validate");
         return 1;
 }
 
@@ -207,6 +213,55 @@ static async Task<int> DiscoverUnifiAsync()
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     }));
+    return 0;
+}
+
+// converge-unifi <file> [--apply]: reconcile a UnifiNetwork desired-state file
+// (port-forwards) via UnifiSharp's legacy write adapter. Dry-run by default;
+// --apply creates missing resources (add-only). Auth is the classic controller
+// SESSION — UNIFI_LEGACY_BASE_URL / UNIFI_USERNAME / UNIFI_PASSWORD.
+static async Task<int> RunConvergeUnifi(string[] args)
+{
+    if (args.Length < 2)
+    {
+        Console.Error.WriteLine("usage: homelab-infra converge-unifi <network.yaml> [--apply]");
+        return 2;
+    }
+    var path = Path.GetFullPath(args[1]);
+    if (!File.Exists(path))
+    {
+        Console.Error.WriteLine($"file not found: {path}");
+        return 2;
+    }
+    var apply = args.Contains("--apply");
+
+    var options = UnifiLegacyOptions.TryFromEnvironment();
+    if (options is null)
+    {
+        Console.Error.WriteLine(
+            "Missing UniFi legacy config. Set UNIFI_LEGACY_BASE_URL (…/proxy/network/api/s/default), " +
+            "UNIFI_USERNAME, UNIFI_PASSWORD (and optionally UNIFI_VERIFY_TLS=false for self-signed).");
+        return 2;
+    }
+
+    var doc = UnifiConverge.Load(path);
+    Console.WriteLine($"converge-unifi: {doc.Metadata.Name} ({doc.Spec.PortForwards.Count} port-forward(s) declared) — {(apply ? "APPLY" : "dry-run")}");
+
+#pragma warning disable CS0618 // legacy adapter is intentionally obsolete (ADR-0003)
+    using var client = new UnifiLegacyClient(options);
+    var result = await UnifiConverge.ReconcileAsync(doc, client, apply);
+#pragma warning restore CS0618
+
+    foreach (var name in result.Plan.AlreadyPresent)
+        Console.WriteLine($"  = {name} (present)");
+    foreach (var pf in result.Plan.ToCreate)
+        Console.WriteLine($"  {(apply ? "+" : "~")} {pf.Name} → {pf.Interface} :{pf.DestinationPort} ⇒ {pf.ForwardIp}:{pf.ForwardPort}/{pf.Protocol}{(apply ? " (created)" : " (would create)")}");
+
+    Console.WriteLine(result.Plan.ToCreate.Count == 0
+        ? "All declared port-forwards present — nothing to do."
+        : apply
+            ? $"Applied: created {result.Created.Count}."
+            : $"Plan: {result.Plan.ToCreate.Count} to create. Re-run with --apply to write.");
     return 0;
 }
 

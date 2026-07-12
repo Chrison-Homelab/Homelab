@@ -12,21 +12,20 @@ public sealed class CommunityScriptsCreator
     private readonly INodeExec _exec;
     public CommunityScriptsCreator(INodeExec exec) => _exec = exec;
 
-    // Default stdin answers for the rare community-scripts installs that prompt with a raw
-    // `read` and have no var_/unattended escape. shelfmark asks for a captcha-bypass
-    // "deployment type" — 1 = its internal bypasser (can be switched to the stack's
-    // FlareSolverr later via /etc/shelfmark/.env). Keyed by app so it never touches others.
-    //
-    // docker-install.sh has three raw `read` prompts with no unattended escape, and on the
-    // decline path they chain: (1) "add Portainer (UI)?" → n, then because that's declined
-    // (2) "install the Portainer Agent?" → n, then (3) "Expose Docker TCP socket (insecure)?"
-    // → n. Decline all three — we run our own compose, and the docker-compose plugin is
-    // installed unconditionally (no prompt) so `docker compose` is still present.
-    // (youtarr/5113 predates these prompts, which is why docker was never in this map.)
+    // Default stdin answer for the rare community-scripts installs that prompt with a raw
+    // `read` and have no var_/unattended escape. The answer is streamed with `yes <ans> |`
+    // (infinite), NOT a finite printf — the in-CT install reads run under lxc-attach and a
+    // fixed number of newlines can under-supply (or mis-order) and BLOCK forever. `yes`
+    // satisfies every prompt with the same answer regardless of count/order (#11).
+    //   shelfmark → "1": captcha-bypass deployment type (its internal bypasser; switchable
+    //               to the stack's FlareSolverr later via /etc/shelfmark/.env).
+    //   docker    → "n": DECLINE every add-on prompt (Portainer UI, Portainer Agent, expose
+    //               Docker TCP socket). docker-ce still includes the compose plugin.
+    // Each app's prompts must all take the SAME answer for `yes` to be correct (true here).
     private static readonly Dictionary<string, string> InstallStdin = new(StringComparer.Ordinal)
     {
-        ["shelfmark"] = @"1\n",
-        ["docker"] = @"n\nn\nn\n",
+        ["shelfmark"] = "1",
+        ["docker"] = "n",
     };
 
     public async Task<bool> ExistsAsync(string node, string ctid, CancellationToken ct) =>
@@ -68,11 +67,11 @@ public sealed class CommunityScriptsCreator
         var url = $"https://raw.githubusercontent.com/{repo}/{gitref}/ct/{app}.sh";
         var cmd = $"TERM=xterm mode=generated {vars} bash -c \"$(curl -fsSL {url})\"";
 
-        // A few community-scripts installs prompt with a raw `read` under `set -e` and have
-        // no unattended/env escape, so they abort on EOF over non-interactive SSH. Feed the
-        // default answer(s) on stdin (app-scoped — never applied to scripts that don't read).
-        if (InstallStdin.TryGetValue(app, out var answers))
-            cmd = $"printf '{answers}' | {cmd}";
+        // A few community-scripts installs prompt with a raw `read` (some run inside the CT
+        // via lxc-attach, where a finite stdin can under-supply and hang). Stream the default
+        // answer infinitely with `yes` so every prompt is satisfied regardless of count/order.
+        if (InstallStdin.TryGetValue(app, out var answer))
+            cmd = $"yes '{answer}' | {cmd}";
 
         var res = await _exec.OnNodeAsync(node, cmd, ct);
         return res.Ok ? ApplyResult.Applied($"created CT {ctid} ({app}, {channel})")
@@ -100,6 +99,7 @@ public sealed class CommunityScriptsCreator
             Add("var_brg", n.Bridge);
             Add("var_vlan", n.Vlan?.ToString());
             Add("var_net", n.Ipv4);
+            Add("var_gateway", n.Gateway);   // static IPs need an explicit default route (else no internet egress)
             Add("var_ipv6_method", n.Ipv6);
             Add("var_mtu", n.Mtu?.ToString());
         }
@@ -108,6 +108,7 @@ public sealed class CommunityScriptsCreator
         if (sp.Features is { } f)
         {
             if (f.Nesting is { } nest) Add("var_nesting", nest ? "1" : "0");
+            if (f.Keyctl is { } kc) Add("var_keyctl", kc ? "1" : "0");   // Docker-in-unprivileged-LXC needs keyctl=1
             if (f.Fuse is { } fuse) Add("var_fuse", fuse ? "1" : "0");
         }
         var tags = sp.Tags.Concat(s.Metadata.Tags).Distinct().ToList();

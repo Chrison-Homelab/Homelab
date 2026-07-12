@@ -15,8 +15,17 @@ never pulls the engine's package graph.
 | `ValidateShapes` | engine `validate` over `Infrastructure/` + `stacks/` (replaces `tools/validate-shapes.py`) |
 | `Preview` | engine `converge <stack>` — dry-run; diffs desired vs live, no mutation |
 | `Deploy` | engine `converge <stack> --apply` — live |
+| `CompilePowerOrchestrator` | `dotnet build` the PowerOrchestrator solution (`tools/PowerOrchestrator`) |
+| `TestPowerOrchestrator` | compile + run the PowerOrchestrator xUnit suite (what `power-orchestrator-ci` runs) |
+| `PublishPowerOrchestrator` | test + publish a self-contained linux-x64 single-file binary into `publish/` |
+| `DeployPowerOrchestrator` | publish + copy onto nuc-01 + systemd, via `tools/PowerOrchestrator/deploy/deploy.sh` |
 
 `Preview`/`Deploy` require `--stack <Name>` (a directory under `stacks/`).
+
+The `*PowerOrchestrator` targets are separate from the converge pipeline: PowerOrchestrator
+(#191) is a .NET service deployed as a systemd unit **on** the nuc-01 node, not a converge-able
+LXC/VM stack. Fallout owns build → test → publish (native `dotnet`); the node-side copy + systemd
+wiring is the `deploy/deploy.sh` "sugar" the `Deploy` target shells out to.
 
 ## Run
 

@@ -59,7 +59,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "afaz9j2sh6ku8e"
+        "uid": "prometheus"
       },
       "description": "Enter the number of Synology's you are monitoring in the NASDevices variable. A positive Number here means there is a NAS down or not being scraped for data. A negative Number means you are collecting data from more Synology's than the system expects in the NASDevices variable.",
       "fieldConfig": {
@@ -201,7 +201,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "count(systemStatus)",
@@ -213,7 +213,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "$NASDevices-count(systemStatus)",
@@ -226,7 +226,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "count(systemStatus)-$NASDevices",
@@ -243,7 +243,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "afaz9j2sh6ku8e"
+        "uid": "prometheus"
       },
       "description": "",
       "fieldConfig": {
@@ -367,7 +367,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "count(ifAdminStatus{job=~'$JobName',instance=~'$Device',ifName=~'$InterfacePhysical'}==1)",
@@ -380,7 +380,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "count(ifAdminStatus{job=~'$JobName',instance=~'$Device',ifName=~'$InterfacePhysical'}==2) >0",
@@ -394,7 +394,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "(count(ifOperStatus{job=~'$JobName',instance=~'$Device',ifName=~'$InterfacePhysical'}==2)) - (count(ifAdminStatus{job=~'$JobName',instance=~'$Device',ifName=~'$InterfacePhysical'}==2)) >0",
@@ -412,7 +412,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "afaz9j2sh6ku8e"
+        "uid": "prometheus"
       },
       "description": "",
       "fieldConfig": {
@@ -532,7 +532,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "editorMode": "code",
           "exemplar": true,
@@ -545,7 +545,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "count((raidStatus{job=~'$JobName',instance=~'$Device',raidName=~'$raidName'}>=2 and raidStatus{job=~'$JobName',instance=~'$Device',raidName=~'$raidName'}<=10) or (raidStatus{job=~'$JobName',instance=~'$Device',raidName=~'$raidName'}>=13 and {job=~'$JobName',instance=~'$Device',raidName=~'$raidName'}<=20))",
@@ -558,7 +558,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "count((raidStatus{job=~'$JobName',instance=~'$Device',raidName=~'$raidName'}>=11 and raidStatus{job=~'$JobName',instance=~'$Device',raidName=~'$raidName'}<=12) or raidStatus{job=~'$JobName',instance=~'$Device',raidName=~'$raidName'}>21)",
@@ -575,7 +575,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "afaz9j2sh6ku8e"
+        "uid": "prometheus"
       },
       "description": "",
       "fieldConfig": {
@@ -687,7 +687,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "count(diskIndex{job=~'$JobName',instance=~'$Device',diskID=~'$DiskName'})",
@@ -700,7 +700,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "count(diskStatus{job=~'$JobName',instance=~'$Device',diskID=~'$DiskName'}>=2) and count(diskStatus{job=~'$JobName',instance=~'$Device',diskID=~'$DiskName'}<=3)",
@@ -714,7 +714,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "count(diskStatus{job=~'$JobName',instance=~'$Device',diskID=~'$DiskName'}>=4)",
@@ -732,7 +732,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "afaz9j2sh6ku8e"
+        "uid": "prometheus"
       },
       "description": "",
       "fieldConfig": {
@@ -844,7 +844,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "count(diskIndex{job=~'$JobName',instance=~'$Device',diskID=~'$DiskNameSSD'})",
@@ -856,7 +856,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "count(diskStatus{job=~'$JobName',instance=~'$Device',diskID=~'$DiskNameSSD'}==3)>0",
@@ -869,7 +869,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "count(diskStatus{job=~'$JobName',instance=~'$Device',diskID=~'$DiskNameSSD'}>=4)>0",
@@ -886,7 +886,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "afaz9j2sh6ku8e"
+        "uid": "prometheus"
       },
       "description": "",
       "fieldConfig": {
@@ -978,7 +978,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "count(diskSMARTAttrStatus{job=~'$JobName',instance=~'$Device'}==1)",
@@ -991,7 +991,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "count(diskSMARTAttrStatus{job=~'$JobName',instance=~'$Device',diskSMARTAttrStatus!=\"OK\"}==1)",
@@ -1022,7 +1022,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "afaz9j2sh6ku8e"
+        "uid": "prometheus"
       },
       "description": "",
       "fieldConfig": {
@@ -1375,7 +1375,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "ssCpuUser{job=~'$JobName',instance=~'$Device'}",
@@ -1388,7 +1388,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "modelName{job=~'$JobName',instance=~'$Device'}",
@@ -1402,7 +1402,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "version{job=~'$JobName',instance=~'$Device'}",
@@ -1416,7 +1416,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "serialNumber{job=~'$JobName',instance=~'$Device'}",
@@ -1430,7 +1430,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "sysUpTime{job=~'$JobName',instance=~'$Device'}/100",
@@ -1444,7 +1444,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "systemFanStatus{job=~'$JobName',instance=~'$Device'}",
@@ -1458,7 +1458,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "upgradeAvailable{job=~'$JobName',instance=~'$Device'}",
@@ -1472,7 +1472,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "systemFanStatus{job=~'$JobName',instance=~'$Device'}",
@@ -1486,7 +1486,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "systemFanStatus{job=~'$JobName',instance=~'$Device'}",
@@ -1500,7 +1500,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "cpuFanStatus{job=~'$JobName',instance=~'$Device'}",
@@ -1514,7 +1514,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "editorMode": "code",
           "exemplar": true,
@@ -1529,7 +1529,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "memTotalReal{job=~'$JobName',instance=~'$Device'}",
@@ -1543,7 +1543,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "diskIndex{job=~'$JobName',instance=~'$Device',diskID=~'$DiskName'}+1",
@@ -1640,7 +1640,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "afaz9j2sh6ku8e"
+        "uid": "prometheus"
       },
       "description": "",
       "fieldConfig": {
@@ -1700,7 +1700,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "diskSMARTAttrStatus{job=~'$JobName',instance=~'$Device',diskSMARTAttrStatus!=\"OK\"}",
@@ -1714,7 +1714,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "diskSMARTInfoDevName{job=~'$JobName',instance=~'$Device'}",
@@ -1728,7 +1728,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "diskSMARTAttrName{job=~'$JobName',instance=~'$Device'}",
@@ -1742,7 +1742,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "diskSMARTAttrCurrent{job=~'$JobName',instance=~'$Device'}",
@@ -1756,7 +1756,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "diskSMARTAttrThreshold{job=~'$JobName',instance=~'$Device'}",
@@ -1770,7 +1770,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "diskSMARTAttrWorst{job=~'$JobName',instance=~'$Device'}",
@@ -1880,7 +1880,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "afaz9j2sh6ku8e"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -2192,7 +2192,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "raidTotalSize{job=~'$JobName',instance=~'$Device',raidName=~'$raidName'}",
@@ -2205,7 +2205,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "(raidTotalSize{job=~'$JobName',instance=~'$Device',raidName=~'$raidName'}-raidFreeSize{job=~'$JobName',instance=~'$Device',raidName=~'$raidName'})",
@@ -2219,7 +2219,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "raidFreeSize{job=~'$JobName',instance=~'$Device',raidName=~'$raidName'}",
@@ -2233,7 +2233,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "raidStatus{job=~'$JobName',instance=~'$Device',raidName=~'$raidName'}",
@@ -2247,7 +2247,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "((raidTotalSize{job=~'$JobName',instance=~'$Device',raidName=~'$raidName'}-raidFreeSize{job=~'$JobName',instance=~'$Device',raidName=~'$raidName'})/raidTotalSize{job=~'$JobName',instance=~'$Device',raidName=~'$raidName'})*100",
@@ -2345,7 +2345,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "afaz9j2sh6ku8e"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -2579,7 +2579,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "diskIndex{job=~'$JobName',instance=~'$Device',diskID=~'$DiskName'} or diskIndex{job=~'$JobName',instance=~'$Device',diskID=~'$DiskNameSSD'}",
@@ -2593,7 +2593,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "diskID{job=~'$JobName',instance=~'$Device',diskID=~'$DiskName'} or diskID{job=~'$JobName',instance=~'$Device',diskID=~'$DiskNameSSD'} ",
@@ -2606,7 +2606,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "diskType{job=~'$JobName',instance=~'$Device',diskID=~'$DiskName'} or diskType{job=~'$JobName',instance=~'$Device',diskID=~'$DiskNameSSD'}",
@@ -2620,7 +2620,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "diskStatus{job=~'$JobName',instance=~'$Device',diskID=~'$DiskName'} or diskStatus{job=~'$JobName',instance=~'$Device',diskID=~'$DiskNameSSD'}",
@@ -2634,7 +2634,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "diskModel{job=~'$JobName',instance=~'$Device',diskID=~'$DiskName'} or diskModel{job=~'$JobName',instance=~'$Device',diskID=~'$DiskNameSSD'}",
@@ -2648,7 +2648,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "editorMode": "code",
           "exemplar": true,
@@ -2745,7 +2745,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "afaz9j2sh6ku8e"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -2995,7 +2995,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "ifPhysAddress{job=~'$JobName',instance=~'$Device',ifName=~'$InterfacePhysical'}",
@@ -3008,7 +3008,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "ifAdminStatus{job=~'$JobName',instance=~'$Device',ifName=~'$InterfacePhysical'}",
@@ -3022,7 +3022,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "ifSpeed{job=~'$JobName',instance=~'$Device',ifName=~'$InterfacePhysical'}",
@@ -3036,7 +3036,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "ifOperStatus{job=~'$JobName',instance=~'$Device',ifName=~'$InterfacePhysical'}",
@@ -3050,7 +3050,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "ifAlias{job=~'$JobName',instance=~'$Device',ifName=~'$InterfacePhysical'}",
@@ -3064,7 +3064,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "ifMtu{job=~'$JobName',instance=~'$Device',ifName=~'$InterfacePhysical'}",
@@ -3152,7 +3152,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "afaz9j2sh6ku8e"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -3414,7 +3414,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "ifPhysAddress{job=~'$JobName',instance=~'$Device',ifName=~'$InterfaceVirtual'}",
@@ -3427,7 +3427,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "ifAdminStatus{job=~'$JobName',instance=~'$Device',ifName=~'$InterfaceVirtual'}",
@@ -3441,7 +3441,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "ifSpeed{job=~'$JobName',instance=~'$Device',ifName=~'$InterfaceVirtual'}",
@@ -3455,7 +3455,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "ifOperStatus{job=~'$JobName',instance=~'$Device',ifName=~'$InterfaceVirtual'}",
@@ -3469,7 +3469,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "ifAlias{job=~'$JobName',instance=~'$Device',ifName=~'$InterfaceVirtual'}",
@@ -3483,7 +3483,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "afaz9j2sh6ku8e"
+            "uid": "prometheus"
           },
           "exemplar": true,
           "expr": "ifMtu{job=~'$JobName',instance=~'$Device',ifName=~'$InterfaceVirtual'}",
@@ -3597,7 +3597,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "afaz9j2sh6ku8e"
+          "uid": "prometheus"
         },
         "definition": "label_values(ssCpuUser, job)",
         "includeAll": true,
@@ -3619,7 +3619,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "afaz9j2sh6ku8e"
+          "uid": "prometheus"
         },
         "definition": "query_result(ssCpuUser{job=~'$JobName'})",
         "includeAll": true,
@@ -3641,7 +3641,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "afaz9j2sh6ku8e"
+          "uid": "prometheus"
         },
         "definition": "label_values(ifName{job=~'$JobName',instance=~'$Device'},ifName)",
         "description": "Physical Network Interfaces",
@@ -3666,7 +3666,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "afaz9j2sh6ku8e"
+          "uid": "prometheus"
         },
         "definition": "label_values(ifType_info{job=~'$JobName',instance=~'$Device'},ifName)",
         "description": "Bonds an VLans",
@@ -3691,7 +3691,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "afaz9j2sh6ku8e"
+          "uid": "prometheus"
         },
         "definition": "label_values(raidName{job=~'$JobName',instance=~'$Device'},raidName)",
         "includeAll": true,
@@ -3715,7 +3715,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "afaz9j2sh6ku8e"
+          "uid": "prometheus"
         },
         "definition": "label_values(diskID{job=~'$JobName',instance=~'$Device'},diskID)",
         "includeAll": true,
@@ -3738,7 +3738,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "afaz9j2sh6ku8e"
+          "uid": "prometheus"
         },
         "definition": "label_values(diskID{job=~'$JobName',instance=~'$Device'},diskID)",
         "includeAll": true,

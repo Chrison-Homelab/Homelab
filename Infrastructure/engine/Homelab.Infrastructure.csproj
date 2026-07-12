@@ -10,14 +10,23 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Let the test project exercise internal render helpers (e.g. the Pangolin
+         Docker-EE compose/Traefik renderers) directly. -->
+    <InternalsVisibleTo Include="Homelab.Infrastructure.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Consume the published ProxmoxSharp package from GitHub Packages. Pinned to an
          exact prerelease for deterministic restores: the `0.2.0-preview.*` float is
          non-deterministic across runners (a stale NuGet cache resolves an older preview),
          so bump this explicitly when adopting new ProxmoxSharp code. preview.31 = the LXC
          lifecycle write path (PctWriter, #149). -->
     <PackageReference Include="ProxmoxSharp" Version="0.2.0-preview.31" />
-    <!-- UniFi discover surface (sites/networks/firewall/devices/clients). -->
-    <PackageReference Include="UnifiSharp" Version="0.1.0-preview.*" />
+    <!-- UniFi discover surface + the legacy write adapter (UnifiSharp.Legacy:
+         port-forwards/firewall/networks). Pinned exactly (like ProxmoxSharp) so a
+         GitHub-Packages index lag can't silently resolve an older preview without
+         the Legacy namespace. preview.27 = the session-auth legacy write client. -->
+    <PackageReference Include="UnifiSharp" Version="0.1.0-preview.27" />
     <!-- YAML parsing for homelab/v1 shapes (BL-010 converge). -->
     <PackageReference Include="YamlDotNet" Version="16.*" />
     <!-- JSON Schema (draft-2020-12) validation of homelab/v1 shapes against

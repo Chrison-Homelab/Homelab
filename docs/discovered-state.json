@@ -119,7 +119,7 @@
         {
           "vmId": 1002,
           "name": "gaming-vm-01",
-          "status": "Running",
+          "status": "Stopped",
           "maxMem": 12884901888,
           "cores": 6,
           "tags": "gaming"
@@ -264,7 +264,7 @@
           "status": "Running",
           "maxMem": 2147483648,
           "cores": 2,
-          "tags": "community-script;homelab;hpe-01;vlan-1010"
+          "tags": "arr;community-script;media;media-server;plex"
         },
         {
           "vmId": 5009,
@@ -283,22 +283,6 @@
           "tags": "arr-stack;community-script;homelab;hpe-01;vlan-1010"
         },
         {
-          "vmId": 5012,
-          "name": "romm",
-          "status": "Stopped",
-          "maxMem": 4294967296,
-          "cores": 2,
-          "tags": "arr-stack;community-script;emulation;homelab;hpe-01;vlan-1010"
-        },
-        {
-          "vmId": 5013,
-          "name": "tracearr",
-          "status": "Stopped",
-          "maxMem": 2147483648,
-          "cores": 2,
-          "tags": "arr-stack;community-script;homelab;hpe-01;vlan-1010"
-        },
-        {
           "vmId": 5014,
           "name": "audiobookshelf",
           "status": "Running",
@@ -313,6 +297,118 @@
           "maxMem": 2147483648,
           "cores": 2,
           "tags": "arr-stack;community-script;ebooks;hpe-01;vlan-1010"
+        },
+        {
+          "vmId": 5100,
+          "name": "prowlarr",
+          "status": "Running",
+          "maxMem": 1073741824,
+          "cores": 1,
+          "tags": "arr;community-script;indexers;media"
+        },
+        {
+          "vmId": 5101,
+          "name": "sonarr",
+          "status": "Running",
+          "maxMem": 1073741824,
+          "cores": 2,
+          "tags": "arr;community-script;media;tv"
+        },
+        {
+          "vmId": 5102,
+          "name": "radarr",
+          "status": "Running",
+          "maxMem": 1073741824,
+          "cores": 2,
+          "tags": "arr;community-script;media;movies"
+        },
+        {
+          "vmId": 5103,
+          "name": "bazarr",
+          "status": "Running",
+          "maxMem": 1073741824,
+          "cores": 2,
+          "tags": "arr;community-script;media;subtitles"
+        },
+        {
+          "vmId": 5104,
+          "name": "qbittorrent",
+          "status": "Running",
+          "maxMem": 2147483648,
+          "cores": 2,
+          "tags": "arr;community-script;downloads;media"
+        },
+        {
+          "vmId": 5105,
+          "name": "seerr",
+          "status": "Running",
+          "maxMem": 1073741824,
+          "cores": 2,
+          "tags": "arr;community-script;media;requests"
+        },
+        {
+          "vmId": 5106,
+          "name": "cross-seed",
+          "status": "Running",
+          "maxMem": 1073741824,
+          "cores": 1,
+          "tags": "arr;community-script;cross-seed;media;seeding"
+        },
+        {
+          "vmId": 5107,
+          "name": "flaresolverr",
+          "status": "Running",
+          "maxMem": 1073741824,
+          "cores": 1,
+          "tags": "arr;community-script;indexers;media;proxy"
+        },
+        {
+          "vmId": 5108,
+          "name": "cloudflared",
+          "status": "Running",
+          "maxMem": 536870912,
+          "cores": 1,
+          "tags": "arr;cloudflare;community-script;media;network;tunnel"
+        },
+        {
+          "vmId": 5109,
+          "name": "tracearr",
+          "status": "Running",
+          "maxMem": 4294967296,
+          "cores": 2,
+          "tags": "analytics;arr;community-script;media;monitoring"
+        },
+        {
+          "vmId": 5110,
+          "name": "romm",
+          "status": "Running",
+          "maxMem": 4294967296,
+          "cores": 2,
+          "tags": "arr;community-script;emulation;media;roms"
+        },
+        {
+          "vmId": 5111,
+          "name": "shelfmark",
+          "status": "Running",
+          "maxMem": 2147483648,
+          "cores": 1,
+          "tags": "arr;books;community-script;ebooks;media"
+        },
+        {
+          "vmId": 5112,
+          "name": "audiobookshelf",
+          "status": "Running",
+          "maxMem": 2147483648,
+          "cores": 2,
+          "tags": "arr;audiobooks;community-script;media;podcasts"
+        },
+        {
+          "vmId": 5113,
+          "name": "youtarr",
+          "status": "Running",
+          "maxMem": 2147483648,
+          "cores": 2,
+          "tags": "arr;community-script;docker;media;plex;youtube"
         }
       ],
       "qemu": [
@@ -407,12 +503,12 @@
           "tags": "cloudflare;community-script;core;ha-replica;network;tunnel"
         },
         {
-          "vmId": 9904,
-          "name": "teleport",
+          "vmId": 2012,
+          "name": "pangolin",
           "status": "Running",
-          "maxMem": 1073741824,
-          "cores": 1,
-          "tags": "access-management;community-script;nuc-01;vlan-1010;zero-trust"
+          "maxMem": 4294967296,
+          "cores": 2,
+          "tags": "community-script;core;network;proxy;remote-access;sso"
         }
       ],
       "qemu": [],

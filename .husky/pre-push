@@ -1,0 +1,56 @@
+#!/usr/bin/env sh
+# Husky.NET-managed pre-push guard. Sourcing husky.sh is optional (honors HUSKY=0
+# and re-execs under `sh -e`); the guard also runs standalone on a fresh clone
+# before `dotnet husky install` has regenerated _/.
+husky_sh="$(dirname -- "$0")/_/husky.sh"
+[ -f "$husky_sh" ] && . "$husky_sh"
+
+# ── Why this exists ───────────────────────────────────────────────────────────
+# On 2026-06-29 a commit was lost by pushing onto a branch whose PR was already
+# merged (the branch lingered; the push had no path to main). Branch protection
+# isn't available on this private free-tier repo, so this client-side hook is the
+# substitute. Blocks three things; bypass with:  git push --no-verify
+#   1. direct pushes to main/master (PR-only — merges land via squash on GitHub)
+#   2. non-fast-forward (force) pushes (history rewrite)
+#   3. pushing onto a branch whose PR is already MERGED/CLOSED (a dead branch)
+# ──────────────────────────────────────────────────────────────────────────────
+
+ZERO="0000000000000000000000000000000000000000"
+rc=0
+
+# git feeds the refs being pushed on stdin: <local_ref> <local_sha> <remote_ref> <remote_sha>
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -z "${remote_ref:-}" ] && continue
+  branch="${remote_ref#refs/heads/}"
+
+  # branch deletion (local sha all-zero) — allow; that's the cleanup path
+  [ "$local_sha" = "$ZERO" ] && continue
+
+  # 1) never push straight to the trunk
+  if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
+    echo "✋ pre-push: direct push to '$branch' is blocked — open a PR (squash-merge on GitHub)." >&2
+    rc=1
+    continue
+  fi
+
+  # 2) force / non-fast-forward: remote tip exists but isn't an ancestor of what we push
+  if [ "$remote_sha" != "$ZERO" ] && ! git merge-base --is-ancestor "$remote_sha" "$local_sha" 2>/dev/null; then
+    echo "✋ pre-push: non-fast-forward (force) push to '$branch' blocked — it would rewrite remote history." >&2
+    rc=1
+    continue
+  fi
+
+  # 3) is this branch's PR already done? (needs gh; skip silently where unavailable, e.g. CI)
+  if command -v gh >/dev/null 2>&1; then
+    state="$(gh pr view "$branch" --json state -q .state 2>/dev/null || true)"
+    if [ "$state" = "MERGED" ] || [ "$state" = "CLOSED" ]; then
+      echo "✋ pre-push: the PR for '$branch' is already $state — don't build on a dead branch." >&2
+      echo "   Start fresh:  git checkout main && git pull && git checkout -b <new-branch>" >&2
+      rc=1
+      continue
+    fi
+  fi
+done
+
+[ "$rc" != "0" ] && echo "   (intentional? bypass once with: git push --no-verify)" >&2
+exit "$rc"

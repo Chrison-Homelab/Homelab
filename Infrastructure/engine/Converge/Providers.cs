@@ -40,6 +40,8 @@ public sealed class GithubApi
 }
 
 public sealed record CfZone(string ZoneId, string AccountId);
+public sealed record CfDnsRecord(string Id, string Name, string Content, string Comment);
+public sealed record CfAccessApp(string Id, string Name, string Domain);
 
 public sealed class CloudflareApi
 {
@@ -82,6 +84,50 @@ public sealed class CloudflareApi
         return r.GetArrayLength() > 0;
     }
 
+    // --- Reconcile reads: list what WE manage so a converge can prune drift (#195) ---
+
+    // CNAME records in the zone (id/name/content/comment). Lets the caller prune
+    // managed CNAMEs (comment == ManagedComment) that point at OUR tunnel but whose
+    // host is no longer in the shape — hand-managed records (other/empty comment)
+    // are left untouched (CLAUDE.md add-only rule).
+    public async Task<List<CfDnsRecord>> ListCnamesAsync(string zoneId, CancellationToken ct)
+    {
+        var r = await ResultAsync(await _http.GetAsync($"zones/{zoneId}/dns_records?type=CNAME&per_page=100", ct), ct);
+        var list = new List<CfDnsRecord>();
+        foreach (var d in r.EnumerateArray())
+            list.Add(new CfDnsRecord(
+                d.GetProperty("id").GetString()!,
+                d.GetProperty("name").GetString()!,
+                d.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "",
+                d.TryGetProperty("comment", out var cm) && cm.ValueKind == JsonValueKind.String ? cm.GetString() ?? "" : ""));
+        return list;
+    }
+
+    // Self-hosted Access apps (id/name/domain) — lets the caller prune apps WE named
+    // ("<sub> (<Stack>)") whose domain left the shape. Other apps are left untouched.
+    public async Task<List<CfAccessApp>> ListAccessAppsAsync(string accountId, CancellationToken ct)
+    {
+        var r = await ResultAsync(await _http.GetAsync($"accounts/{accountId}/access/apps?per_page=100", ct), ct);
+        var list = new List<CfAccessApp>();
+        foreach (var a in r.EnumerateArray())
+            list.Add(new CfAccessApp(
+                a.GetProperty("id").GetString()!,
+                a.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "",
+                a.TryGetProperty("domain", out var d) ? d.GetString() ?? "" : ""));
+        return list;
+    }
+
+    // --- Reconcile deletes: only ever called on resources WE manage (see callers) ---
+
+    public async Task DeleteDnsRecordAsync(string zoneId, string recordId, CancellationToken ct)
+        => await ResultAsync(await _http.DeleteAsync($"zones/{zoneId}/dns_records/{recordId}", ct), ct);
+
+    public async Task DeleteAccessAppAsync(string accountId, string appId, CancellationToken ct)
+        => await ResultAsync(await _http.DeleteAsync($"accounts/{accountId}/access/apps/{appId}", ct), ct);
+
+    // The comment stamped on every CNAME converge creates — the prune guard.
+    public const string ManagedComment = "managed by homelab-infra converge";
+
     // --- ADD-ONLY mutations (callers must check existence first) ---
 
     public async Task<string> CreateTunnelAsync(string accountId, string name, CancellationToken ct)
@@ -120,7 +166,19 @@ public sealed class CloudflareApi
     public async Task CreateCnameAsync(string zoneId, string fqdn, string content, CancellationToken ct)
     {
         var body = new StringContent(
-            $"{{\"type\":\"CNAME\",\"name\":\"{fqdn}\",\"content\":\"{content}\",\"proxied\":true,\"comment\":\"managed by homelab-infra converge\"}}",
+            $"{{\"type\":\"CNAME\",\"name\":\"{fqdn}\",\"content\":\"{content}\",\"proxied\":true,\"comment\":\"{ManagedComment}\"}}",
+            Encoding.UTF8, "application/json");
+        await ResultAsync(await _http.PostAsync($"zones/{zoneId}/dns_records", body, ct), ct);
+    }
+
+    // Grey-cloud (DNS-only, proxied:false) A record — for the *.lab / *.arr wildcard
+    // zones that point straight at the home WAN IP (ADR-0007). proxied MUST be false:
+    // an orange-cloud record would hand TLS back to Cloudflare and re-impose its
+    // one-level wildcard limit. Carries the ManagedComment so #195's prune ignores it.
+    public async Task CreateARecordAsync(string zoneId, string fqdn, string ip, CancellationToken ct)
+    {
+        var body = new StringContent(
+            $"{{\"type\":\"A\",\"name\":\"{fqdn}\",\"content\":\"{ip}\",\"proxied\":false,\"comment\":\"{ManagedComment}\"}}",
             Encoding.UTF8, "application/json");
         await ResultAsync(await _http.PostAsync($"zones/{zoneId}/dns_records", body, ct), ct);
     }

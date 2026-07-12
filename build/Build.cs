@@ -33,6 +33,17 @@ class Build : FalloutBuild
     AbsolutePath EngineProject => RootDirectory / "Infrastructure" / "engine";
     AbsolutePath EngineDll => EngineProject / "bin" / "Release" / "net10.0" / "homelab-infra.dll";
 
+    // PowerOrchestrator (tools/PowerOrchestrator, #191) — a long-running .NET service
+    // deployed as a systemd unit ON the nuc-01 node, NOT a converge-able LXC/VM stack.
+    // So it gets its own build/test/publish/deploy targets here rather than going
+    // through ValidateShapes/Preview/Deploy. Fallout owns build→test→publish (native
+    // dotnet); the node-side copy + systemd wiring is the deploy/deploy.sh "sugar".
+    AbsolutePath PowerOrchestratorDir => RootDirectory / "tools" / "PowerOrchestrator";
+    AbsolutePath PowerOrchestratorSln => PowerOrchestratorDir / "PowerOrchestrator.sln";
+    AbsolutePath PowerOrchestratorService => PowerOrchestratorDir / "src" / "PowerOrchestrator.Service" / "PowerOrchestrator.Service.csproj";
+    AbsolutePath PowerOrchestratorTests => PowerOrchestratorDir / "src" / "PowerOrchestrator.Tests" / "PowerOrchestrator.Tests.csproj";
+    AbsolutePath PowerOrchestratorPublish => PowerOrchestratorDir / "publish";
+
     string[] DiscoverStacks() =>
         Directory.Exists(StacksDirectory)
             ? Directory.EnumerateDirectories(StacksDirectory)
@@ -98,5 +109,47 @@ class Build : FalloutBuild
             var dir = ResolveStack();
             Log.Warning("Deploying stack {Stack} — LIVE apply against the cluster — {Dir}", Stack, dir);
             Engine($"converge {dir} --apply");
+        });
+
+    // ── PowerOrchestrator (#191) — build/test/publish/deploy the node service ──────
+
+    Target CompilePowerOrchestrator => _ => _
+        .Description("Build the PowerOrchestrator solution (tools/PowerOrchestrator).")
+        .Executes(() =>
+            ProcessTasks
+                .StartProcess("dotnet", $"build {PowerOrchestratorSln} -c Release --nologo", workingDirectory: RootDirectory)
+                .AssertZeroExitCode());
+
+    Target TestPowerOrchestrator => _ => _
+        .Description("Run PowerOrchestrator unit tests (policy/debounce, WoL, arm-guard, options).")
+        .DependsOn(CompilePowerOrchestrator)
+        .Executes(() =>
+            ProcessTasks
+                .StartProcess("dotnet", $"test {PowerOrchestratorTests} -c Release --no-build --nologo", workingDirectory: RootDirectory)
+                .AssertZeroExitCode());
+
+    Target PublishPowerOrchestrator => _ => _
+        .Description("Publish PowerOrchestrator as a self-contained linux-x64 single-file binary into publish/.")
+        .DependsOn(TestPowerOrchestrator)
+        .Executes(() =>
+            ProcessTasks
+                .StartProcess(
+                    "dotnet",
+                    $"publish {PowerOrchestratorService} -c Release -r linux-x64 --self-contained true " +
+                    $"-p:PublishSingleFile=true -p:DebugType=none -o {PowerOrchestratorPublish}",
+                    workingDirectory: RootDirectory)
+                .AssertZeroExitCode());
+
+    Target DeployPowerOrchestrator => _ => _
+        .Description("Deploy PowerOrchestrator to nuc-01: publish, then copy + systemd via deploy/deploy.sh.")
+        .DependsOn(PublishPowerOrchestrator)
+        .Executes(() =>
+        {
+            // Fallout published into publish/; the script just copies it onto the node
+            // and wires up the systemd unit + EnvironmentFile. Pre-built string so the
+            // plain StartProcess overload is used (no ArgumentStringHandler quoting).
+            string script = PowerOrchestratorDir / "deploy" / "deploy.sh";
+            Log.Warning("Deploying PowerOrchestrator to the node — copy + systemd — {Script}", script);
+            ProcessTasks.StartProcess("bash", script, workingDirectory: RootDirectory).AssertZeroExitCode();
         });
 }

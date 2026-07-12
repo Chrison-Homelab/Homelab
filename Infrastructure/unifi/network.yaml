@@ -1,0 +1,30 @@
+# UniFi network desired-state (#221 / #102) — reconciled by `homelab-infra
+# converge-unifi` via UnifiSharp's legacy write adapter (the official integration
+# API can't write these yet; see ADR-0003). ADD-ONLY: converge creates declared
+# resources that are missing (matched by name) and never deletes hand-managed
+# ones — same guardrail as the Cloudflare reconcile (CLAUDE.md).
+#
+# Auth (env): UNIFI_LEGACY_BASE_URL (…/proxy/network/api/s/default),
+#             UNIFI_USERNAME, UNIFI_PASSWORD, UNIFI_VERIFY_TLS.
+# Validate the reconcile read-only with `converge-unifi <file>`; `--apply` writes.
+apiVersion: homelab/v1
+kind: UnifiNetwork
+
+metadata:
+  name: homelab-ingress
+
+spec:
+  # WAN :443 → Pangolin Traefik (CT 2013, 10.10.0.13). This is the public-ingress
+  # port-forward that ADR-0007 stood up by hand; codifying it here makes a
+  # bare-metal rebuild restore it. Pairs with the grey-cloud *.lab/*.arr A records
+  # (PR #223) — DNS points the hostnames at the home WAN IP, this forwards :443 in.
+  portForwards:
+    - name: pangolin-https
+      enabled: true
+      interface: wan            # the WAN the rule binds to (wan | wan2 | both)
+      source: any               # permitted source — 'any' or a CIDR/IP
+      destinationPort: "443"    # WAN port
+      forwardIp: 10.10.0.13      # Pangolin CT (ctid 2013)
+      forwardPort: "443"
+      protocol: tcp
+      log: false

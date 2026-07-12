@@ -1,7 +1,7 @@
-# ADR-0007 — Pangolin as the remote-access front door (retire Teleport), on-prem behind the core tunnel
+# ADR-0007 — Pangolin as the remote-access front door (retire Teleport), on-prem as public ingress for the `*.lab` / `*.arr` wildcard zones
 
-- **Status:** Proposed
-- **Date:** 2026-06-15
+- **Status:** Accepted
+- **Date:** 2026-06-15 (proposed) · 2026-06-29 (accepted — Pangolin owns public TLS for two wildcard zones via a home-IP port-forward)
 - **Deciders:** Chris
 - **Relates to:** [ADR-0005 tunnel topology](ADR-0005-cloudflare-tunnel-topology.md)
   (**supersedes its Teleport-front-door decision**, §4–5), [BL-001 Teleport](../plans/BL-001-teleport.md),
@@ -42,17 +42,42 @@ Pangolin gates/tunnels SSH but does not replace an SSH CA + audit trail.
 
 **Crucially, Pangolin the software needs no VPS for our use case.** A public VPS only buys making
 Pangolin its *own* public ingress (its Gerbil/Newt WireGuard path) — i.e. getting *off* Cloudflare.
-We already have public ingress: the cloudflared `core` tunnel. So Pangolin runs **on-prem behind it**
-(cloudflared → Pangolin Traefik), proxying admin UIs as local resources, with **no VPS**. A VPS is a
+We already have public ingress: the cloudflared `core` tunnel. So Pangolin could run on-prem behind it
+(cloudflared → Pangolin Traefik), proxying admin UIs as local resources, with no VPS. A VPS is a
 *separate, optional* track driven mainly by **#137** (China VPN — CF is blocked in CN, needs a direct
 endpoint), **not** a destination this rollout has to reach.
+
+### Finalisation (2026-06-29): the wildcard-subdomain driver
+
+What moved this from Proposed to Accepted is a concrete need the behind-cloudflared shape can't meet
+for free: **nested wildcard subdomains**. Cloudflare's free Universal SSL covers only the apex + one
+wildcard level (`chrison.dev`, `*.chrison.dev`); deeper names like `*.lab.chrison.dev` get no valid
+edge cert without Advanced Certificate Manager (~$10/mo). **Behind cloudflared, Cloudflare terminates
+TLS, so that limit applies regardless of Pangolin.** Pangolin only dissolves it when **it** terminates
+TLS — its Traefik mints Let's Encrypt wildcard certs (DNS-01, any depth) — which requires Pangolin to
+be the **public ingress**, not a backend behind the tunnel.
+
+We accept that trade for two trial zones: **`*.lab.chrison.dev`** (general lab admin UIs) and
+**`*.arr.chrison.dev`** (the arr stack admin UIs). To avoid a VPS for the trial, public ingress is a
+**home-IP `:443` port-forward** straight to Pangolin's Traefik. This **consciously suspends the
+outbound-only / no-inbound-ports invariant for these two zones only** — a deliberate, scoped,
+reversible exception, not a repeal. The cloudflared `core` tunnel and its break-glass are untouched; a
+VPS (Gerbil) remains the way to *restore* outbound-only later and is the documented graduation path
+(still deferred to #137).
+
+The free **Enterprise Edition license key** (personal-use tier) has been obtained — it unlocks the
+OIDC/external-IdP + RBAC the SSO goal leans on (the dual-licensing move since 1.18.4 put those behind
+the key).
 
 ## Decision
 
 **Adopt Pangolin as the remote-access / SSO front door, replacing Teleport's App-Access role.
-Run it on-prem in Core behind the existing HA `core` CF tunnel — no VPS. A public VPS is a separate,
-optional track (driven mainly by #137), not part of this rollout. Keep the Proxmox/PDM break-glass on
-the independent `core` CF tunnel.**
+Run it on-prem in Core. Pangolin is the *public ingress* for two new wildcard zones
+(`*.lab.chrison.dev`, `*.arr.chrison.dev`) via a *home-IP `:443` port-forward*, terminating its own
+Let's Encrypt wildcard certs (DNS-01) — a scoped, reversible suspension of the outbound-only invariant
+for these zones only, with a VPS (Gerbil) as the documented exit. No VPS for now (still deferred to
+#137). Everything else stays on its CF stack-tunnel, and the Proxmox/PDM break-glass stays on the
+independent HA `core` CF tunnel — never behind Pangolin or the port-forward.**
 
 1. **Pangolin owns the human auth surface; CF tunnels keep transport for everything else.** Admin
    UIs currently fronted by Teleport App Access move behind Pangolin SSO. Machine/public endpoints
@@ -64,20 +89,22 @@ the independent `core` CF tunnel.**
    node UIs + PDM remain on the HA `core` tunnel behind CF Access (the service-token path for
    `proxmox.chrison.dev` is preserved). Pangolin is explicitly **not** in that path.
 
-3. **Pangolin on-prem in Core, behind the `core` tunnel (add-only) — the end state.** Pangolin runs
-   as a Core member (LXC/VM in the 2010-block). The existing HA `core` cloudflared tunnel fronts it
-   (cloudflared → Pangolin Traefik, `noTLSVerify` to a local target — the same ingress shape the old
-   Teleport entry used); Pangolin proxies admin UIs as *local* resources, so its Newt/Gerbil
-   WireGuard data path is unused and there is **no VPS, no new public surface**, fully reversible.
-   This is the destination for homelab remote access, not an interim. Migrate admin hostnames onto
-   Pangolin one at a time, verifying each; decommission Teleport's CT alongside.
+3. **Pangolin on-prem in Core, public ingress via home-IP `:443` port-forward (add-only, reversible).**
+   Pangolin runs as a Core member (LXC in the 2010-block). UniFi forwards WAN `:443` → Pangolin's
+   Traefik; Traefik terminates TLS with **Let's Encrypt wildcard certs via the DNS-01 challenge**
+   (reusing the existing Cloudflare DNS-edit token), enforces Pangolin auth (badger), and proxies
+   admin UIs as *local* resources. `*.lab.chrison.dev` and `*.arr.chrison.dev` are **DNS-only
+   (grey-cloud) A records → the home public IP** — proxying them would hand TLS back to Cloudflare and
+   re-impose the one-level wildcard limit. Newt/Gerbil WireGuard stays idle (no remote sites). Migrate
+   admin hostnames onto Pangolin one at a time, verifying each; decommission Teleport's CT alongside.
 
-4. **A public VPS is a separate, optional track — not where this rollout heads.** It is only worth
-   standing up to make Pangolin (or another endpoint) its *own* public ingress off Cloudflare — and
-   the concrete driver is **#137** (a China-reachable endpoint; CF is blocked in CN). If that lands,
-   the same Pangolin extends onto a VPS (Gerbil there, Newt dialing out from home) and hostnames can
-   migrate off the CF tunnel one at a time, add-only. **Until #137 (or a deliberate leave-Cloudflare
-   decision), there is no VPS.** Scoped in its own ADR if it happens.
+4. **A public VPS is the graduation path that *restores* outbound-only — deferred, not this rollout.**
+   The home-IP port-forward is the trial's expedient, not the destination: it trades the
+   no-inbound-ports invariant for zero new infra. Standing up a VPS running Gerbil (Newt dialing out
+   from home) moves the public `:443` off the home IP and back to outbound-only, and is also what
+   **#137** needs (a China-reachable endpoint; CF is blocked in CN). When either the trial proves out
+   or #137 lands, the *same* Pangolin extends onto a VPS and the two wildcard zones' A records cut from
+   the home IP to the VPS — add-only, one at a time. **Until then, no VPS.** Scoped in its own ADR.
 
 5. **Decommission Teleport (CT 9904) — it never went live.** There is no working door to cut over
    from, so nothing retires "last": CT 9904 is dead weight, removable at any time independent of the
@@ -95,15 +122,17 @@ Only if one of these becomes true — otherwise never:
   episode that forced the self-hosted runner).
 - Pangolin's WireGuard site-to-site features are wanted beyond cloudflared's reach.
 
-**None of these is required for the admin-UI SSO goal** — that is fully met on-prem behind the `core`
-tunnel.
+**None of these is required for the admin-UI SSO goal** — that is met on-prem today. For the wildcard
+trial the VPS is the *graduation path* (it retires the home-IP inbound exposure and restores
+outbound-only), not a prerequisite.
 
 ### Target
 
 | Hostname | Path | Auth |
 |---|---|---|
 | `teleport.chrison.dev` | decommission (never went live) | — |
-| admin UIs (Grafana, *arr, Home Assistant, Traefik, …) | `core` tunnel → Pangolin (on-prem) | Pangolin SSO/RBAC |
+| `*.lab.chrison.dev` (general lab admin UIs → `grafana.lab`, `ha.lab`, `traefik.lab`, …) | home-IP `:443` → Pangolin Traefik (LE wildcard, DNS-01) | Pangolin SSO/RBAC |
+| `*.arr.chrison.dev` (arr stack admin UIs → `radarr.arr`, `sonarr.arr`, `prowlarr.arr`, `bazarr.arr`, …) | home-IP `:443` → Pangolin Traefik (LE wildcard, DNS-01) | Pangolin SSO/RBAC |
 | `proxmox.chrison.dev`, `pdm.chrison.dev` | `core` tunnel direct (unchanged) | CF Access (**break-glass — not Pangolin**) |
 | forgejo webhooks, ERP, Plex | their CF stack-tunnels (unchanged) | direct / existing |
 
@@ -119,21 +148,30 @@ tunnel.
 - **Pangolin Cloud (hosted control plane)** — left open (see Open decisions); self-hosted keeps the
   data plane + IdP in our control, consistent with the repo's self-host bias.
 - **Move break-glass behind Pangolin too** — rejected: reintroduces the bootstrap trap ADR-0005 closed.
+- **Stay behind cloudflared + buy CF Advanced Certificate Manager** (~$10/mo + Total TLS) for the
+  nested wildcards — rejected: pays Cloudflare the exact recurring fee Pangolin's own Let's Encrypt
+  avoids, for a single-admin lab. The port-forward trial costs nothing and proves the Pangolin path.
+- **VPS (Gerbil) from day one for the wildcards** — deferred, not rejected: it is the *correct* end
+  state (restores outbound-only, serves #137), but spends a box + recurring cost before the trial has
+  shown the Pangolin/SSO/wildcard model is worth keeping. Graduate to it once it has (decision #4).
 
 ## Consequences
 
 - **+** One tool for transport + SSO + RBAC; Teleport CT retired (RAM/vCPU freed); the admin door
   becomes self-hosted *identity*, not just CF Access PINs.
-- **+** Phase 1 is add-only and reversible — Pangolin sits behind the existing tunnel, nothing on
-  Cloudflare changes, break-glass untouched.
-- **+** Leaves a clean, *optional* path to getting hostnames off Cloudflare later (#137) without
-  committing to a VPS now.
+- **+** **Nested wildcards for free** — `*.lab` / `*.arr` served by Pangolin's own Let's Encrypt
+  certs, no Cloudflare ACM (~$10/mo) and no per-hostname cert/ingress wiring; a new service is just a
+  DNS record + a Pangolin resource.
+- **+** Add-only and reversible — break-glass untouched on the `core` tunnel; backing out means
+  pulling one port-forward + two wildcard DNS records and Pangolin's public exposure is gone.
 - **~** No real loss of SSH session recording / cert-based SSH — planned via Teleport (BL-001) but
   never realized, so there is nothing operational to give up. Revisit a dedicated SSH-audit path
   only if access ever goes multi-user.
-- **−** A VPS, *if* #137 ever warrants one, brings public surface + recurring cost + a box to patch;
-  userspace WireGuard (Newt) is less performant than kernel WG. Deferred until then.
-- **−** A per-hostname migration list (admin UIs → Pangolin) to track during cutover.
+- **−** **Suspends the outbound-only / no-inbound-ports invariant for these two zones.** The home IP
+  is exposed in public DNS and answers `:443` directly — no Cloudflare edge / WAF / DDoS in front.
+  Mitigated by Pangolin auth on every resource, `:443`-only, WAN firewall/geo-limits, and (optionally)
+  a DMZ VLAN; retired entirely by graduating to a VPS (decision #4). The deliberate cost of the trial.
+- **−** A per-hostname migration list (admin UIs → `*.lab`, arr UIs → `*.arr`) to track during cutover.
 - **−** ADR-0005's "Teleport is the door" decision (§4–5) is **superseded**; its per-stack-tunnel +
   HA-replica model still stands.
 
@@ -156,27 +194,60 @@ deploy shape and the behind-cloudflared model. Findings:
   `gerbil.base_endpoint` — *required even if Gerbil is idle*, `flags`) + `config/traefik/*`. Raw
   TCP/UDP (incl. SSH) resources are gated by `flags.allow_raw_resources: true`. Setup = read a
   one-time **setup token from the logs** → `/auth/initial-setup` → create admin + org.
-- **⚠ Main config delta for our model — TLS.** The stock install configures Traefik for Pangolin to
-  *own* public ingress with Let's Encrypt (`httpChallenge` on :80/:443). **Behind cloudflared there is
-  no public :80 for ACME** → the provisioner must reconfigure Traefik to serve plain **HTTP on :80 to
-  cloudflared** and drop the LE `certResolver` + https-redirect. cloudflared provides the public TLS
-  (same `noTLSVerify`/http origin pattern as the old Teleport ingress).
+- **TLS — keep Let's Encrypt, switch to a DNS-01 wildcard.** The stock install configures Traefik to
+  *own* public ingress with Let's Encrypt — which is exactly our model now. But the stock
+  **`httpChallenge` can't issue wildcards**; `*.lab` / `*.arr` require the **DNS-01 challenge**. The
+  provisioner configures a `letsencrypt` certResolver with `dnsChallenge.provider=cloudflare` and the
+  existing Cloudflare DNS-edit token (`CF_DNS_API_TOKEN`, from `secrets.env` / Bitwarden), requesting
+  `*.lab.chrison.dev` + `*.arr.chrison.dev` (plus the two apexes as SANs if used). Only `:443` need be
+  forwarded (DNS-01 needs no inbound `:80`); keep an optional `:80` HTTP→HTTPS redirect if convenient.
+  *(The earlier proposed shape — plain HTTP on :80 behind cloudflared, certResolver dropped — is
+  superseded by the public-ingress decision.)*
+- **DSL / provisioner deltas to implement (handoff to the build session).** `stacks/Core/pangolin.lxc.yaml`
+  currently encodes the *superseded* behind-cloudflared model (`edge: cloudflared`, ssl forced off,
+  Traefik plain HTTP on :80, a "NO VPS / behind the core tunnel" header). To match this ADR: flip the
+  edge mode to a **public-ingress / LE-wildcard mode** (Traefik owns `:443`, DNS-01 wildcard certs via
+  `CF_DNS_API_TOKEN`); stop forcing `ssl` off; add the **`zone`** field to `spec.config.resources[]`;
+  and correct the header/comments. `PangolinProvisioner` (#145) changes to match.
 - **Gerbil/WireGuard is unused** in the on-prem-behind-cloudflared model (no Newt clients) — installed
   but idle. Confirms **no VPS / no Newt** needed for the SSO goal, as decided above.
-- **Ingress integration.** The `core` tunnel points each admin hostname → the Pangolin CT's **Traefik
-  :80**; Traefik routes by Host header to the backend and the **badger** plugin enforces Pangolin
-  auth (redirect-to-login). So we add admin hostnames pointing at Traefik + define resources *in
-  Pangolin*, rather than minting a per-service cloudflared ingress rule each time.
+- **Ingress integration.** Public ingress is the **home-IP `:443` port-forward** (UniFi WAN → Pangolin
+  Traefik); Traefik routes by Host header to the backend and the **badger** plugin enforces Pangolin
+  auth (redirect-to-login). A new service is a **DNS-only A record under `*.lab` / `*.arr` + a Pangolin
+  resource** — no per-service cloudflared ingress rule, no per-hostname cert. The `core` tunnel is no
+  longer in this path (it stays for break-glass + existing one-level hostnames only).
+- **Port-forward + DNS (IaC).** Add a UniFi WAN `:443` → Pangolin-CT port-forward (via `unifisharp` /
+  UniFi MCP, add-only). `*.lab.chrison.dev` + `*.arr.chrison.dev` are **grey-cloud (DNS-only) A records
+  → the static home WAN IP** (the same IP `chrison.dev` already resolves to; `quic.nz` rDNS points
+  back). Static IP ⇒ **no DDNS** needed.
+- **Exposure mitigations (the cost of suspending outbound-only).** The home IP is now in public DNS and
+  answers `:443` directly — no Cloudflare edge / WAF / DDoS in front. Mitigate: **every** resource
+  under the two zones is a Pangolin resource with auth on (nothing unauthenticated unless deliberately
+  public); forward **only `:443`**; tighten the UniFi WAN firewall (consider geo-limits); and consider
+  isolating the Pangolin CT in a DMZ VLAN so a compromise can't pivot into Core. Decision #4 (graduate
+  to a VPS) retires the inbound exposure entirely.
+- **Enterprise Edition key.** The free personal-use **EE license key** (already obtained) must be
+  provisioned to unlock OIDC/external-IdP + RBAC (gated since the post-1.18.4 dual-licensing). Store it
+  as a secret (`secrets.env` / Bitwarden) and install it on first boot; the dashboard then activates EE.
 
-## Open decisions (resolve before this moves to Accepted)
+## Open decisions
 
-1. **Final per-hostname migration list** — which admin UIs move to Pangolin in Phase 1 (operational;
-   needs a per-hostname pass). The principle is set above; the exact list is TBD.
-2. ~~SSH session recording~~ — **resolved (2026-06-20):** Teleport never went live, so there is
-   nothing to drop. No SSH-audit path needed unless access goes multi-user.
-3. **Pangolin Cloud vs self-hosted control plane** — default self-hosted; confirm.
-4. ~~VPS provider/region~~ — **N/A for this ADR:** no VPS unless #137 (or a deliberate
-   leave-Cloudflare decision) warrants one; scoped separately if so.
+1. **Per-hostname map lives in the DSL (renamable IaC).** The hostname → backend map is declared in
+   the Pangolin stack DSL (`spec.config.resources[]` in `stacks/Core/pangolin.lxc.yaml`) and
+   provisioned via the :3003 integration API (add-only, idempotent by `fullDomain`) — so a DNS name is
+   changed by editing the DSL and re-converging, never hand-set in the UI. The DSL must gain a
+   **wildcard-zone** dimension per resource (`lab` / `arr`) → `fullDomain = <subdomain>.<zone>.chrison.dev`
+   (today it assumes one-level `<subdomain>.chrison.dev`). Zones are set (`*.lab` = general lab admin
+   UIs; `*.arr` = arr stack admin UIs); the exact `subdomain.zone` per service is an operational pass
+   during cutover. Plex stays direct on the media tunnel (clients can't SSO).
+2. ~~SSH session recording~~ — **resolved (2026-06-20):** Teleport never went live, nothing to drop.
+3. ~~Pangolin Cloud vs self-hosted~~ — **resolved:** self-hosted control plane (repo self-host bias),
+   running the free **EE key** for OIDC/RBAC — not Pangolin Cloud.
+4. ~~VPS provider/region~~ — **deferred (not blocking):** no VPS for the trial; it's the graduation
+   path (decision #4) to retire the inbound exposure / serve #137. Scoped separately when warranted.
+5. ~~DDNS for the home WAN IP~~ — **resolved:** the WAN IP is **static** (`chrison.dev` already
+   resolves to it; `quic.nz` rDNS points back). The `*.lab` / `*.arr` grey-cloud A records point at
+   the static IP directly — no DDNS updater needed.
 
 ## Out of scope
 

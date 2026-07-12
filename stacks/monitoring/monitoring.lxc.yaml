@@ -1,0 +1,49 @@
+# Monitoring — the observability Docker host (#222).
+#
+# app: docker → ct/docker.sh installs Docker Engine on a plain LXC (same pattern
+# as youtarr); the compose in this directory is then layered on by
+# deploy/install.sh (rsync → materialise configs → docker compose up). Runs:
+# prometheus, grafana, otel-collector (OTLP :4317/:4318), tempo, loki, plus the
+# snmp/servarr exporters. The OTel collector is the ingest point for #191's
+# PowerOrchestrator telemetry (set its OTEL_EXPORTER_OTLP_ENDPOINT to :4317 here).
+#
+# Docker needs nesting (+ keyctl) on an unprivileged LXC — declared below;
+# ct/docker.sh also sets var_nesting itself on create.
+#
+# STATIC IP: the orchestrator (and any future emitter) targets the collector by a
+# stable endpoint, so pin it. .40 ↔ ctid 4000. Static IPs on VLAN 1010 get no
+# resolver from DHCP and the VLAN firewalls outbound public DNS, so point at the
+# gateway resolver (mirrors pangolin) — else in-CT apt/docker install can't resolve.
+#
+# EXPOSURE — INTERNAL-ONLY (no tunnel ingress). Grafana/Prometheus/OTLP are
+# reached over VLAN 1010 only; expose Grafana later via Pangolin if desired.
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: monitoring
+  stack: Monitoring
+  tags: [monitoring, observability, docker, otel]
+
+spec:
+  app: docker            # community-scripts slug → ct/docker.sh (Docker Engine host)
+  ctid: 4000
+  cores: 2
+  memory: 4096           # MB — Prometheus TSDB + Loki + Tempo + Grafana + collector; bump if retention grows
+  disk: 30               # GB — metrics/logs/traces retention + Docker image layers + Grafana state
+
+  features:
+    nesting: true        # required: Docker-in-LXC
+    keyctl: true         # Docker/containerd keyring ops on unprivileged LXC
+
+  # Static IP (overrides the stack's per-member default): emitters target :4317 by
+  # IP, so pin it. .40 ↔ ctid 4000.
+  network:
+    bridge: vmbr0
+    vlan: 1010
+    ipv4: 10.10.0.40/16
+    gateway: 10.10.0.1
+    ipv6: none
+  nameserver: 10.10.0.1  # static IP on VLAN 1010 → use the gateway resolver (see header)
