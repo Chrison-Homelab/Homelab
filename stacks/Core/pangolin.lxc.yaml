@@ -100,14 +100,23 @@ spec:
     # (add-only, idempotent by fullDomain) using PANGOLIN_API_KEY. A `zone` (lab|arr) makes
     # fullDomain = <subdomain>.<zone>.chrison.dev, served on :443 with the wildcard cert and
     # gated by Pangolin auth (badger). In public-wildcard mode ssl is ON (Traefik terminates).
-    # A new service is just an entry here + a grey-cloud A record (handled by converge) — no
-    # per-host cert, no per-host cloudflared ingress.
+    # sso defaults ON (the auth gate); set `sso: false` only for native clients that can't do
+    # the SSO interstitial (e.g. Plex, audiobookshelf). A new service is just an entry here +
+    # a grey-cloud A record (handled by converge) — no per-host cert, no per-host cloudflared ingress.
     resources:
       # Pangolin's own Traefik dashboard — first migrated UI (kept from #136).
       - name: Traefik Dashboard
         subdomain: traefik
         zone: lab
         target: { ip: localhost, port: 8080, method: http }
+      # PowerOrchestrator dashboard/control API (#191) — systemd service on nuc-01's legacy
+      # IP; CT 2013 reaches it cross-VLAN via the 10.10.0.1 gateway. sso is REQUIRED here: the
+      # control API (Wake/Sleep/Arm) has no native auth (#238).
+      - name: Power Orchestrator
+        subdomain: power
+        zone: lab
+        sso: true
+        target: { ip: 192.168.179.1, port: 8080, method: http }
       # ── arr admin UIs (Phase 5 cutover — uncomment + set the target IP once the media
       #    CT has a DHCP reservation / static IP; they're DHCP today on VLAN 1010):
       # - { name: Prowlarr, subdomain: prowlarr, zone: arr, target: { ip: 10.10.x.x, port: 9696, method: http } }

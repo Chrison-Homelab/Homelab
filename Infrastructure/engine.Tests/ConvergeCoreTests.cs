@@ -568,6 +568,19 @@ public sealed class ConvergeCoreTests
         Assert.Empty(PangolinProvisioner.WildcardARecords(cf));
     }
 
+    [Theory]
+    [InlineData(null, true)]      // unset → gated (the security default; API create leaves it OPEN, #238)
+    [InlineData(true, true)]
+    [InlineData(false, false)]    // explicit opt-out for native clients (Plex/abs)
+    [InlineData("true", true)]    // YAML scalars can arrive as strings
+    [InlineData("false", false)]
+    public void Pangolin_Resource_SsoDefaultsOn_UnlessOptedOut(object? sso, bool expected)
+    {
+        var rd = new Dictionary<object, object> { ["subdomain"] = "x", ["zone"] = "lab" };
+        if (sso is not null) rd["sso"] = sso;
+        Assert.Equal(expected, PangolinProvisioner.ResourceSsoEnabled(rd));
+    }
+
     [Fact]
     public void Pangolin_ComposeYaml_PinsEeImage_TraefikPublishesPorts_NoGerbilByDefault()
     {
