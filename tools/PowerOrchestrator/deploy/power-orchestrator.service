@@ -1,0 +1,21 @@
+[Unit]
+Description=Homelab node power orchestrator (presence/idle → sleep/wake; dry-run by default)
+Documentation=https://github.com/Chrison-dev/Homelab/issues/191
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Proxmox/UniFi creds + ORCH_* config + OTEL_EXPORTER_OTLP_ENDPOINT live here (installed by
+# deploy/deploy.sh, gitignored). KEY=VALUE, no `export`, no surrounding quotes needed.
+EnvironmentFile=/opt/power-orchestrator/power-orchestrator.env
+ExecStart=/opt/power-orchestrator/power-orchestrator
+WorkingDirectory=/opt/power-orchestrator
+# root: needs to broadcast WoL packets and SSH to managed nodes for the host poweroff.
+User=root
+Restart=on-failure
+RestartSec=5
+# The binary self-loads appsettings.json; bind address is set via ASPNETCORE_URLS in the env file.
+
+[Install]
+WantedBy=multi-user.target

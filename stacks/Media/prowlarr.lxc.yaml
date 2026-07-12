@@ -19,7 +19,7 @@ spec:
   cores: 1
   memory: 1024           # MB
   disk: 4                # GB
-  dependsOn: [flaresolverr]   # some indexers solve Cloudflare challenges via flaresolverr
+  dependsOn: [flaresolverr, qbittorrent]   # flaresolverr: some indexers solve CF challenges; qbittorrent: Prowlarr's own download client (+ its `prowlarr` category)
 
   # arr-wire config migration (#159) — both ADD-ONLY, both idempotent (skip-by-name):
   config:

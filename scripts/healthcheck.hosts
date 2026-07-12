@@ -1,0 +1,23 @@
+# healthcheck.hosts — declarative inventory for scripts/healthcheck.{sh,ps1}
+#
+# One row per device. Whitespace-separated. '#' starts a comment.
+# Keep in sync with docs/Devices.md (single source of truth for the inventory).
+#
+# Columns:
+#   name      Display name.
+#   ip        Address to probe.
+#   role      Free-text group label (node / nas / network / …). Purely cosmetic.
+#   ports     Comma-separated TCP ports to probe, or '-' for none (ICMP only).
+#             A host with ports is considered UP if ANY listed port is open,
+#             even when ICMP is blocked.
+#   severity  'critical' → counts against the exit code when down.
+#             'optional' → a down host is reported as a warning only
+#             (e.g. desktop-01 may be intentionally asleep via the power
+#             orchestrator, #191).
+#
+# name         ip               role     ports        severity
+gateway        192.168.178.1    network  -            critical
+DS1813-01      192.168.179.11   nas      5001,2049    critical
+hpe-01         192.168.179.3    node     8006         critical
+nuc-01         192.168.179.1    node     8006         critical
+desktop-01     192.168.179.2    node     8006         optional

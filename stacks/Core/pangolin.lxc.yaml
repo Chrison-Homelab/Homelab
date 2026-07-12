@@ -1,16 +1,26 @@
-# Pangolin — the homelab's SSO remote-access front door (ADR-0007).
+# Pangolin — the homelab's SSO remote-access front door (ADR-0007, Accepted #214).
 #
 # Replaces Teleport (CT 9904, never went live) as the authenticated door for admin
-# UIs. Runs ON-PREM, behind the existing HA `core` Cloudflare tunnel — NO VPS. It is
-# a self-hosted identity-aware reverse proxy (Traefik + an IdP/RBAC layer); a public
-# VPS would only be needed to make Pangolin its OWN public ingress (its Gerbil/Newt
-# WireGuard path), which is a separate, optional, #137-driven track — see ADR-0007.
+# UIs. Runs ON-PREM as Docker ENTERPRISE EDITION and is the PUBLIC INGRESS for two
+# wildcard zones — *.lab.chrison.dev (general lab admin UIs) and *.arr.chrison.dev
+# (arr stack admin UIs) — via a home-IP :443 port-forward to its Traefik, which
+# terminates Let's Encrypt WILDCARD certs (DNS-01 via Cloudflare). EE (OIDC/RBAC) only
+# ships on the fosrl/pangolin:ee Docker image; the native community-scripts install is
+# OSS-only and can't activate a license (#168) — so this is a Docker host.
 #
-# community-scripts: ct/pangolin.sh (stable / ProxmoxVE), pinned upstream to 1.18.4
-# (Pangolin's schema changes break unattended updates). NATIVE systemd install
-# (Node 24 + pangolin/gerbil/traefik binaries, SQLite OSS), NOT Docker. The script
-# sets var_tun=1 (TUN for Gerbil's WireGuard) — Gerbil is installed but UNUSED in the
-# behind-cloudflared model (no Newt clients). Validate against
+# RE-PLATFORM (this shape): a NEW CT 2013 stood up side-by-side with the legacy native
+# CT 2012 (add-only, reversible). 2012 keeps serving the old behind-cloudflared model
+# until cutover; retire it LAST (proxmoxsharp lxc delete 2012) once nothing rides it.
+#
+# app: debian → ct/debian.sh creates a plain base CT (var_nesting + var_keyctl make it
+# Docker-capable); the `pangolin` provisioner then INSTALLS Docker non-interactively and
+# RENDERS the compose (pangolin + traefik [+ optional gerbil]) + config + Traefik
+# config and runs `docker compose up -d` (no manual layer-on). We deliberately avoid
+# ct/docker.sh — its interactive Portainer/socket prompts hang over non-interactive SSH.
+# The dashboard
+# (pangolin.chrison.dev) still arrives via the core CF tunnel on plain :80; the
+# *.lab/*.arr resources are served on public :443. EE license activation is a one-time
+# manual /admin/license step (UI-only). Validate against
 # ../../Infrastructure/schema/shape.schema.json.
 
 apiVersion: homelab/v1
@@ -19,58 +29,105 @@ kind: LXC
 metadata:
   name: pangolin
   stack: Core
-  tags: [network, proxy, sso, remote-access]
+  tags: [network, proxy, sso, remote-access, docker]
 
 spec:
-  app: pangolin
-  ctid: 2012
+  app: debian            # plain base CT (ct/debian.sh) — Docker-capable via nesting+keyctl below
+  provisioner: pangolin  # post-create dispatched to PangolinProvisioner (installs Docker + EE)
+  ctid: 2013             # NEW CT, side-by-side with the legacy native CT 2012 (retired last)
   node: nuc-01           # single instance (not HA — replica of an IdP buys little);
                          # lands on nuc-01, Teleport's old home, which it supersedes.
-  cores: 2               # community-scripts ct/pangolin.sh defaults (Node build + Traefik)
-  memory: 4096           # MB
-  disk: 10               # GB
+  cores: 2
+  memory: 4096           # MB — Docker daemon + pangolin/traefik
+  disk: 15               # GB — Docker image layers + SQLite + LE certs + config
+
+  features:
+    nesting: true        # required: Docker-in-LXC (mirrors stacks/Media/youtarr.lxc.yaml)
+    keyctl: true         # Docker/containerd keyring ops on unprivileged LXC
+
   # source(stable/main)/os(debian 13)/unprivileged/storage/timezone/onboot inherited
-  # from the Core stack. var_tun is set by the script itself.
+  # from the Core stack.
   #
-  # STATIC IP (overrides the stack's dhcp default): the `core` tunnel targets this CT's
-  # Traefik by IP, so pin it deterministically rather than relying on a DHCP reservation.
-  # .12 ↔ ctid 2012, on the Homelab VLAN.
+  # STATIC IP (overrides the stack's dhcp default): the core tunnel targets the dashboard
+  # by IP and the WAN :443 port-forward targets this CT, so pin it. .13 ↔ ctid 2013.
   network:
     bridge: vmbr0
     vlan: 1010
-    ipv4: 10.10.0.12/16
+    ipv4: 10.10.0.13/16
     gateway: 10.10.0.1
     ipv6: none
+  # Static IPs don't get a resolver from DHCP, and VLAN 1010 firewalls outbound public DNS
+  # (8.8.8.8 is unreachable) — so point the CT at the gateway's resolver, which works. Without
+  # this, in-CT apt/curl + the docker install fail to resolve (network unreachable).
+  nameserver: 10.10.0.1
 
-  # ── Post-create wiring applied by the `pangolin` converge provisioner (#145).
+  # ── Post-create wiring applied by the `pangolin` converge provisioner.
   config:
-    dashboardUrl: https://pangolin.chrison.dev
+    dashboardUrl: https://pangolin.chrison.dev   # dashboard stays on the core CF tunnel (plain :80)
     baseDomain: chrison.dev
-    # EDGE MODE — the load-bearing delta from the stock install. community-scripts
-    # configures Traefik to OWN public ingress via Let's Encrypt (httpChallenge on
-    # :80/:443). Behind cloudflared there is no public :80 for ACME, so the provisioner
-    # must reconfigure Traefik to serve plain HTTP on :80 to the `core` tunnel and DROP
-    # the LE certResolver + https-redirect. cloudflared provides the public TLS.
-    edge: cloudflared        # vs 'letsencrypt' (the stock public-ingress default)
+    org: chrison-dev                             # Pangolin org id (the slug, not the display name) — resources created under it
+
+    # EDGE MODE — public-wildcard (ADR-0007 end state): Traefik OWNS public :443 and mints
+    # LE wildcard certs via the DNS-01 challenge (Cloudflare) for the zones below. (The
+    # legacy 'cloudflared' mode — plain HTTP behind the core tunnel — is still supported by
+    # the provisioner for rollback.)
+    edge: public-wildcard
+    wildcardZones: [lab, arr]                    # → *.lab.chrison.dev + *.arr.chrison.dev LE SANs
+    # Home WAN IP the public :443 port-forward lives behind (#221, ADR-0007). The provisioner
+    # declares a grey-cloud (proxied:false) A record per wildcard zone → this IP, so every
+    # *.<zone> hostname Traefik mints a cert for actually resolves to the home edge. Add-only +
+    # ManagedComment-stamped (so #195's prune leaves hand-managed records alone). Update if the
+    # WAN IP changes. The UniFi :443 port-forward itself is still hand-managed (gated on #102).
+    publicIp: 118.67.199.127
+    letsEncryptEmail: csimon@chrison.dev
+    leStaging: false                             # flip true to use the LE STAGING CA while iterating
+    # includeGerbil: false                       # WireGuard idle in the home-IP trial; enable for the
+                                                  # VPS/Newt graduation (#137). Default off (traefik owns :80/:443).
+
+    # Image/version pins (the pieces confirmed live during rollout). Defaults live in
+    # PangolinProvisioner; override here if a bump is needed:
+    # image: fosrl/pangolin:ee-1.19.4
+    # traefikImage: traefik:v3.6
+    # badgerVersion: v1.2.0
+
     flags:
       allowRawResources: true        # enables raw TCP/UDP resources (e.g. SSH)
       disableSignupWithoutInvite: true
       disableUserCreateOrg: false
-      enableIntegrationApi: true     # integration API on :3003 — lets us manage resources
-                                     # declaratively via the API (Bearer key) instead of by hand
+      enableIntegrationApi: true     # integration API on :3003 — declarative resource mgmt
 
-    org: chrison             # Pangolin org id — resources are created under it
-
-    # Declarative admin-UI resources (#136): the provisioner creates these via the
-    # integration API (add-only, idempotent by fullDomain) using PANGOLIN_API_KEY from
-    # secrets.env. ssl is forced OFF (behind-cloudflared, Pangolin SSO gates them via
-    # badger). Each <subdomain>.chrison.dev ALSO needs its cloudflared ingress entry in
-    # cloudflared-hpe-01.lxc.yaml (#165 pushes that idempotently). Migrate UIs by adding
-    # entries here + the matching ingress, then `converge --apply`.
+    # Declarative resources (#136): the provisioner upserts these via the integration API
+    # (add-only, idempotent by fullDomain) using PANGOLIN_API_KEY. A `zone` (lab|arr) makes
+    # fullDomain = <subdomain>.<zone>.chrison.dev, served on :443 with the wildcard cert and
+    # gated by Pangolin auth (badger). In public-wildcard mode ssl is ON (Traefik terminates).
+    # sso defaults ON (the auth gate); set `sso: false` only for native clients that can't do
+    # the SSO interstitial (e.g. Plex, audiobookshelf). A new service is just an entry here +
+    # a grey-cloud A record (handled by converge) — no per-host cert, no per-host cloudflared ingress.
     resources:
+      # Pangolin's own Traefik dashboard — first migrated UI (kept from #136).
       - name: Traefik Dashboard
         subdomain: traefik
+        zone: lab
         target: { ip: localhost, port: 8080, method: http }
-  # No `secrets:` block: the provisioner GENERATES config.yml server.secret on the CT
-  # the first time and PRESERVES it on every re-converge — no manual secrets.env step
-  # (and no fail-fast on a missing declared secret). See PangolinProvisioner (#145).
+      # PowerOrchestrator dashboard/control API (#191) — systemd service on nuc-01's legacy
+      # IP; CT 2013 reaches it cross-VLAN via the 10.10.0.1 gateway. sso is REQUIRED here: the
+      # control API (Wake/Sleep/Arm) has no native auth (#238).
+      - name: Power Orchestrator
+        subdomain: power
+        zone: lab
+        sso: true
+        target: { ip: 192.168.179.1, port: 8080, method: http }
+      # ── arr admin UIs (Phase 5 cutover — uncomment + set the target IP once the media
+      #    CT has a DHCP reservation / static IP; they're DHCP today on VLAN 1010):
+      # - { name: Prowlarr, subdomain: prowlarr, zone: arr, target: { ip: 10.10.x.x, port: 9696, method: http } }
+      # - { name: Sonarr,   subdomain: sonarr,   zone: arr, target: { ip: 10.10.x.x, port: 8989, method: http } }
+      # - { name: Radarr,   subdomain: radarr,   zone: arr, target: { ip: 10.10.x.x, port: 7878, method: http } }
+      # - { name: Bazarr,   subdomain: bazarr,   zone: arr, target: { ip: 10.10.x.x, port: 6767, method: http } }
+
+  # No `secrets:` block (avoids deriver fail-fast). The provisioner reads what it needs
+  # straight from the gitignored secrets.env via ctx.Secrets:
+  #   • CF_DNS_API_TOKEN (or CF_API_TOKEN) → injected into Traefik for the DNS-01 wildcard challenge.
+  #   • PANGOLIN_API_KEY (org integration-API key, created post-setup) → resource reconcile;
+  #     resources are skipped (not failed) until it exists.
+  #   • PANGOLIN_LICENSE_KEY → activated ONCE by hand at /admin/license (UI-only).
+  # server.secret is GENERATED + PRESERVED in config.yml on the CT by the provisioner.

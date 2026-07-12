@@ -9,7 +9,7 @@ name: release-state-snapshot
 # self-hosted runner (LXC 2005, github-runner) and is a later step.
 #
 # PREREQUISITE: a fine-grained PAT with read access to the private
-# Homelab.Stacks.* repos, stored as the Actions secret SUBMODULES_PAT
+# Homelab.Stacks.* repos, stored as the Actions secret SUBMODULES_RO_PAT
 # (Settings → Secrets and variables → Actions). Without it the submodule
 # checkout fails.
 
@@ -38,7 +38,7 @@ jobs:
         with:
           fetch-depth: 0
           submodules: recursive
-          token: ${{ secrets.SUBMODULES_PAT }}
+          token: ${{ secrets.SUBMODULES_RO_PAT }}
 
       - name: Build state manifest + bundle
         run: |

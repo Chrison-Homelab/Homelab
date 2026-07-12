@@ -104,6 +104,28 @@ public static class ArrExec
         return true;
     }
 
+    // qBittorrent download-client body for any Servarr app (Sonarr/Radarr v3, Prowlarr v1).
+    // QBittorrentSettings is shared Servarr code → the field set is identical across apps;
+    // only the api version in the POST path differs. add-only — POST this when the app has
+    // no download client named "qBittorrent". Used by the *arr base AND the Prowlarr
+    // provisioner (so Prowlarr's own Search tab can grab releases).
+    public static string QbitDownloadClientJson(string qbitIp, string qbitUser, string qbitPass, string category) =>
+        JsonSerializer.Serialize(new
+        {
+            enable = true, protocol = "torrent", priority = 1, name = "qBittorrent",
+            implementation = "QBittorrent", implementationName = "qBittorrent", configContract = "QBittorrentSettings",
+            fields = new object[]
+            {
+                new { name = "host", value = (object)qbitIp },
+                new { name = "port", value = (object)QbitWebUiPort },
+                new { name = "useSsl", value = (object)false },
+                new { name = "username", value = (object)qbitUser },
+                new { name = "password", value = (object)qbitPass },
+                new { name = "category", value = (object)category },
+            },
+            tags = Array.Empty<int>(),
+        });
+
     // qBittorrent (4.6+) prints a random WebUI password to its journal on first run:
     //   "...A temporary password is provided for this session: <pw>".
     public static string? ParseQbitTempPassword(string journal)
@@ -131,6 +153,7 @@ public sealed class QbittorrentProvisioner : IAppProvisioner
     {
         ("tv-sonarr", "/data/torrents/tv"),
         ("radarr",    "/data/torrents/movies"),
+        ("prowlarr",  "/data/torrents/prowlarr"),   // manual/interactive grabs from Prowlarr's own Search tab
     };
 
     public IEnumerable<string> PlanSteps(Shape s)
@@ -323,21 +346,7 @@ public abstract class ArrAppProvisionerBase : IAppProvisioner
             var qbitPass = ctx.Secrets.Get("QBIT_PASSWORD");
             if (qbitIp is null) return ApplyResult.Failed("could not resolve qbittorrent IP for download client");
             if (string.IsNullOrEmpty(qbitPass)) return ApplyResult.Failed("QBIT_PASSWORD not set — needed for the download client");
-            var body = JsonSerializer.Serialize(new
-            {
-                enable = true, protocol = "torrent", priority = 1, name = "qBittorrent",
-                implementation = "QBittorrent", implementationName = "qBittorrent", configContract = "QBittorrentSettings",
-                fields = new object[]
-                {
-                    new { name = "host", value = (object)qbitIp },
-                    new { name = "port", value = (object)ArrExec.QbitWebUiPort },
-                    new { name = "useSsl", value = (object)false },
-                    new { name = "username", value = (object)(ctx.Secrets.Get("QBIT_USER") ?? "admin") },
-                    new { name = "password", value = (object)qbitPass },
-                    new { name = "category", value = (object)QbitCategory },
-                },
-                tags = Array.Empty<int>(),
-            });
+            var body = ArrExec.QbitDownloadClientJson(qbitIp, ctx.Secrets.Get("QBIT_USER") ?? "admin", qbitPass, QbitCategory);
             var (ok, resp) = await self.PostAsync("api/v3/downloadclient", body, ct);
             if (!ok) return ApplyResult.Failed($"add download client failed: {resp}");
             changed++;
@@ -415,6 +424,7 @@ public sealed class ProwlarrProvisioner : IAppProvisioner
             yield return $"carry indexers over from old prowlarr CT {old} (add-only, skip-by-name)";
         if (s.Spec.Config.TryGetValue("flaresolverr", out var fs))
             yield return $"ensure FlareSolverr proxy → sibling '{fs}' (add-only)";
+        yield return "ensure qBittorrent download client (category prowlarr) for the Search tab (add-only)";
     }
 
     public async Task<ApplyResult> ApplyAsync(Shape s, ConvergeContext ctx)
@@ -488,9 +498,26 @@ public sealed class ProwlarrProvisioner : IAppProvisioner
             }
         }
 
+        // 3. qBittorrent download client (add-only). Prowlarr's Search tab can grab a
+        //    release directly only if it has its own download client — the *arr each
+        //    register qbit on their side, but Prowlarr needs its own. Same shared
+        //    QBittorrentSettings contract (v1 path); grabs land in the `prowlarr` category.
+        var clients = await self.GetAsync("api/v1/downloadclient", ct);
+        if (!ArrExec.HasName(clients, "qBittorrent"))
+        {
+            var qbitIp = await ArrExec.SiblingIpAsync(ctx, "qbittorrent", ct);
+            var qbitPass = ctx.Secrets.Get("QBIT_PASSWORD");
+            if (qbitIp is null) return ApplyResult.Failed("could not resolve qbittorrent IP for download client");
+            if (string.IsNullOrEmpty(qbitPass)) return ApplyResult.Failed("QBIT_PASSWORD not set — needed for the download client");
+            var body = ArrExec.QbitDownloadClientJson(qbitIp, ctx.Secrets.Get("QBIT_USER") ?? "admin", qbitPass, "prowlarr");
+            var (ok, resp) = await self.PostAsync("api/v1/downloadclient", body, ct);
+            if (!ok) return ApplyResult.Failed($"add qBittorrent download client failed: {resp}");
+            changed++;
+        }
+
         return changed > 0
-            ? ApplyResult.Applied($"prowlarr: {changed} item(s) added (indexers + FlareSolverr)")
-            : ApplyResult.NoChange("prowlarr already has its indexers + FlareSolverr proxy");
+            ? ApplyResult.Applied($"prowlarr: {changed} item(s) added (indexers + FlareSolverr + download client)")
+            : ApplyResult.NoChange("prowlarr already has its indexers + FlareSolverr proxy + download client");
     }
 }
 

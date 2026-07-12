@@ -1,0 +1,59 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "title": "Node Power Orchestrator",
+  "uid": "node-power-orchestrator",
+  "tags": ["power", "proxmox", "orchestrator"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Armed",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DRY-RUN" }, "1": { "text": "ARMED" } } }
+          ],
+          "thresholds": { "steps": [ { "color": "blue", "value": null }, { "color": "red", "value": 1 } ] }
+        }
+      },
+      "targets": [ { "expr": "orchestrator_armed", "refId": "A" } ]
+    },
+    {
+      "type": "stat",
+      "title": "Devices present",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "expr": "orchestrator_presence_present_count", "refId": "A" } ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Node online (1) / asleep (0)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "expr": "orchestrator_node_online", "legendFormat": "{{node}}", "refId": "A" } ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Running guests per node",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "expr": "orchestrator_node_running_guests", "legendFormat": "{{node}}", "refId": "A" } ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Power actions (rate)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum by (node, action, trigger, result) (rate(orchestrator_actions_total[5m]))", "legendFormat": "{{node}} {{action}} ({{trigger}}/{{result}})", "refId": "A" }
+      ]
+    }
+  ]
+}

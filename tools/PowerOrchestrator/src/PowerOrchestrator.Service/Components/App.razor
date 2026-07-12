@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <title>Node Power Orchestrator</title>
+    <style>
+        :root {
+            --bg: #0f1115; --card: #1a1d24; --line: #2a2f3a; --fg: #e6e9ef;
+            --muted: #8b93a3; --accent: #4f9cf9; --ok: #3fb950; --warn: #d29922; --bad: #f85149;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--bg); color: var(--fg);
+               font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+        a { color: var(--accent); }
+        .wrap { max-width: 1000px; margin: 0 auto; padding: 24px 20px 64px; }
+        h1 { font-size: 1.5rem; margin: 0; }
+        .sub { color: var(--muted); margin: 4px 0 0; font-size: .9rem; }
+        .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: stretch; }
+        .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+        .grow { flex: 1 1 280px; }
+        .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .8rem; font-weight: 600; }
+        .badge.dry { background: rgba(79,156,249,.15); color: var(--accent); }
+        .badge.armed { background: rgba(248,81,73,.15); color: var(--bad); }
+        .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: middle; }
+        .dot.on { background: var(--ok); } .dot.off { background: var(--muted); }
+        .kv { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; }
+        .kv .k { color: var(--muted); } .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+        .reason { color: var(--muted); font-size: .88rem; margin-top: 6px; }
+        button { font: inherit; border: 1px solid var(--line); background: #232732; color: var(--fg);
+                 border-radius: 7px; padding: 7px 14px; cursor: pointer; }
+        button:hover:not(:disabled) { border-color: var(--accent); }
+        button:disabled { opacity: .45; cursor: not-allowed; }
+        button.wake { border-color: rgba(63,185,80,.5); }
+        button.sleep { border-color: rgba(248,81,73,.5); }
+        .btns { display: flex; gap: 8px; margin-top: 14px; }
+        .pre { background: rgba(210,153,34,.1); border: 1px solid rgba(210,153,34,.3); color: var(--warn);
+               border-radius: 8px; padding: 10px 12px; font-size: .85rem; margin-top: 6px; }
+        .toast { position: fixed; bottom: 20px; right: 20px; background: var(--card); border: 1px solid var(--accent);
+                 border-radius: 8px; padding: 12px 16px; box-shadow: 0 6px 24px rgba(0,0,0,.4); }
+        .muted { color: var(--muted); }
+    </style>
+    <HeadOutlet />
+</head>
+<body>
+    <Routes />
+    <script src="_framework/blazor.web.js"></script>
+</body>
+</html>

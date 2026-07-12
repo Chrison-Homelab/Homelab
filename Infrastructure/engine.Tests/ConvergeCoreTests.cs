@@ -486,4 +486,235 @@ public sealed class ConvergeCoreTests
         b.Spec.Config["edge"] = "letsencrypt";
         Assert.NotEqual(PangolinProvisioner.DesiredMarker(a), PangolinProvisioner.DesiredMarker(b));
     }
+
+    // ---- Provisioner override dispatch (#168: docker host + pangolin provisioner) --
+
+    [Fact]
+    public void Registry_DispatchesByProvisionerOverride_ElseApp()
+    {
+        var reg = ProvisionerRegistry.Default();
+        // app: docker + provisioner: pangolin → PangolinProvisioner (the create path still
+        // uses ct/docker.sh via app, but post-create is dispatched by the override).
+        var s = Lxc("pangolin", "2013");
+        s.Spec.App = "docker";
+        s.Spec.Provisioner = "pangolin";
+        Assert.Equal("pangolin", reg.For(s.Spec.Provisioner ?? s.Spec.App).App);
+
+        // No override → dispatch by app (docker has no provisioner → DefaultProvisioner "*").
+        var y = Lxc("youtarr", "5113");
+        y.Spec.App = "docker";
+        Assert.Equal("*", reg.For(y.Spec.Provisioner ?? y.Spec.App).App);
+    }
+
+    // ---- PangolinProvisioner Docker-EE public-wildcard (#168 / ADR-0007) --
+
+    private static Shape PangolinWildcardShape()
+    {
+        var s = Lxc("pangolin", "2013");
+        s.Spec.Node = "nuc-01";
+        s.Spec.Config["dashboardUrl"] = "https://pangolin.chrison.dev";
+        s.Spec.Config["baseDomain"] = "chrison.dev";
+        s.Spec.Config["edge"] = "public-wildcard";
+        s.Spec.Config["letsEncryptEmail"] = "csimon@chrison.dev";
+        s.Spec.Config["resources"] = new List<object>
+        {
+            new Dictionary<object, object> { ["name"] = "Radarr", ["subdomain"] = "radarr", ["zone"] = "arr" },
+            new Dictionary<object, object> { ["name"] = "Grafana", ["subdomain"] = "grafana", ["zone"] = "lab" },
+        };
+        return s;
+    }
+
+    [Fact]
+    public void Pangolin_Marker_DiffersByEdgeAndImage()
+    {
+        var cf = PangolinShape();                       // edge: cloudflared
+        var wc = PangolinWildcardShape();               // edge: public-wildcard
+        Assert.NotEqual(PangolinProvisioner.DesiredMarker(cf), PangolinProvisioner.DesiredMarker(wc));
+
+        var wc2 = PangolinWildcardShape();
+        wc2.Spec.Config["image"] = "fosrl/pangolin:ee-1.20.0";
+        Assert.NotEqual(PangolinProvisioner.DesiredMarker(wc), PangolinProvisioner.DesiredMarker(wc2));
+    }
+
+    [Fact]
+    public void Pangolin_WildcardZones_DeriveFromResources()
+    {
+        var s = PangolinWildcardShape();
+        Assert.Equal(new[] { "arr", "lab" }, PangolinProvisioner.WildcardZones(s).OrderBy(z => z));
+        Assert.Contains("*.arr.chrison.dev", PangolinProvisioner.WildcardFqdns(s));
+        Assert.Contains("*.lab.chrison.dev", PangolinProvisioner.WildcardFqdns(s));
+    }
+
+    [Fact]
+    public void Pangolin_WildcardARecords_OnePerZone_ToPublicIp_WhenPublicWildcard()
+    {
+        var s = PangolinWildcardShape();
+        s.Spec.Config["publicIp"] = "118.67.199.127";
+        var recs = PangolinProvisioner.WildcardARecords(s);
+        Assert.Equal(2, recs.Count);
+        Assert.Contains(("*.arr.chrison.dev", "118.67.199.127"), recs);
+        Assert.Contains(("*.lab.chrison.dev", "118.67.199.127"), recs);
+    }
+
+    [Fact]
+    public void Pangolin_WildcardARecords_Empty_WhenPublicIpUnset_OrCloudflaredEdge()
+    {
+        // publicIp unset → nothing to declare (the reconcile reports a skip, never an A record).
+        Assert.Empty(PangolinProvisioner.WildcardARecords(PangolinWildcardShape()));
+
+        // cloudflared edge has no public :443, so no grey-cloud A records even with publicIp set.
+        var cf = PangolinShape();
+        cf.Spec.Config["publicIp"] = "118.67.199.127";
+        Assert.Empty(PangolinProvisioner.WildcardARecords(cf));
+    }
+
+    [Theory]
+    [InlineData(null, true)]      // unset → gated (the security default; API create leaves it OPEN, #238)
+    [InlineData(true, true)]
+    [InlineData(false, false)]    // explicit opt-out for native clients (Plex/abs)
+    [InlineData("true", true)]    // YAML scalars can arrive as strings
+    [InlineData("false", false)]
+    public void Pangolin_Resource_SsoDefaultsOn_UnlessOptedOut(object? sso, bool expected)
+    {
+        var rd = new Dictionary<object, object> { ["subdomain"] = "x", ["zone"] = "lab" };
+        if (sso is not null) rd["sso"] = sso;
+        Assert.Equal(expected, PangolinProvisioner.ResourceSsoEnabled(rd));
+    }
+
+    [Fact]
+    public void Pangolin_ComposeYaml_PinsEeImage_TraefikPublishesPorts_NoGerbilByDefault()
+    {
+        var compose = PangolinProvisioner.BuildComposeYaml(PangolinWildcardShape());
+        Assert.Contains("image: fosrl/pangolin:ee-1.19.4", compose);
+        Assert.Contains("image: traefik:v3.6", compose);
+        Assert.Contains("127.0.0.1:3003:3003", compose);   // integration API on CT-localhost (resource reconcile)
+        Assert.Contains("- 443:443", compose);          // traefik publishes :443 itself
+        Assert.Contains("http://localhost:3001/api/v1/", compose); // pangolin healthcheck
+        Assert.DoesNotContain("gerbil", compose);       // WireGuard off by default
+        Assert.DoesNotContain("network_mode", compose);
+    }
+
+    [Fact]
+    public void Pangolin_ComposeYaml_IncludesGerbilTopology_WhenOptedIn()
+    {
+        var s = PangolinWildcardShape();
+        s.Spec.Config["includeGerbil"] = true;
+        var compose = PangolinProvisioner.BuildComposeYaml(s);
+        Assert.Contains("gerbil:", compose);
+        Assert.Contains("network_mode: service:gerbil", compose); // traefik shares gerbil's netns
+        Assert.Contains("- 51820:51820/udp", compose);
+    }
+
+    [Fact]
+    public void Pangolin_TraefikStatic_UsesDnsChallengeWildcards_NotHttpChallenge()
+    {
+        var s = PangolinWildcardShape();
+        var st = PangolinProvisioner.BuildTraefikStatic(s, "chrison.dev");
+        Assert.Contains("dnsChallenge:", st);
+        Assert.Contains("provider: cloudflare", st);
+        Assert.Contains("sans: [\"*.arr.chrison.dev\"]", st);
+        Assert.Contains("sans: [\"*.lab.chrison.dev\"]", st);
+        Assert.Contains("github.com/fosrl/badger", st);      // auth plugin loaded
+        Assert.Contains("acme-v02.api.letsencrypt.org", st); // PROD CA by default
+        Assert.DoesNotContain("httpChallenge", st);          // wildcards need DNS-01
+
+        s.Spec.Config["leStaging"] = true;
+        Assert.Contains("acme-staging-v02", PangolinProvisioner.BuildTraefikStatic(s, "chrison.dev"));
+    }
+
+    [Fact]
+    public void Pangolin_TraefikDynamic_IsDashboardOnly_PlainHttp_NoBadgerLoop()
+    {
+        var dyn = PangolinProvisioner.BuildTraefikDynamic("pangolin.chrison.dev");
+        Assert.Contains("Host(`pangolin.chrison.dev`)", dyn);
+        Assert.Contains("http://pangolin:3002", dyn);   // reaches app by service name
+        Assert.Contains("- web", dyn);                  // dashboard on plain :80 (core tunnel fronts it)
+        Assert.DoesNotContain("websecure", dyn);
+        Assert.DoesNotContain("badger", dyn);           // no auth loop on the login UI
+        Assert.DoesNotContain("certResolver", dyn);
+    }
+
+    [Fact]
+    public void Pangolin_DockerDeploy_RendersArtifacts_AndRunsCompose()
+    {
+        var cmd = PangolinProvisioner.BuildDockerDeploy(
+            PangolinWildcardShape(), "abc123", "pangolin.chrison.dev",
+            "https://pangolin.chrison.dev", "chrison.dev", "cf-token-xyz");
+        Assert.Contains("docker compose up -d", cmd);
+        Assert.Contains("get.docker.com", cmd);               // installs Docker on the plain debian CT
+        Assert.Contains("command -v docker", cmd);            // idempotent guard
+        Assert.Contains("base64 -d > compose.yml", cmd);
+        Assert.Contains("base64 -d > config/traefik/traefik_config.yml", cmd);
+        Assert.Contains("base64 -d > .env", cmd);
+        Assert.Contains("openssl rand", cmd);                  // server.secret generate-or-preserve
+        Assert.Contains("# homelab-managed: abc123", cmd);     // config.yml marker (heredoc, not base64)
+        Assert.Contains("cert_resolver: \"letsencrypt\"", cmd);
+        // mark-on-SUCCESS: the marker file is the LAST line, after `docker compose up -d`
+        var composeUp = cmd.IndexOf("docker compose up -d", StringComparison.Ordinal);
+        var markerWrite = cmd.IndexOf("/opt/pangolin/.homelab-managed", StringComparison.Ordinal);
+        Assert.True(composeUp >= 0 && markerWrite > composeUp, "marker must be written after compose up");
+    }
+
+    [Theory]
+    [InlineData("true", true)]
+    [InlineData("false", false)]
+    [InlineData("True", true)]
+    [InlineData("42", 42L)]
+    [InlineData("http://x", "http://x")]
+    public void CoerceScalar_MapsYamlStringsToJsonTypes(string input, object expected)
+    {
+        // YamlDotNet hands scalars as strings; noTLSVerify:true must serialize as a bool,
+        // not "true" (else Cloudflare's ingress push 400s with code 1056).
+        Assert.Equal(expected, CloudflaredProvisioner.CoerceScalar(input));
+    }
+
+    // ---- CloudflaredProvisioner declarative reconcile / prune (#195) -------
+
+    private const string Managed = CloudflareApi.ManagedComment;
+    private const string TunnelId = "11111111-2222-3333-4444-555555555555";
+    private static string Content(string id) => $"{id}.cfargotunnel.com";
+    private static IReadOnlySet<string> Hosts(params string[] h) =>
+        new HashSet<string>(h, StringComparer.OrdinalIgnoreCase);
+
+    [Fact]
+    public void CnamesToPrune_RemovesOurOrphans_KeepsShapeHosts()
+    {
+        var live = new[]
+        {
+            new CfDnsRecord("r1", "seerr.chrison.dev", Content(TunnelId), Managed),          // in shape → keep
+            new CfDnsRecord("r2", "prowlarr.chrison.dev", Content(TunnelId), Managed),       // ours, gone from shape → prune
+        };
+        var pruned = CloudflaredProvisioner.CnamesToPrune(live, TunnelId, Hosts("seerr.chrison.dev"));
+        Assert.Equal(new[] { "prowlarr.chrison.dev" }, pruned.Select(r => r.Name));
+    }
+
+    [Fact]
+    public void CnamesToPrune_NeverTouchesHandManagedOrOtherTunnels()
+    {
+        var other = "99999999-0000-0000-0000-000000000000";
+        var live = new[]
+        {
+            new CfDnsRecord("r1", "hand.chrison.dev", Content(TunnelId), ""),                // no managed comment → leave
+            new CfDnsRecord("r2", "blog.chrison.dev", "some.other.host", "managed by hand"), // not our comment → leave
+            new CfDnsRecord("r3", "moved.chrison.dev", Content(other), Managed),             // ours but points at ANOTHER tunnel → leave
+        };
+        // shape has no hosts: everything would be an orphan if scoping were wrong.
+        var pruned = CloudflaredProvisioner.CnamesToPrune(live, TunnelId, Hosts());
+        Assert.Empty(pruned);
+    }
+
+    [Fact]
+    public void AccessAppsToPrune_RemovesOurDegatedApps_BySuffix()
+    {
+        var live = new[]
+        {
+            new CfAccessApp("a1", "seerr (Media)", "seerr.chrison.dev"),         // still gated → keep
+            new CfAccessApp("a2", "prowlarr (Media)", "prowlarr.chrison.dev"),   // ours, no longer gated → prune
+            new CfAccessApp("a3", "audiobookshelf (Media)", "audiobookshelf.chrison.dev"), // flipped public (ungated) → prune
+            new CfAccessApp("a4", "pdm", "pdm.chrison.dev"),                     // hand-managed (no suffix) → keep
+            new CfAccessApp("a5", "traefik (Core)", "traefik.chrison.dev"),      // another stack's suffix → keep
+        };
+        var pruned = CloudflaredProvisioner.AccessAppsToPrune(live, " (Media)", Hosts("seerr.chrison.dev"));
+        Assert.Equal(new[] { "prowlarr.chrison.dev", "audiobookshelf.chrison.dev" }, pruned.Select(a => a.Domain));
+    }
 }

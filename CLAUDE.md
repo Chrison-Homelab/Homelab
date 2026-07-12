@@ -49,6 +49,30 @@ proxmoxsharp version     # PVE version
 Public endpoint (valid TLS): `https://proxmox.chrison.dev/api2/json`. The legacy
 node IP `192.168.179.3:8006` uses a self-signed cert (`PROXMOX_VERIFY_TLS=false`).
 
+## Git workflow & guardrails
+
+**PR-only — never commit to `main` directly.** These repos can't use GitHub branch
+protection (private + free tier), so the rules are enforced **client-side** by a
+**Husky.NET `pre-push` hook** ([`.husky/pre-push`](.husky/pre-push)). All homelab
+repos squash-merge with auto-delete of the merged branch (`delete_branch_on_merge`).
+
+Always branch fresh off an up-to-date `main`:
+
+```bash
+git fetch origin && git checkout main && git pull --ff-only
+git checkout -b feat/<thing>      # or fix/<thing>
+```
+
+**Never reuse an existing feature branch without confirming its PR is still open:**
+`gh pr view <branch> --json state` (OPEN / MERGED / CLOSED). `gh pr list --head <branch>`
+returning `[]` means *no open PR* — **not** *no PR*; an already-merged branch can still
+exist and pushing onto it goes nowhere (how a commit was lost on 2026-06-29).
+
+The `pre-push` hook blocks (bypass: `git push --no-verify`): direct pushes to `main`,
+force / non-fast-forward pushes, and pushes onto a branch whose PR is already
+MERGED/CLOSED. It auto-installs on `./build.sh`; manual setup is
+`dotnet tool restore && dotnet husky install`.
+
 ## Key Commands
 
 ### Testing Scripts Locally (Debian test container)

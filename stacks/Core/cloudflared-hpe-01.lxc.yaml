@@ -31,13 +31,13 @@ spec:
     ingress:
       # Pangolin — SSO remote-access front door (ADR-0007). Replaces Teleport, whose
       # CT 9904 was decommissioned via `proxmoxsharp lxc delete` (#149); its dead
-      # teleport.chrison.dev ingress entry was removed here. Targets the Pangolin CT
-      # (2012) Traefik on :80 — plain
-      # HTTP, Traefik reconfigured for behind-cloudflared (no Let's Encrypt; CF provides
-      # public TLS). Admin UIs migrate here one at a time as their own hostnames → same
-      # Traefik origin → defined as Pangolin resources (badger enforces auth).
+      # teleport.chrison.dev ingress entry was removed here. Now targets the NEW Docker
+      # EE Pangolin CT 2013 (the re-platform, #168) — Traefik on :80, plain HTTP behind
+      # this tunnel (CF provides the dashboard's public TLS; CF Access OTP gates it). The
+      # *.lab/*.arr admin UIs are served by the SAME CT's Traefik on public :443 instead.
+      # (Old native CT 2012 stays alive as rollback until retired.)
       - hostname: pangolin.chrison.dev
-        service: "http://10.10.0.12:80"         # CT 2012 static IP (Homelab VLAN)
+        service: "http://10.10.0.13:80"         # CT 2013 (Docker EE) static IP (Homelab VLAN)
       # Traefik dashboard — first admin UI migrated as a Pangolin RESOURCE (#136).
       # Same Traefik origin as pangolin.chrison.dev; Pangolin host-routes traefik.chrison.dev
       # → its own dashboard (:8080) and badger enforces Pangolin SSO. NO CF Access app here:
