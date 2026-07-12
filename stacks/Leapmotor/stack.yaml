@@ -44,8 +44,9 @@ spec:
     onboot: true
     network:
       bridge: vmbr0
-      vlan: 1010          # Homelab — real tag → interface name=vlan1010,tag=1010
-      ipv4: dhcp          # internal-only, nothing targets it by IP → DHCP is fine.
+      vlan: 1040          # IoT — Mate is an IoT service; co-located with the SmartHome
+                          # MQTT broker (VLAN 1040) so it publishes without an inter-VLAN hop.
+      ipv4: dhcp          # internal-only; DHCP-reserved (10.40.169.225) for a stable UI address.
       ipv6: none
     timezone: Pacific/Auckland
     tags: [leapmotor, community-script]

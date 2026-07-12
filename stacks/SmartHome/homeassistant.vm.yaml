@@ -1,0 +1,82 @@
+# Home Assistant — ADOPTS the existing hand-built HAOS VM (VMID 2000).
+#
+# ⚠️ ADOPT / DESCRIBE-ONLY — DO NOT converge --apply this VM. ⚠️
+# This shape exists so the SmartHome stack is reproducible (a from-scratch
+# redeploy is documented + version-controlled), NOT so the engine routinely
+# reconciles a live, stateful smart-home box. HA predates the stack and its
+# number (2000) sits far from the 6000 LXC block — it's the documented
+# out-of-range adopted member (see stack.yaml), mirroring Gaming's adopted VMs.
+#
+# Two reasons apply is intentionally not wired yet:
+#   1. HA has THREE NICs (below), expressed via `networks[]`. VmConverger only
+#      reconciles the single-NIC `network` sugar today, so `networks[]` is purely
+#      descriptive — an apply would make NO NIC changes (leaves net0/1/2 as-is).
+#      Faithful documentation now; real multi-NIC converge lands with the engine.
+#   2. There is no `managed:false` flag in the schema yet, so this file IS a
+#      converge member — a `Deploy --stack SmartHome` WOULD include it. Until an
+#      exclude flag lands, deploy the broker with `--stack` targeting is fine but
+#      DO NOT apply this VM. `Preview` is read-only and safe.
+#
+# REDEPLOY-FROM-SCRATCH SEAM: HAOS ships as a disk image, not a package. To
+# rebuild elsewhere: seed the VM with community-scripts `vm/haos-vm.sh` (downloads
+# + imports the HAOS qcow2), then this shape documents the sizing/firmware to match.
+# HA's own config/state restores from an HA backup — not from this shape.
+#
+# Live spec captured from `qm config 2000` on 2026-07-12.
+
+apiVersion: homelab/v1
+kind: VM
+
+metadata:
+  name: homeassistant
+  stack: SmartHome
+  tags: [smart-home, home-assistant, haos, adopted]
+  description: >-
+    Home Assistant OS VM — the smart-home hub. Subscribes to the SmartHome MQTT
+    broker (CT 6000) and auto-discovers devices (e.g. the Leapmotor C10 via Mate).
+
+spec:
+  node: hpe-01
+  vmid: 2000              # ADOPTED — existing homeassistant VM; do not allocate fresh.
+  name: homeassistant
+
+  machine: q35
+  bios: ovmf              # UEFI (pairs with the efidisk below)
+  cores: 2
+  memory: 2048            # MB
+  ostype: l26
+  agent: true             # QEMU guest agent enabled
+  onboot: true
+
+  disks:
+    - id: scsi0
+      storage: local-lvm
+      source: vm-2000-disk-0   # existing HAOS system disk (adopted)
+      size: 32                 # GB
+      ssd: true
+      discard: true
+  efidisk:
+    storage: local-lvm
+    source: vm-2000-disk-1      # existing efidisk (adopted)
+    efitype: 4m
+
+  # All THREE NICs, faithfully (array index → netN, model virtio). Only net0 is
+  # up; net1/net2 are provisioned but administratively DOWN (Proxmox link_down).
+  # NOTE: converge maps only the single-NIC `network` sugar today — `networks[]`
+  # is descriptive (not reconciled), which is exactly right for this describe-only
+  # adopted VM. It documents reality without the engine trying to manage the NICs.
+  networks:
+    - bridge: vmbr0                     # net0 — untagged/native → guest enp6s18
+      hwaddr: "02:1F:98:8B:6F:6A"       #        ACTIVE, legacy net 192.168.179.102 (HA reaches the broker here)
+    - bridge: vmbr0                     # net1 — IoT VLAN → guest enp6s19
+      hwaddr: "BC:24:11:C0:7F:BB"       #        for future HA↔IoT-device L2 comms; NOT needed for MQTT
+      tag: 1040
+      firewall: true
+      linkDown: true                    #        administratively DOWN + unconfigured inside HAOS
+    - bridge: vmbr0                     # net2 — Homelab VLAN → guest enp6s20
+      hwaddr: "BC:24:11:3C:03:54"
+      tag: 1010
+      firewall: true
+      linkDown: true                    #        administratively DOWN
+
+  tags: [hpe-01, smart-home, vlan-1010, vlan-1040]   # preserve the existing Proxmox tags
