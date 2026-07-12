@@ -16,9 +16,17 @@ public sealed class CommunityScriptsCreator
     // `read` and have no var_/unattended escape. shelfmark asks for a captcha-bypass
     // "deployment type" — 1 = its internal bypasser (can be switched to the stack's
     // FlareSolverr later via /etc/shelfmark/.env). Keyed by app so it never touches others.
+    //
+    // docker-install.sh has three raw `read` prompts with no unattended escape, and on the
+    // decline path they chain: (1) "add Portainer (UI)?" → n, then because that's declined
+    // (2) "install the Portainer Agent?" → n, then (3) "Expose Docker TCP socket (insecure)?"
+    // → n. Decline all three — we run our own compose, and the docker-compose plugin is
+    // installed unconditionally (no prompt) so `docker compose` is still present.
+    // (youtarr/5113 predates these prompts, which is why docker was never in this map.)
     private static readonly Dictionary<string, string> InstallStdin = new(StringComparer.Ordinal)
     {
         ["shelfmark"] = @"1\n",
+        ["docker"] = @"n\nn\nn\n",
     };
 
     public async Task<bool> ExistsAsync(string node, string ctid, CancellationToken ct) =>

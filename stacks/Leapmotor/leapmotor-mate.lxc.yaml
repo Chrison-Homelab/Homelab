@@ -32,7 +32,7 @@ metadata:
 
 spec:
   app: docker            # community-scripts slug → ct/docker.sh (Docker Engine host)
-  ctid: 4000
+  ctid: 4100             # 4000 is the pre-existing monitoring host → this stack owns 4100-4199
   cores: 1               # light: FastAPI web + a single polling loop
   memory: 1024           # MB — Docker daemon + one Python container + SQLite
   disk: 10               # GB — Docker image layers + tiny SQLite store under /opt/leapmotor

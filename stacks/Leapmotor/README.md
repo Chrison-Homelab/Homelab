@@ -56,7 +56,7 @@ You upload them in Mate's first-run wizard.
 ## Deploy
 
 The CT itself is defined declaratively: `stack.yaml` (stack defaults + CTID
-block 4000–4099) and `leapmotor-mate.lxc.yaml` (a Docker host on CT **4000**,
+block 4100–4199) and `leapmotor-mate.lxc.yaml` (a Docker host on CT **4100**,
 Homelab VLAN 1010, internal-only). It's provisioned via community-scripts like
 the rest of the fleet (see `../Infrastructure/deploy/`), then the compose is
 layered on. On the resulting LXC:
@@ -94,8 +94,8 @@ curl -fsSL -o app.key https://raw.githubusercontent.com/markoceri/leapmotor-cert
 
 | Path                       | Purpose                                                   |
 |----------------------------|-----------------------------------------------------------|
-| `stack.yaml`               | Stack defaults + CTID block (4000–4099).                  |
-| `leapmotor-mate.lxc.yaml`  | The LXC definition — Docker host on CT 4000, internal.    |
+| `stack.yaml`               | Stack defaults + CTID block (4100–4199).                  |
+| `leapmotor-mate.lxc.yaml`  | The LXC definition — Docker host on CT 4100, internal.    |
 | `compose.yml`              | The single-service stack.                                 |
 | `.env.example`             | Runtime knobs — copy to `.env` (gitignored) and fill in.  |
 | `certs/`                   | `app.crt` + `app.key` for mTLS (uploaded in the wizard).  |

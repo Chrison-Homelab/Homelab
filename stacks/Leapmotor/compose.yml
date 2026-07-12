@@ -42,7 +42,10 @@ services:
       # machine, just grab certs/app.crt + certs/app.key from the repo instead.
       - ./certs:/certs:ro
     healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "--output", "/dev/null", "http://localhost:4000/"]
+      # The app image ships NO curl/wget — use its bundled Python (/usr/local/bin/python).
+      # urlopen follows the "/" → "/setup" 307 and raises on HTTP >= 400, so a clean exit
+      # means the web UI is serving. (list/exec form → no shell, no quoting to escape.)
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4000/').status < 400 else 1)"]
       interval: 30s
       timeout: 10s
       retries: 3

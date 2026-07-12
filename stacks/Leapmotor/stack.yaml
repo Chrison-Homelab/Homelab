@@ -29,8 +29,8 @@ metadata:
 
 spec:
   ctidRange:
-    start: 4000           # guard rail: a member ctid outside this block is rejected.
-    end: 4099             # fresh block — Core=20xx, DevOps=30xx, Media=51xx were taken.
+    start: 4100           # guard rail: a member ctid outside this block is rejected.
+    end: 4199             # fresh block — 20xx/30xx/51xx and the 4000 monitoring host were taken.
   defaults:
     node: hpe-01          # general compute (same as Media); override per-member if needed.
     source:
