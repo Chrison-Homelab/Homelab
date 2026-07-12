@@ -1,0 +1,38 @@
+# Mosquitto MQTT broker — the SmartHome stack's message bus.
+#
+# Native community-scripts install (app: mqtt → ct/mqtt.sh installs Eclipse
+# Mosquitto from the official mosquitto.org repo). NOT a Docker host — unlike
+# Media/youtarr or Leapmotor, this app has a first-class community-scripts
+# installer, so it's a plain native LXC like the *arr fleet.
+#
+# ROLE: Leapmotor Mate (CT 4100) publishes HA-discovery + state topics here;
+# Home Assistant (VM 2000) subscribes and auto-creates the C10's device/entities.
+# Future IoT bridges (zigbee2mqtt, esphome, zwave-js-ui, …) will publish here too.
+#
+# AUTH: ct/mqtt.sh installs Mosquitto with a default (anonymous) listener. We
+# layer our own config post-create — anonymous OFF, password_file auth, one user
+# per client (leapmotor, homeassistant) — plus a DHCP reservation so the broker
+# address is stable for clients. See README.md ("Securing the broker").
+#
+# EXPOSURE — INTERNAL-ONLY (no tunnel). Reached over the LAN only; clients on
+# other VLANs route in (Mate on 1010, HA on the legacy net).
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: mqtt
+  stack: SmartHome
+  tags: [smart-home, iot, mqtt, mosquitto]
+
+spec:
+  app: mqtt              # community-scripts slug → ct/mqtt.sh (Eclipse Mosquitto)
+  ctid: 6000
+  cores: 1               # a broker is light: relays small messages
+  memory: 512            # MB — Mosquitto's footprint is tiny
+  disk: 2                # GB — config + a small persistence store
+
+  # node / network / os / source / timezone inherited from stack.yaml defaults
+  # (hpe-01, VLAN 1040, debian 13, community-scripts stable). No mounts — the
+  # broker's persistence DB lives on the CT local disk.

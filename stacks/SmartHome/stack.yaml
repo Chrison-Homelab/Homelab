@@ -1,0 +1,54 @@
+# SmartHome stack — the home-automation / IoT support layer.
+#
+# Home Assistant itself already runs as a hand-built HAOS VM (VMID 2000). This
+# stack is the *supporting infrastructure* that feeds it: an MQTT broker today,
+# with room to grow (zigbee2mqtt, node-red, esphome, zwave-js-ui, frigate, …) as
+# the need arises — each a new member dropped into this same stack + broker.
+#
+# Members:
+#   - mqtt (Mosquitto) — CT 6000, native community-scripts install (ct/mqtt.sh).
+#     The broker Leapmotor Mate publishes to and Home Assistant subscribes to.
+#   - homeassistant — VMID 2000, ADOPTED (see homeassistant.vm.yaml). Legacy-
+#     numbered, describe-only; it predates this stack and its number sits far
+#     from the 6000 block, so it's an explicit out-of-range adopted member (like
+#     the Gaming stack's adopted VMs). Never re-provisioned by converge --apply.
+#
+# EXPOSURE — INTERNAL-ONLY. MQTT is never exposed publicly. The broker lives on
+# the IoT VLAN (1040); clients on other VLANs (Mate on Homelab 1010, HA on the
+# legacy net) reach it via inter-VLAN routing (+ firewall allowances as needed).
+#
+# Deployed via the Fallout pipeline → engine converge (../../Infrastructure).
+# Validate members against ../../Infrastructure/schema/shape.schema.json.
+#
+# CTID allocation policy: LXC members set ctid EXPLICITLY within the block below.
+# The adopted HA VM (2000) is the documented exception (legacy number, describe-only).
+
+apiVersion: homelab/v1
+kind: Stack
+
+metadata:
+  name: SmartHome
+  tags: [smart-home, iot, home-automation]
+
+spec:
+  ctidRange:
+    start: 6000           # fresh block — 1xxx/2xxx/3xxx/4xxx/51xx were taken.
+    end: 6099             # governs newly-allocated LXC members; HA VM 2000 is the adopted exception.
+  defaults:
+    node: hpe-01          # co-located with Home Assistant (VM 2000) + Leapmotor (CT 4100).
+    source:
+      channel: stable     # → community-scripts/ProxmoxVE (ct/mqtt.sh → Mosquitto)
+      ref: main
+    os: debian
+    osVersion: 13
+    unprivileged: true
+    storage: local-lvm
+    templateStorage: local
+    onboot: true
+    network:
+      bridge: vmbr0
+      vlan: 1040          # IoT VLAN — real tag → interface name=vlan1040,tag=1040
+      ipv4: dhcp          # DHCP-reserved post-deploy so clients get a stable broker address.
+      ipv6: none
+    timezone: Pacific/Auckland
+    tags: [smart-home, iot, community-script]
