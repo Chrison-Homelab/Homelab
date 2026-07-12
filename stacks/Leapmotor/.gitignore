@@ -1,0 +1,5 @@
+# Runtime state — created on first `up`. Never commit.
+data/
+
+# Real env (root .gitignore also covers *.env; belt-and-suspenders here).
+.env

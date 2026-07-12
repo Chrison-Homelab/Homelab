@@ -1,0 +1,56 @@
+# Leapmotor Mate — self-hosted TeslaMate-style companion for the C10.
+#
+# Talks to Leapmotor's (unofficial, reverse-engineered) cloud API using mTLS
+# client certs + a DEDICATED Leapmotor account (see README.md — Leapmotor allows
+# ~one active session per account, so Mate must NOT share the account your phone
+# uses). Single container, all state in ./data (SQLite + uploaded certs).
+#
+# Self-contained per the repo's add-only philosophy: pulls a prebuilt image,
+# every volume is a local data dir, nothing here touches shared infra. Remove
+# the whole stack by deleting this folder + the container.
+#
+# Deploy: copy this folder to the Leapmotor LXC, `cp .env.example .env` and fill
+# in, then `docker compose up -d`. First run walks a setup wizard in the web UI
+# (http://<host>:${MATE_HOST_PORT}) where you upload certs/app.crt + certs/app.key
+# and enter the dedicated account's email / password / operation PIN.
+
+name: leapmotor-mate
+
+services:
+  leapmotor-mate:
+    image: ${MATE_IMAGE:-ghcr.io/protossblaster/leapmotor-mate:latest}
+    container_name: leapmotor-mate
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Pacific/Auckland}
+      # Gate the web UI with a password. Strongly recommended if this is ever
+      # reachable beyond localhost. Leave blank in .env for no auth (LAN-only).
+      MATE_AUTH_PASSWORD: ${MATE_AUTH_PASSWORD:-}
+      # Encryption key for stored credentials. Auto-generated into ./data if
+      # omitted — set it explicitly to keep it stable across volume resets.
+      MATE_SECRET_KEY: ${MATE_SECRET_KEY:-}
+      # Set MATE_DEMO=1 in .env to boot with sample data (no real account/certs)
+      # — handy for a first look before you've set the dedicated account up.
+      MATE_DEMO: ${MATE_DEMO:-}
+    ports:
+      - "${MATE_HOST_PORT:-4000}:4000"
+    volumes:
+      # Persistent state: SQLite DB, uploaded certs, generated secret key.
+      - ./data:/data
+      # Convenience read-only copy of the certs to upload in the wizard. The
+      # wizard uploads via the browser; if you run the browser on a different
+      # machine, just grab certs/app.crt + certs/app.key from the repo instead.
+      - ./certs:/certs:ro
+    healthcheck:
+      # The app image ships NO curl/wget — use its bundled Python (/usr/local/bin/python).
+      # urlopen follows the "/" → "/setup" 307 and raises on HTTP >= 400, so a clean exit
+      # means the web UI is serving. (list/exec form → no shell, no quoting to escape.)
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4000/').status < 400 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
+  default:
+    name: leapmotor-mate-network
