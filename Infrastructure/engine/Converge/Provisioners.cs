@@ -705,6 +705,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
     // (via a local-type site). A resource may carry a wildcard `zone` (lab|arr) →
     // fullDomain = <subdomain>.<zone>.<baseDomain>. ssl follows the edge mode:
     // public-wildcard → Traefik terminates TLS (true); cloudflared → CF does (false).
+    // sso defaults ON (Pangolin auth gates the UI); a resource opts out with sso: false.
     // Returns (msg, changed, failedReason).
     private static async Task<(string? msg, bool changed, string? failed)> ReconcileResourcesAsync(
         Shape s, ConvergeContext ctx, string node, string ctid)
@@ -769,6 +770,11 @@ public sealed class PangolinProvisioner : IAppProvisioner
             var tip = tgt?["ip"]?.ToString() ?? "localhost";
             var tmethod = tgt?["method"]?.ToString() ?? "http";
             var tport = int.TryParse(tgt?["port"]?.ToString(), out var pp) ? pp : 80;
+            // sso gate: default ON — admin UIs must sit behind Pangolin auth (badger). The
+            // integration-API create defaults sso to null (OPEN), so we MUST set it explicitly
+            // or the resource is born publicly reachable. A resource may opt out (sso: false)
+            // for native clients that can't render the SSO interstitial (e.g. Plex, abs).
+            var sso = ResourceSsoEnabled(rd);
 
             var (rok, rroot) = await pg.CallAsync("PUT", $"/org/{org}/resource",
                 JsonSerializer.Serialize(new { name, subdomain = pgSub, http = true, protocol = "tcp", domainId }), ct);
@@ -778,11 +784,18 @@ public sealed class PangolinProvisioner : IAppProvisioner
             await pg.CallAsync("PUT", $"/resource/{resourceId}/target",
                 JsonSerializer.Serialize(new { siteId, ip = tip, method = tmethod, port = tport, enabled = true }), ct);
             // ssl: public-wildcard → Traefik terminates TLS (true); cloudflared → CF does (false).
-            await pg.CallAsync("POST", $"/resource/{resourceId}", JsonSerializer.Serialize(new { ssl = publicWildcard }), ct);
+            // sso: gate the resource behind Pangolin auth unless it explicitly opts out.
+            await pg.CallAsync("POST", $"/resource/{resourceId}", JsonSerializer.Serialize(new { ssl = publicWildcard, sso }), ct);
             created++;
         }
         return ($"{total} resource(s) declared, {created} created", created > 0, null);
     }
+
+    // Whether a declared resource is gated by Pangolin auth. Default ON: the integration-API
+    // create leaves sso null (OPEN), so a resource is only gated if we set it — this decision
+    // is security-relevant (#238). Opt out with sso: false only for native clients (Plex/abs).
+    internal static bool ResourceSsoEnabled(System.Collections.IDictionary rd) =>
+        !(rd["sso"] is { } raw && bool.TryParse(raw.ToString(), out var v) && !v);
 
     // response.data is sometimes an array, sometimes { <key>: array } — normalise both.
     private static IEnumerable<JsonElement> DataArray(JsonElement root, string key)
