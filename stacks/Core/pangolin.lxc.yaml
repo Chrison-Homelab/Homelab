@@ -117,12 +117,24 @@ spec:
         zone: lab
         sso: true
         target: { ip: 192.168.179.1, port: 8080, method: http }
-      # ── arr admin UIs (Phase 5 cutover — uncomment + set the target IP once the media
-      #    CT has a DHCP reservation / static IP; they're DHCP today on VLAN 1010):
-      # - { name: Prowlarr, subdomain: prowlarr, zone: arr, target: { ip: 10.10.x.x, port: 9696, method: http } }
-      # - { name: Sonarr,   subdomain: sonarr,   zone: arr, target: { ip: 10.10.x.x, port: 8989, method: http } }
-      # - { name: Radarr,   subdomain: radarr,   zone: arr, target: { ip: 10.10.x.x, port: 7878, method: http } }
-      # - { name: Bazarr,   subdomain: bazarr,   zone: arr, target: { ip: 10.10.x.x, port: 6767, method: http } }
+      # ── arr admin UIs (Phase 5 cutover). Origins PINNED to the new 5100-block CT IPs on
+      #    VLAN 1010 (validated live per-port 2026-07-14). DEPENDS ON DHCP reservations for
+      #    these IPs (#13) — until reserved, a new lease silently breaks the target (same
+      #    caveat as stacks/Media/cloudflared.lxc.yaml). Retiring the old fleet later lets
+      #    these revert to logical names. sso defaults ON (badger SSO gate); audiobookshelf
+      #    carries its own account auth + native mobile apps that can't do the interstitial
+      #    → sso:false.
+      - { name: Prowlarr,       subdomain: prowlarr,       zone: arr, target: { ip: 10.10.201.184, port: 9696,  method: http } }
+      - { name: Sonarr,         subdomain: sonarr,         zone: arr, target: { ip: 10.10.250.29,  port: 8989,  method: http } }
+      - { name: Radarr,         subdomain: radarr,         zone: arr, target: { ip: 10.10.48.217,  port: 7878,  method: http } }
+      - { name: Bazarr,         subdomain: bazarr,         zone: arr, target: { ip: 10.10.102.133, port: 6767,  method: http } }
+      - { name: qBittorrent,    subdomain: qbittorrent,    zone: arr, target: { ip: 10.10.110.115, port: 8090,  method: http } }
+      - { name: Seerr,          subdomain: seerr,          zone: arr, target: { ip: 10.10.15.6,    port: 5055,  method: http } }
+      - { name: Tracearr,       subdomain: tracearr,       zone: arr, target: { ip: 10.10.202.145, port: 3000,  method: http } }
+      - { name: RomM,           subdomain: romm,           zone: arr, target: { ip: 10.10.202.240, port: 80,    method: http } }
+      - { name: Youtarr,        subdomain: youtarr,        zone: arr, target: { ip: 10.10.73.250,  port: 3087,  method: http } }
+      - { name: Audiobookshelf, subdomain: audiobookshelf, zone: arr, sso: false, target: { ip: 10.10.182.200, port: 13378, method: http } }
+      - { name: Shelfmark,      subdomain: shelfmark,      zone: arr, target: { ip: 10.10.142.183, port: 8084,  method: http } }
 
   # No `secrets:` block (avoids deriver fail-fast). The provisioner reads what it needs
   # straight from the gitignored secrets.env via ctx.Secrets:
