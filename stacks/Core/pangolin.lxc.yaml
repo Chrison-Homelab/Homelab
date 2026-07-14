@@ -134,9 +134,7 @@ spec:
       - { name: RomM,           subdomain: romm,           zone: arr, target: { ip: 10.10.202.240, port: 80,    method: http } }
       - { name: Youtarr,        subdomain: youtarr,        zone: arr, target: { ip: 10.10.73.250,  port: 3087,  method: http } }
       - { name: Audiobookshelf, subdomain: audiobookshelf, zone: arr, sso: false, target: { ip: 10.10.182.200, port: 13378, method: http } }
-      # Shelfmark: TWO hosts answer on VLAN 1010 :8084 (10.10.52.82 + 10.10.142.183, identical
-      # <title>) — can't tell which is the new 5111 CT. Confirm, then uncomment with that IP:
-      # - { name: Shelfmark,    subdomain: shelfmark,      zone: arr, target: { ip: 10.10.52.82,   port: 8084,  method: http } }
+      - { name: Shelfmark,      subdomain: shelfmark,      zone: arr, target: { ip: 10.10.142.183, port: 8084,  method: http } }
 
   # No `secrets:` block (avoids deriver fail-fast). The provisioner reads what it needs
   # straight from the gitignored secrets.env via ctx.Secrets:
