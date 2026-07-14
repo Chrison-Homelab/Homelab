@@ -34,6 +34,10 @@ jobs:
       # Cloudflare tunnel-token provider (cloudflared shapes) — ADD-ONLY (CLAUDE.md).
       CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
       CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+      # Pangolin EE (Core): the chrison-dev org integration-API key the pangolin provisioner
+      # uses to upsert resources via the CT's :3003 API. Without it, declared resources are
+      # SKIPPED (wildcard A records still get created). Repo secret: PANGOLIN_API_KEY.
+      PANGOLIN_API_KEY: ${{ secrets.PANGOLIN_API_KEY }}
       # arr-wire (#159): qBittorrent WebUI creds the Media provisioner sets + that
       # sonarr/radarr use as download-client auth. QBIT_USER defaults to 'admin' if unset.
       QBIT_USER: ${{ secrets.QBIT_USER }}
