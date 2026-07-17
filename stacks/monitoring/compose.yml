@@ -1,18 +1,42 @@
 services:
-  servarr-exporter:
-    image: ghcr.io/onedr0p/servarr_exporter
-    container_name: servarr_exporter
-    ports:
-      - "9707:9707"
+  # --- *arr Prometheus exporters (exportarr — one instance per app). ---
+  # Replaces the archived ghcr.io/onedr0p/servarr_exporter image. URLs + API keys
+  # come from .env.local (RADARR_URL/RADARR_API_KEY, etc.); each is scraped by
+  # prometheus on /metrics at its own port.
+  exportarr-radarr:
+    image: ghcr.io/onedr0p/exportarr:latest
+    container_name: exportarr-radarr
+    command: ["radarr"]
     environment:
-      - TZ=Pacific/Auckland
-      - RADARR_API_KEY=${RADARR_API_KEY}
-      - RADARR_URL=${RADARR_URL}
-      - SONARR_API_KEY=${SONARR_API_KEY}
-      - SONARR_URL=${SONARR_URL}
-      - PROWLARR_API_KEY=${PROWLARR_API_KEY}
-      - PROWLARR_URL=${PROWLARR_URL}
-      # Add whichever apps you run
+      PORT: 9708
+      URL: ${RADARR_URL}
+      API_KEY: ${RADARR_API_KEY}
+    ports:
+      - "9708:9708"
+    restart: unless-stopped
+
+  exportarr-sonarr:
+    image: ghcr.io/onedr0p/exportarr:latest
+    container_name: exportarr-sonarr
+    command: ["sonarr"]
+    environment:
+      PORT: 9709
+      URL: ${SONARR_URL}
+      API_KEY: ${SONARR_API_KEY}
+    ports:
+      - "9709:9709"
+    restart: unless-stopped
+
+  exportarr-prowlarr:
+    image: ghcr.io/onedr0p/exportarr:latest
+    container_name: exportarr-prowlarr
+    command: ["prowlarr"]
+    environment:
+      PORT: 9710
+      URL: ${PROWLARR_URL}
+      API_KEY: ${PROWLARR_API_KEY}
+    ports:
+      - "9710:9710"
     restart: unless-stopped
 
   snmp_exporter:
@@ -78,5 +102,18 @@ services:
     volumes:
       - ./config/loki-config.yml:/etc/loki/loki-config.yml
       - ./data/loki:/loki
+    restart: unless-stopped
+
+  # --- Pulse: fleet monitoring (Proxmox cluster + per-host Docker agents). ---
+  # UI on :7655. State (node config, agent registrations, admin creds, API token)
+  # persists in ./data/pulse. Host agents are installed separately on each Docker
+  # host (systemd pulse-agent) and report in to this server.
+  pulse:
+    image: rcourtman/pulse:latest
+    container_name: pulse
+    ports:
+      - "7655:7655"
+    volumes:
+      - ./data/pulse:/data
     restart: unless-stopped
 
