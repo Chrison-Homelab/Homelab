@@ -38,6 +38,20 @@ trap 'rm -f "$TAR_TMP"' EXIT
 # password, servarr keys) that override the safe .env defaults. Gitignored, so
 # it only travels host→CT, never into git. Without it Grafana runs on the
 # changeme default — never acceptable on a live host.
+# Regenerate .env.local from Secrets Manager (SM project "Homelab") via the shared
+# secrets-sync engine + this stack's secrets.env.local.template: GF admin password +
+# RADARR/SONARR/PROWLARR_API_KEY come from SM; user/port/URLs are literal in the
+# template. Falls back to any existing .env.local when bws/template aren't available
+# (README: file fallback until BW is fully adopted).
+SECRETS_SYNC="$STACK_DIR/../../scripts/secrets-sync.sh"
+ENV_TEMPLATE="$STACK_DIR/secrets.env.local.template"
+if command -v bws >/dev/null 2>&1 && [ -f "$ENV_TEMPLATE" ] && [ -x "$SECRETS_SYNC" ]; then
+    echo "==> Generating .env.local from Secrets Manager"
+    "$SECRETS_SYNC" "$STACK_DIR/.env.local" "$ENV_TEMPLATE" \
+        || echo "!! secrets-sync failed — shipping the existing .env.local (file fallback)"
+elif [ -f "$STACK_DIR/.env.local" ]; then
+    echo "==> bws/template unavailable — shipping the existing .env.local (file fallback)"
+fi
 ENV_LOCAL=()
 [ -f "$STACK_DIR/.env.local" ] && ENV_LOCAL=(.env.local)
 COPYFILE_DISABLE=1 tar czf "$TAR_TMP" -C "$STACK_DIR" \
