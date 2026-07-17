@@ -10,9 +10,9 @@
 #   ./install.sh
 #   MON_NODE_HOST=hpe-01 MON_CTID=4000 ./install.sh
 #
-# Brings up the OTel pipeline + dashboards (prometheus grafana otel-collector
-# tempo loki) — the #222 acceptance set. The servarr/snmp exporters are left out
-# here (they need .env.local arr keys + SNMP config); add them later.
+# Brings up the full stack: OTel pipeline + dashboards, the snmp/exportarr metric
+# exporters, and Pulse. exportarr needs the arr URLs+API keys in .env.local and
+# snmp needs config/snmp.yml — both are shipped by this script.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,7 +22,7 @@ NODE_HOST="${MON_NODE_HOST:-hpe-01}"          # Proxmox node the CT lives on (ss
 NODE_USER="${MON_NODE_USER:-root}"
 CTID="${MON_CTID:-4000}"
 TARGET="${MON_TARGET:-/opt/monitoring}"
-SERVICES="${MON_SERVICES:-prometheus grafana otel-collector tempo loki snmp_exporter}"
+SERVICES="${MON_SERVICES:-prometheus grafana otel-collector tempo loki snmp_exporter exportarr-radarr exportarr-sonarr exportarr-prowlarr pulse}"
 SSH="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new ${NODE_USER}@${NODE_HOST}"
 
 echo "==> Packing ${STACK_DIR} (compose + sample configs + grafana provisioning + .env)"
