@@ -219,21 +219,33 @@ all 21 into the Homelab project (keys = env var names). Aligns with
   same value as the pre-migration `secrets.env`.
 - `CLAUDE.md` + PowerOrchestrator `deploy.sh` updated to point at template/sync.
 
-### ⚠️ Finding: 6 by-name audit mismatches (SM corrected to live values)
+### Finding + reconciliation: 6 by-name audit mismatches (resolved)
 
-Name-based mapping picked the WRONG vault item for 6 keys — the item's value ≠ the
-value `secrets.env` actually uses. Caught by the post-migration hash compare. SM was
-overwritten with the **live `secrets.env`** value (authoritative); the vault items
-were left as-is. **Reconcile later** — decide which is correct:
+Name-based mapping picked the WRONG vault item for 6 keys (item value ≠ live
+`secrets.env` value). Caught by the post-migration hash compare; SM was set to the
+**live `secrets.env`** value (authoritative). Then each live value was hash-matched
+against *every* vault item to find its true home:
 
-| Key | Live `secrets.env` uses | Vault item I'd mapped |
+**Correct item existed — I'd just guessed the wrong name** (SM already right; the
+migrate-script mapping is repointed to these):
+
+| Key | Correct vault item | (my wrong guess) |
 |---|---|---|
-| `PROXMOX_TOKEN_SECRET` | token id `root@pam!claude-mcp` | `Proxmox Homelab Token` = `root@pam!homelab` |
-| `SYNOLOGY_PASSWORD` | user `homelab` | `Synology` item = user `csimon` |
-| `GITHUB_PACKAGES_PAT` | 40-char classic `ghp_` | `Read:Packages` = 84-char token |
-| `PANGOLIN_API_KEY` | (its own value) | `Pangolin EE - API Key` (differs) |
-| `HOMEASSISTANT_TOKEN` | (its own 183-char token) | `Home Assistant Token` (differs) |
-| `UNIFI_API_KEY` | (its own value) | `Unifi Container: Homelab API Key` (differs) |
+| `SYNOLOGY_PASSWORD` | **DSM1813: Homelab** (user `homelab`) | `Synology` (csimon) |
+| `UNIFI_API_KEY` | **Homelab MCP API Key** | `Unifi Container: Homelab API Key` |
+| `HOMEASSISTANT_TOKEN` | **Home Assistant: Claude Token** | `Home Assistant Token` |
+
+**Not in the vault at all** — the live value lived ONLY in `secrets.env` (genuine
+drift), now also in SM. Migrate script sources these as `local`:
+
+- `PROXMOX_TOKEN_SECRET` — the `root@pam!claude-mcp` token secret (vault only has the
+  *different* `root@pam!homelab` token).
+- `GITHUB_PACKAGES_PAT` — 40-char classic `ghp_` (vault's `Read:Packages` is a
+  different 84-char token).
+- `PANGOLIN_API_KEY` — no matching vault item.
+
+  → **Open decision:** mirror these 3 into the password vault too, or accept SM as
+  their sole Bitwarden home now that SM is canonical.
 
 ## Open items / to confirm
 
