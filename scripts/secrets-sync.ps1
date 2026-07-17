@@ -19,15 +19,16 @@
 #   (On macOS the .sh script reads the token from Keychain instead.)
 #
 # Usage:
-#   ./scripts/secrets-sync.ps1            # writes ./secrets.env
-#   ./scripts/secrets-sync.ps1 /tmp/out   # writes to a custom path (for testing)
+#   ./scripts/secrets-sync.ps1                        # writes ./secrets.env
+#   ./scripts/secrets-sync.ps1 /tmp/out               # custom output path (for testing)
+#   ./scripts/secrets-sync.ps1 <out> <template>       # custom output AND template (other stacks)
 [CmdletBinding()]
-param([string]$OutPath)
+param([string]$OutPath, [string]$TemplatePath)
 
 $ErrorActionPreference = 'Stop'
 $ProjectId = 'ceb88092-7a26-4882-9e7b-b48a000a8f9a'   # SM "Homelab" project
 $RepoRoot  = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
-$Template  = Join-Path $RepoRoot 'secrets.env.template'
+$Template  = if ($TemplatePath) { $TemplatePath } else { Join-Path $RepoRoot 'secrets.env.template' }
 if (-not $OutPath) { $OutPath = Join-Path $RepoRoot 'secrets.env' }
 
 if (-not (Test-Path -LiteralPath $Template)) { throw "template not found: $Template" }

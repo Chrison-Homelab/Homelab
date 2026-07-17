@@ -10,15 +10,18 @@
 #   • Output is written atomically at mode 600. No secret value is ever printed.
 #
 # Usage:
-#   scripts/secrets-sync.sh              # writes ./secrets.env
-#   scripts/secrets-sync.sh /tmp/out     # writes to a custom path (for testing)
+#   scripts/secrets-sync.sh                          # writes ./secrets.env
+#   scripts/secrets-sync.sh /tmp/out                 # custom output path (for testing)
+#   scripts/secrets-sync.sh <out> <template>         # custom output AND template — lets
+#                                                    # other stacks reuse this engine, e.g.
+#     scripts/secrets-sync.sh stacks/monitoring/.env.local stacks/monitoring/secrets.env.local.template
 #
 set -euo pipefail
 
 PROJECT_ID="ceb88092-7a26-4882-9e7b-b48a000a8f9a"   # SM "Homelab" project
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TEMPLATE="$REPO_ROOT/secrets.env.template"
 OUT="${1:-$REPO_ROOT/secrets.env}"
+TEMPLATE="${2:-$REPO_ROOT/secrets.env.template}"
 
 [ -f "$TEMPLATE" ] || { echo "ERROR: $TEMPLATE not found" >&2; exit 1; }
 
