@@ -1,0 +1,29 @@
+# Matter Server — python-matter-server (the same image HA's Matter add-on wraps).
+#
+# HA connects over WebSocket (ws://<host>:5580/ws) and drives commissioning; this
+# service owns the Matter fabric. Self-contained: prebuilt image, one local data
+# dir, host networking. Remove the folder + container to fully undo.
+#
+# network_mode: host is REQUIRED — Matter uses IPv6 + mDNS on the device L2, which
+# Docker's bridge NATs away. The CT is on VLAN 1040 (IoT) with the devices, so
+# host-net puts the controller on that segment. --storage-path persists the fabric.
+
+name: matter-server
+
+services:
+  matter-server:
+    image: ${MATTER_IMAGE:-ghcr.io/home-assistant-libs/python-matter-server:stable}
+    container_name: matter-server
+    restart: unless-stopped
+    security_opt:
+      - apparmor=unconfined     # Matter's Thread/BLE + raw IPv6 sockets need it unconfined
+    network_mode: host          # IPv6 + mDNS to the devices (see header)
+    volumes:
+      - ./data:/data            # fabric credentials + PAA root certs (survives restarts)
+    command:
+      - --storage-path
+      - /data
+      - --paa-root-cert-dir
+      - /data/credentials
+    environment:
+      TZ: ${TZ:-Pacific/Auckland}

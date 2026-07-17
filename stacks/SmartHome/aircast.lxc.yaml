@@ -1,0 +1,40 @@
+# AirCast — bridges Chromecast devices as AirPlay targets (AirConnect's `aircast`).
+#
+# Was the HAOS "AirCast" add-on; now a standalone Docker host + our compose
+# (aircast/compose.yml, image 1activegeek/airconnect run in aircast mode). It's a
+# self-contained bridge — HA doesn't depend on it, so extracting is just: disable
+# the add-on, run this instead. No community-scripts installer exists → thin Docker
+# host (app: docker → ct/docker.sh), same pattern as Leapmotor/youtarr.
+#
+# mDNS: AirConnect discovers Chromecasts and advertises AirPlay entirely over
+# multicast on the device L2 → this CT sits on VLAN 1040 (IoT), the same segment as
+# the cast/AirPlay targets (confirmed 2026-07-17), and the container runs with
+# network_mode: host so mDNS isn't trapped behind Docker's NAT bridge.
+#
+# STATE: AirConnect writes a discovered-device config (aircast.xml) to ./config —
+# CT-local, a few KB. No NFS, no shared infra.
+#
+# EXPOSURE — INTERNAL-ONLY (LAN mDNS only). No tunnel.
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: aircast
+  stack: SmartHome
+  tags: [smart-home, iot, airplay, chromecast, docker]
+
+spec:
+  app: docker            # community-scripts slug → ct/docker.sh (Docker Engine host)
+  ctid: 6002
+  cores: 1               # a tiny mDNS/RTP bridge
+  memory: 512            # MB
+  disk: 6                # GB — Docker image layers + a KB of config
+
+  features:
+    nesting: true        # Docker-in-LXC
+    keyctl: true         # containerd keyring on unprivileged LXC
+
+  # node / network inherited from stack.yaml (hpe-01, VLAN 1040, ipv6 none —
+  # AirPlay/Chromecast discovery is IPv4 mDNS, no IPv6 needed unlike Matter).

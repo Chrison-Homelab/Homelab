@@ -1,0 +1,3 @@
+# Runtime state — the Matter fabric credentials, created on the CT. Never committed.
+data/
+.env

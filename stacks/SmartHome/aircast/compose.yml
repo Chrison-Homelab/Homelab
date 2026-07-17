@@ -1,0 +1,30 @@
+# AirCast — Chromecast → AirPlay bridge (philippe44's AirConnect, `aircast`).
+#
+# Self-contained: pulls a prebuilt image, host networking so mDNS/RTP reach the
+# LAN, one local config dir. Remove the folder + container to fully undo.
+#
+# network_mode: host is REQUIRED — AirConnect discovers Chromecasts and advertises
+# AirPlay over multicast; Docker's default bridge NATs that away. The CT is on
+# VLAN 1040 (IoT) with the cast targets, so host-net puts the bridge on that L2.
+#
+# Deploy: copy this folder to the CT, `docker compose up -d`. First run discovers
+# Chromecasts on the segment and writes ./config/aircast.xml.
+
+name: aircast
+
+services:
+  aircast:
+    image: ${AIRCAST_IMAGE:-1activegeek/airconnect:latest}
+    container_name: aircast
+    restart: unless-stopped
+    network_mode: host          # mDNS + RTP need the host L2 (see header)
+    environment:
+      TZ: ${TZ:-Pacific/Auckland}
+      # This image bundles both bridges (airupnp + aircast); we only want the
+      # Chromecast→AirPlay one. AIRUPNP=disable / AIRCAST=enable per the image's
+      # start script (verified against the image at deploy).
+      AIRUPNP: "disable"
+      AIRCAST: "enable"
+    volumes:
+      # Persisted discovered-device config (aircast.xml + logs).
+      - ./config:/config
