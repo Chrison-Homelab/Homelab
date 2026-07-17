@@ -117,6 +117,16 @@ spec:
         zone: lab
         sso: true
         target: { ip: 192.168.179.1, port: 8080, method: http }
+      # Home Assistant (SmartHome stack) — replaces the raw :8123 UniFi port-forward with
+      # SSO-gated ingress. Target is the HAOS VM's legacy NIC (CT 2013 reaches it cross-VLAN
+      # via 10.10.0.1). sso REQUIRED (it controls the whole smart home). HA-side prerequisite:
+      # add 10.10.0.13 (Traefik) to `trusted_proxies` + use_x_forwarded_for in HA's http config,
+      # or HA rejects the proxied request. Retire the :8123 port-forward once verified.
+      - name: Home Assistant
+        subdomain: homeassistant
+        zone: lab
+        sso: true
+        target: { ip: 192.168.179.102, port: 8123, method: http }
       # ── arr admin UIs (Phase 5 cutover). Origins PINNED to the new 5100-block CT IPs on
       #    VLAN 1010 (validated live per-port 2026-07-14). DEPENDS ON DHCP reservations for
       #    these IPs (#13) — until reserved, a new lease silently breaks the target (same
