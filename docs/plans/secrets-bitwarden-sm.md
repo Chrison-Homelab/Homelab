@@ -189,7 +189,9 @@ Mac's local `secrets.env`. All 21 land in the SM `homelab` project.**
 ## Bootstrap done (2026-07-17, this Mac)
 
 - **`bws` v2.1.0** installed to `~/.local/bin/bws` (official `bitwarden/sdk-sm`
-  release, `aarch64-apple-darwin`; not on Homebrew). Windows install TBD.
+  release, `aarch64-apple-darwin`; not on Homebrew). Windows: one-shot
+  `scripts/secrets-bootstrap.ps1` (installs bws, pins EU, stores token via DPAPI,
+  runs secrets-sync).
 - **Region matters:** vault is on **EU** (`vault.bitwarden.eu`); `bws` defaults to
   US → `invalid_client`. Pinned via `bws config server-base https://vault.bitwarden.eu`
   (`~/.config/bws/config`). The generator must set this (or `BWS_SERVER_URL`).
