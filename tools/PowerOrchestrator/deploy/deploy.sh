@@ -45,7 +45,7 @@ if [[ -f "$REPO_ROOT/secrets.env" ]]; then
 else
     echo "!! secrets.env not found at repo root — writing a template; edit on the node before arming." >&2
     cat > "$ENV_TMP" <<'EOF'
-# Fill these in (see secrets.env.example). Service stays in dry-run until ORCH_ARMED=true.
+# Fill these in (see secrets.env.template / run scripts/secrets-sync.sh). Service stays in dry-run until ORCH_ARMED=true.
 PROXMOX_BASE_URL=https://192.168.179.1:8006/api2/json
 PROXMOX_TOKEN_ID=
 PROXMOX_TOKEN_SECRET=

@@ -39,7 +39,10 @@ endpoint the CLI doesn't expose yet).
 ```bash
 # All CLIs read config from the environment. The root `secrets.env` (gitignored)
 # is the ONE canonical file — it holds every service (Proxmox / Synology / UniFi
-# + Cloudflare / GitHub); see `secrets.env.example` for the schema. Source it once:
+# + Cloudflare / GitHub). It is GENERATED from `secrets.env.template` (the committed
+# schema) + Bitwarden Secrets Manager — regenerate it on any machine with:
+scripts/secrets-sync.sh          # macOS/Linux  (secrets-sync.ps1 on Windows)
+# then source it once:
 set -a && . ./secrets.env && set +a          # → proxmoxsharp / synosharp / unifisharp all configured
 proxmoxsharp discover    # structured ClusterSnapshot (JSON)
 proxmoxsharp nodes       # list nodes
