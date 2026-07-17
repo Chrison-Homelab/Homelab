@@ -1,0 +1,3 @@
+# Runtime state — created on the CT, never committed.
+config/
+.env

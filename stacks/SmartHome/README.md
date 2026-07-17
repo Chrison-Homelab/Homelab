@@ -17,7 +17,30 @@ Home Assistant is an **adopted, out-of-block VM** (legacy VMID 2000) — see bel
 | ID | Member | Kind | Net | Role | Status |
 |----|--------|------|-----|------|--------|
 | 6000 | [mqtt](mqtt.lxc.yaml) | LXC (Mosquitto) | IoT 1040 · `10.40.26.247` | The message bus | ✅ live |
+| 6001 | [matter-server](matter-server.lxc.yaml) | Docker host | IoT 1040 · `10.40.62.181` | Matter/Thread controller (ex-HA add-on) | ✅ live |
+| 6002 | [aircast](aircast.lxc.yaml) | Docker host | IoT 1040 · `10.40.147.133` | Chromecast→AirPlay bridge (ex-HA add-on) | ✅ live |
 | 2000 | [homeassistant](homeassistant.vm.yaml) | VM (HAOS) | legacy `192.168.179.102` (+ idle IoT NIC) | The hub / consumer | 🔎 **adopted, describe-only** |
+
+## Extracted-from-HA members (matter-server, aircast)
+
+Both ran as HAOS add-ons; now standalone. Same images the add-ons wrap, layered on a
+thin Docker host (`app: docker`), CT-local state, internal-only.
+
+- **matter-server** (`ghcr.io/home-assistant-libs/python-matter-server`): HA drives it
+  over WebSocket — point HA's Matter integration at `ws://10.40.62.181:5580/ws`.
+  ⚠️ **Matter needs IPv6.** VLAN 1040 currently sends no Router Advertisements, so device
+  commissioning will fail (`chip … Network is unreachable`) until **IPv6 is enabled on the
+  IoT VLAN** (UniFi → network 1040 → IPv6/RA). The WS↔HA path works over IPv4 regardless.
+  Its community-scripts native installer is disabled upstream (python-matter-server archived
+  2026-06-23), hence the Docker-host route.
+- **aircast** (AirConnect, `1activegeek/airconnect`): `network_mode: host` so mDNS/RTP reach
+  the LAN; discovers Chromecasts and re-advertises them as AirPlay. No HA dependency.
+
+> **Create-path fix (2026-07-17):** community-scripts' `build.func` gained a host
+> "LXC-stack upgrade available?" gate that prompts via `read </dev/tty` — fatal to
+> non-interactive SSH creates once a `pve-container`/`lxc-pve` update is pending. The engine
+> now passes `DISABLE_UPDATE=yes PHS_SILENT=1` (build.func's own unattended escapes) on every
+> create. See `Infrastructure/engine/Converge/CommunityScriptsCreator.cs`.
 
 ## The MQTT broker (CT 6000)
 

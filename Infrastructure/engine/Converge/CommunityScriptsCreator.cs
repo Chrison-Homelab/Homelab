@@ -65,7 +65,13 @@ public sealed class CommunityScriptsCreator
         var repo = sp.Source?.Repo ?? (channel == "dev" ? "community-scripts/ProxmoxVED" : "community-scripts/ProxmoxVE");
         var gitref = sp.Source?.Ref ?? "main";
         var url = $"https://raw.githubusercontent.com/{repo}/{gitref}/ct/{app}.sh";
-        var cmd = $"TERM=xterm mode=generated {vars} bash -c \"$(curl -fsSL {url})\"";
+        // DISABLE_UPDATE=yes + PHS_SILENT=1: community-scripts' build.func gained a host
+        // "LXC stack upgrade available?" gate that prompts via `read </dev/tty` — which has
+        // no controlling terminal over non-interactive SSH, so it aborts EVERY create the
+        // moment a pve-container/lxc-pve update is pending on the node. These are build.func's
+        // own documented unattended escapes: both make the gate `return 2` (skip) without the
+        // tty read. (Found 2026-07-17 when a pending pve update started breaking all creates.)
+        var cmd = $"TERM=xterm DISABLE_UPDATE=yes PHS_SILENT=1 mode=generated {vars} bash -c \"$(curl -fsSL {url})\"";
 
         // A few community-scripts installs prompt with a raw `read` (some run inside the CT
         // via lxc-attach, where a finite stdin can under-supply and hang). Stream the default

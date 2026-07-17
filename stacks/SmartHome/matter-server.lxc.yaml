@@ -1,0 +1,53 @@
+# Matter Server — the Matter/Thread controller, extracted from Home Assistant.
+#
+# Was the HAOS "Matter Server" add-on; now a standalone member. It runs the same
+# upstream image the add-on wraps: ghcr.io/home-assistant-libs/python-matter-server.
+# HA connects over WebSocket: Settings → Devices & Services → Matter → ws://<ip>:5580/ws.
+#
+# WHY DOCKER-HOST (not the community-scripts native app): community-scripts DISABLED
+# ct/matter-server.sh server-side (python-matter-server was archived 2026-06-23,
+# "re-enabled when migrated to Matter.js"). The prebuilt image still ships and is
+# what the add-on uses, so we run it directly — thin Docker host (app: docker →
+# ct/docker.sh) + our compose (matter-server/compose.yml), same pattern as Leapmotor.
+#
+# ⚠️ IPv6 REQUIRED. Matter devices talk over IPv6 (link-local + mDNS), so this CT
+# has IPv6 on the IoT VLAN (network override below, ipv6: auto / SLAAC), and the
+# container runs network_mode: host so that reaches the device L2. If commissioning
+# fails, confirm VLAN 1040 sends Router Advertisements (IPv6 enabled in UniFi).
+#
+# mDNS: discovery is multicast on the device L2 → CT on VLAN 1040 (IoT), same
+# segment as the Matter devices (confirmed 2026-07-17). No inter-VLAN boundary.
+#
+# STATE: fabric credentials live in ./data (CT-local). Migrating the add-on's
+# fabric (to keep devices paired) = copy its matter storage into ./data — see
+# README ("Matter fabric migration"). Fresh start = re-commission the devices.
+#
+# EXPOSURE — INTERNAL-ONLY. Only HA (the WS client) talks to it. No tunnel.
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: matter-server
+  stack: SmartHome
+  tags: [smart-home, iot, matter, thread, docker]
+
+spec:
+  app: docker            # community-scripts slug → ct/docker.sh (Docker Engine host)
+  ctid: 6001
+  cores: 2               # moderately busy during commissioning
+  memory: 2048           # MB
+  disk: 8                # GB — Docker image layers + a small fabric store
+
+  features:
+    nesting: true        # Docker-in-LXC
+    keyctl: true         # containerd keyring on unprivileged LXC
+
+  # Override the stack default network to ADD IPv6 (Matter requirement). Same
+  # bridge/VLAN as the stack (IoT 1040), DHCP v4, SLAAC v6.
+  network:
+    bridge: vmbr0
+    vlan: 1040
+    ipv4: dhcp
+    ipv6: auto           # SLAAC — Matter needs IPv6 to the devices on this L2
