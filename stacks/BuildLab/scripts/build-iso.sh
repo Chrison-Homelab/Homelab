@@ -74,8 +74,15 @@ cp "$UNATTEND"/*.vsconfig        "$OEM/"
 echo "==> Building UEFI+BIOS bootable ISO: $OUT_ISO"
 # Windows install media carries both boot images: boot/etfsboot.com (BIOS) and
 # efi/microsoft/boot/efisys.bin (UEFI). Reproduce a dual El Torito catalog.
+#
+# -J -joliet-long + -R are ESSENTIAL, not cosmetic: plain ISO9660 uppercases names
+# and forbids hyphens (it rewrites '-' to '_'), so the payload would surface in the
+# guest as PROVISION_VS.PS1 / VIRTIO_WIN_GUEST_TOOLS.EXE. The FirstLogonCommand tests
+# `if exist %d:\BuildLab\provision-vs.ps1` (hyphen) → false → xcopy never runs →
+# C:\BuildLab is never created → no VS. Joliet is the name space Windows reads and it
+# preserves the real hyphenated long names.
 xorriso -as mkisofs \
-  -iso-level 3 -full-iso9660-filenames -volid "$ISO_LABEL" \
+  -iso-level 3 -full-iso9660-filenames -J -joliet-long -R -volid "$ISO_LABEL" \
   -b boot/etfsboot.com -no-emul-boot -boot-load-size 8 -boot-info-table \
   -eltorito-alt-boot -e efi/microsoft/boot/efisys_noprompt.bin -no-emul-boot \
   -o "$OUT_ISO" "$SRC"
