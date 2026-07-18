@@ -76,7 +76,7 @@ echo "==> Building UEFI+BIOS bootable ISO: $OUT_ISO"
 xorriso -as mkisofs \
   -iso-level 3 -full-iso9660-filenames -volid "$ISO_LABEL" \
   -b boot/etfsboot.com -no-emul-boot -boot-load-size 8 -boot-info-table \
-  -eltorito-alt-boot -e efi/microsoft/boot/efisys.bin -no-emul-boot \
+  -eltorito-alt-boot -e efi/microsoft/boot/efisys_noprompt.bin -no-emul-boot \
   -o "$OUT_ISO" "$SRC"
 
 echo "==> Built $OUT_ISO"

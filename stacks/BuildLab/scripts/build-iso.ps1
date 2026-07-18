@@ -119,7 +119,7 @@ try {
   # 6. Build a UEFI+BIOS bootable ISO (El Torito, both boot images present on Win media).
   Write-Host "==> Building ISO: $OutIso"
   $etfsboot = Join-Path $src 'boot\etfsboot.com'
-  $efisys   = Join-Path $src 'efi\microsoft\boot\efisys.bin'
+  $efisys   = Join-Path $src 'efi\microsoft\boot\efisys_noprompt.bin'
   $bootdata = "2#p0,e,b$etfsboot#pEF,e,b$efisys"
   & $oscdimg -m -o -u2 -udfver102 -l$isoLabel "-bootdata:$bootdata" $src $OutIso
   if ($LASTEXITCODE -ne 0) { throw "oscdimg failed ($LASTEXITCODE)" }

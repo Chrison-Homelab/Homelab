@@ -94,3 +94,40 @@ A self-contained local stack at `stacks/BuildLab/` (promote to a submodule later
 - Windows/VS activation (unactivated + Community by decision).
 - GPU passthrough (headless build box).
 - Promoting BuildLab to its own submodule repo (later).
+
+## Verification — build-and-verify on desktop-01 (2026-07-18)
+
+Driven through a real build via `homelab-infra Deploy --stack BuildLab` on desktop-01
+(VMID 1100), using the on-node `Win11_24H2_EnglishInternational_x64.iso` (official MS
+retail image) + the node's `virtio-win.iso`.
+
+**Verified working:** the full **unattended Windows 11 install** — boots the custom
+ISO, auto-skips every setup screen (edition / disk / OOBE), lands on an
+auto-logged-in desktop (confirmed via QEMU screendumps).
+
+**Three defects found — two fixed here, one fixed-pending-revalidation:**
+
+1. **Boot image — FIXED, validated.** `build-iso.{sh,ps1}` baked the *prompting* UEFI
+   boot image (`efisys.bin`) → the unattended boot hung at "Press any key to boot from
+   CD" → PXE fallback → loop. Now uses `efisys_noprompt.bin` (both scripts); boots
+   straight into Setup.
+
+2. **Answer-file language must match the base ISO — media dependency.** The WinPE
+   `UILanguage` is `en-US`; on an **EnglishInternational (en-GB)** ISO, 24H2's new
+   setup can't satisfy the language pass and falls back to the "Select language
+   settings" prompt (hangs the unattended flow). `en-US` is correct for an **en-US**
+   base ISO, so this is a build-time requirement, not an answer-file bug: **set the
+   WinPE `UILanguage` to match the base Win11 ISO's language** (en-GB for the ISO used
+   above). Left en-US here (the en-US-media design); flagged for build-iso callers.
+
+3. **`$OEM$` payload staging — FIXED here, re-validation pending.** `provision-vs.ps1`
+   + guest tools are staged via `sources\$OEM$\$1\BuildLab`, which Setup only processes
+   when the answer file sets `<UseConfigurationSet>true</UseConfigurationSet>`
+   (Microsoft-Windows-Setup, windowsPE). It was missing → `C:\BuildLab` came up empty
+   → both FirstLogonCommands (guest-tools install + VS provisioner) silently no-op'd →
+   **no VS installed** (the whole point of the VM). Added `UseConfigurationSet`. **Still
+   to re-validate:** VS 2019/2022/2026 provisioning completing + a Fallout build
+   succeeding on the box.
+
+**Net:** not merge-ready until the VS-provisioning path is re-run and confirmed with
+fix #3; the install pipeline itself is proven.

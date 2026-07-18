@@ -147,6 +147,7 @@
         </OSImage>
       </ImageInstall>
 
+      <UseConfigurationSet>true</UseConfigurationSet>
       <UserData>
         <!-- Public KMS client setup key for Win11 Pro: lets setup skip the key
              page and proceed; the box stays UNACTIVATED (no genuine key here). -->
