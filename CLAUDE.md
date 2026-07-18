@@ -66,6 +66,23 @@ git fetch origin && git checkout main && git pull --ff-only
 git checkout -b feat/<thing>      # or fix/<thing>
 ```
 
+### Parallel agent sessions → use a `git worktree` (never share one checkout)
+
+Multiple concurrent agent sessions **must not share a single working directory.** A shared
+working tree means uncommitted edits and branch switches from one session clobber the other,
+and branch discipline alone can't prevent it. Give **each concurrent session its own worktree**:
+
+```bash
+git worktree add ../Homelab-<task> -b feat/<thing>   # isolated checkout + fresh branch
+git worktree list                                    # see active worktrees
+git worktree remove ../Homelab-<task>                # clean up after the PR merges
+```
+
+**Per-worktree setup** — a new worktree does **not** inherit the primary checkout's untracked
+files or tooling. Before working/pushing in it: regenerate the gitignored `secrets.env`
+(`scripts/secrets-sync.sh`) and install hooks (`dotnet tool restore && dotnet husky install`).
+The `.containers/*` test stacks are pathed to the primary checkout — run those from there.
+
 **Never reuse an existing feature branch without confirming its PR is still open:**
 `gh pr view <branch> --json state` (OPEN / MERGED / CLOSED). `gh pr list --head <branch>`
 returning `[]` means *no open PR* — **not** *no PR*; an already-merged branch can still
