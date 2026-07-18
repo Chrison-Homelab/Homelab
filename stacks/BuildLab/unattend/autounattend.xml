@@ -147,7 +147,6 @@
         </OSImage>
       </ImageInstall>
 
-      <UseConfigurationSet>true</UseConfigurationSet>
       <UserData>
         <!-- Public KMS client setup key for Win11 Pro: lets setup skip the key
              page and proceed; the box stays UNACTIVATED (no genuine key here). -->
@@ -266,12 +265,17 @@
       <FirstLogonCommands>
         <SynchronousCommand wcm:action="add">
           <Order>1</Order>
-          <Description>Install QEMU guest agent + virtio drivers</Description>
-          <!-- virtio-win-guest-tools.exe is staged on the ISO root by build-iso.ps1 -->
-          <CommandLine>cmd /c if exist C:\BuildLab\virtio-win-guest-tools.exe C:\BuildLab\virtio-win-guest-tools.exe /install /quiet /norestart</CommandLine>
+          <Description>Stage the BuildLab payload from the install CD (24H2 setup does not process sources\$OEM$)</Description>
+          <!-- Payload lives at the ISO ROOT \BuildLab; copy it off the still-mounted install CD to C:\BuildLab. -->
+          <CommandLine>cmd /c for %d in (D E F G H I) do @if exist %d:\BuildLab\provision-vs.ps1 xcopy /e /i /y %d:\BuildLab C:\BuildLab\</CommandLine>
         </SynchronousCommand>
         <SynchronousCommand wcm:action="add">
           <Order>2</Order>
+          <Description>Install QEMU guest agent + virtio drivers</Description>
+          <CommandLine>cmd /c if exist C:\BuildLab\virtio-win-guest-tools.exe C:\BuildLab\virtio-win-guest-tools.exe /install /quiet /norestart</CommandLine>
+        </SynchronousCommand>
+        <SynchronousCommand wcm:action="add">
+          <Order>3</Order>
           <Description>Run the Visual Studio provisioner</Description>
           <CommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BuildLab\provision-vs.ps1</CommandLine>
         </SynchronousCommand>

@@ -8,7 +8,7 @@
   Takes a stock Windows 11 ISO and produces `buildlab-win11-unattended.iso` by adding:
     * \autounattend.xml          — the silent-install answer file (this stack)
     * \virtio\                   — virtio-win drivers (so WinPE sees the virtio-scsi disk)
-    * sources\$OEM$\$1\BuildLab\ — provision-vs.ps1 + *.vsconfig + virtio guest tools,
+    * \BuildLab\ (ISO ROOT) — provision-vs.ps1 + *.vsconfig + virtio guest tools,
                                    which Windows setup copies to C:\BuildLab; the answer
                                    file's FirstLogonCommands then run the VS installer.
 
@@ -106,8 +106,9 @@ try {
   New-Item -ItemType Directory -Force -Path $virtioDst | Out-Null
   Copy-Item -Path "${vDrive}:\*" -Destination $virtioDst -Recurse -Force
 
-  # 5. Stage the guest payload → copied to C:\BuildLab by setup ($OEM$ tree).
-  $oem = Join-Path $src 'sources\$OEM$\$1\BuildLab'
+  # 5. Stage the guest payload at the ISO ROOT (\BuildLab). Win11 24H2 setup no longer
+  #    processes sources\$OEM$, so a first-logon command copies it to C:\BuildLab.
+  $oem = Join-Path $src 'BuildLab'
   New-Item -ItemType Directory -Force -Path $oem | Out-Null
   Copy-Item (Join-Path $unattend 'provision-vs.ps1') $oem -Force
   Copy-Item (Join-Path $unattend '*.vsconfig')        $oem -Force

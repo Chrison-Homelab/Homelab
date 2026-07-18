@@ -6,7 +6,8 @@
 # Adds to a stock Win11 ISO:
 #   /autounattend.xml            — the silent-install answer file (this stack)
 #   /virtio/                     — virtio-win drivers (WinPE needs the virtio-scsi one)
-#   sources/$OEM$/$1/BuildLab/   — provision-vs.ps1 + *.vsconfig + guest tools → C:\BuildLab
+#   /BuildLab/                   — provision-vs.ps1 + *.vsconfig + guest tools (ISO ROOT;
+#                                  a first-logon cmd copies it → C:\BuildLab)
 #
 # The homelab engine has NO ISO build logic — this is the documented prerequisite
 # before `./build.sh Deploy --stack BuildLab`.
@@ -64,7 +65,7 @@ echo "==> Injecting autounattend.xml + virtio drivers + guest payload ..."
 cp "$UNATTEND/autounattend.xml" "$SRC/autounattend.xml"
 extract "$VIRTIO_ISO" "$SRC/virtio"
 
-OEM="$SRC/sources/\$OEM\$/\$1/BuildLab"
+OEM="$SRC/BuildLab"   # ISO ROOT — 24H2 setup no longer stages sources\$OEM\$; a first-logon cmd copies this off the CD
 mkdir -p "$OEM"
 cp "$UNATTEND/provision-vs.ps1" "$OEM/"
 cp "$UNATTEND"/*.vsconfig        "$OEM/"

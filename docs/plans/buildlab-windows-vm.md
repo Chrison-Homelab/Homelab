@@ -131,3 +131,23 @@ auto-logged-in desktop (confirmed via QEMU screendumps).
 
 **Net:** not merge-ready until the VS-provisioning path is re-run and confirmed with
 fix #3; the install pipeline itself is proven.
+
+## Delivery rework (2026-07-18) — $OEM$ replaced by ISO-root + copy-from-CD
+
+Second build-verify run confirmed that Win11 24H2's reimagined setup does **not** stage
+the `sources\$OEM$` tree — `C:\BuildLab` came up empty both without and with
+`<UseConfigurationSet>` (verified in-guest: `dir c:\buildlab` -> File Not Found), so the
+FirstLogonCommands silently no-op'd and no VS was installed. `UseConfigurationSet` was the
+wrong remedy (it points setup at a config-set `$OEM$`, not `\sources\$OEM$`).
+
+Reworked to avoid `$OEM$` entirely:
+- `build-iso.{sh,ps1}` now stage the payload at the **ISO ROOT** (`\BuildLab`) instead of
+  `sources\$OEM$\$1\BuildLab`.
+- `autounattend.xml` drops `UseConfigurationSet` and adds a first-logon `Order 1` that
+  copies `\BuildLab` off the still-mounted install CD to `C:\BuildLab` (`for %d in ... xcopy`),
+  before the guest-tools install (Order 2) and the VS provisioner (Order 3). FirstLogonCommands
+  are inline in the answer file (not `$OEM$`-delivered), so they run reliably.
+
+**Still to re-validate end-to-end:** a fresh install with this rework — confirm `C:\BuildLab`
+populates, the guest agent installs, VS 2019/2022/2026 provision, and a Fallout build succeeds.
+(The provisioner logic itself is being validated separately by running provision-vs.ps1 by hand.)
