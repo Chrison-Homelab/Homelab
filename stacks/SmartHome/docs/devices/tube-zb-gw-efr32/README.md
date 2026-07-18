@@ -67,30 +67,53 @@ Bitwarden item and should be updated there when changed.
 
 ```
 Tube ZB GW (ESP32 + EFR32, PoE)
-  ├─ EFR32 UART → TCP :6638 ──▶ Zigbee2MQTT (CT 6004) ──MQTT──▶ broker (CT 6000) ──▶ Home Assistant
+  ├─ EFR32 UART → :6638 ──socket──▶ Home Assistant ZHA (native)
   └─ ESP32 host firmware: vendor OEM build now → XZG planned (#259) — self-managed, NOT via our ESPHome dash
 ```
 
-- The gateway is a **self-managed appliance** — it just exposes `tcp://<ip>:6638`. It is
+- The gateway is a **self-managed appliance** — it just exposes `socket://<ip>:6638`. It is
   **not** adopted by our ESPHome dashboard (CT 6003); that LXC is for our own DIY ESP
   fleet. Long-term the ESP32 host firmware moves to **XZG** (backlog **#259**).
-- **Zigbee2MQTT (CT 6004)** runs the *mesh*: point it at `tcp://<ip>:6638`, adapter
-  `ember`; it publishes HA-discovery to the broker → HA auto-adopts every Zigbee device.
-- Broker/API-mediated, so unaffected by the HA VM→LXC cutover (#250).
+- **Zigbee stack = HA's native ZHA** (decided 2026-07-18), pointed at `socket://<ip>:6638`,
+  radio type EZSP/EmberZNet. The earlier standalone **Zigbee2MQTT (CT 6004) plan is dropped** —
+  staying on ZHA avoids re-pairing, and the coordinator is a standalone box either way.
+- The mesh rides the LAN socket, so it's unaffected by the HA VM→LXC cutover (#250).
 
 ## Migration & hardening plan
 
-1. **Segment:** move the gateway to **IoT VLAN 1040** + a **DHCP reservation** (stable
-   target for Z2M). Do this *before* pointing Z2M at it, so there's only one cutover.
+1. **Segment:** move the gateway to **IoT VLAN 1040** + a **DHCP reservation** so ZHA has a
+   stable `socket://` target. (Re-point ZHA's serial path afterward.)
 2. **Rotate the default login:** it still ships on `cangji`/`cangji` — change it and
    update the Bitwarden item. (On the **XZG** migration, #259, set our own auth instead.)
-3. **Zigbee lift-and-shift:** if the mesh is currently coordinated by a HAOS Zigbee2MQTT
-   add-on, migrate via a **coordinator backup** (no re-pairing). If it's ZHA today, note
-   that Z2M can't import ZHA → devices must be re-paired. _(Confirm current state before
-   cutover.)_
+3. **Zigbee: staying on ZHA** — no lift-and-shift, no re-pairing. (ZHA→Z2M would have forced
+   a full re-pair; decided against it 2026-07-18.)
 
 ## Firmware backup
 
 A recovery baseline (vendor V2.5 ESP images + EFR32 NCP + the real PDF manual) is kept in
 [`firmware-backup/`](firmware-backup/) with `SHA256SUMS`. See its README for provenance
 (third-party host — unverified vendor binaries) and flashing notes.
+
+## ⚠️ `Esp_Bluetooth` switch = BLE-gateway mode — it can take HA down
+
+**Incident 2026-07-18:** the gateway's `switch.tube_zb_gw_efr32_c762b0_esp_bluetooth`
+enables a **Passive BLE Monitor "BLE gateway"** that fires a `ble_monitor.parse_data`
+Home-Assistant **service call for every BLE advertisement in range** (dozens/sec). When the
+receiving side isn't perfectly set up, HA floods with errors, the recorder gets hammered, the
+supervisor watchdog restarts the core, and the **UI goes unresponsive** — it looks exactly
+like "HA crashed." Twice in a row it kept HAOS from finishing startup; HA reached `RUNNING`
+within 30 s each time the switch was turned **off**.
+
+Two failure modes seen:
+1. **ESPHome gate off** → `Service call ble_monitor.parse_data … rejected; enable this
+   functionality in the options flow` (fix: ESPHome device → *Allow the device to perform
+   Home Assistant actions*).
+2. **Even with the gate on** → `ServiceNotFound: ble_monitor.parse_data not found` — the
+   **Passive BLE Monitor integration isn't actually configured/loaded** (files present in
+   `custom_components/ble_monitor` ≠ a working integration).
+
+**Current state: `Esp_Bluetooth` is OFF and should stay off.** The BLE-gateway hack is a
+poor fit for a 2 GB HAOS box. Do BLE the clean way instead — a dedicated **ESP32
+`bluetooth_proxy`** (see [`../../esp-fleet.md`](../../esp-fleet.md) and
+[`../xiaomi-lywsd03mmc/`](../xiaomi-lywsd03mmc/)). Turn the switch off via the gateway web UI,
+or: `curl -u cangji:cangji -X POST -H 'Content-Length: 0' http://192.168.179.222/switch/esp_bluetooth/turn_off`.
