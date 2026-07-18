@@ -1,0 +1,52 @@
+# ESPHome — the dashboard/builder for our DIY ESP fleet.
+#
+# Native community-scripts install (app: esphome → ct/esphome.sh installs the
+# ESPHome dashboard + compile toolchain in a venv). NOT a Docker host — like the
+# Mosquitto broker (CT 6000), ESPHome has a first-class community-scripts installer,
+# so it's a plain native LXC (no nesting/keyctl).
+#
+# WHAT THIS IS (and isn't): this is the ESPHome **dashboard/builder** — where we
+# author per-device YAML, compile firmware, and OTA-flash the ESPs. It is NOT the
+# HA-side ESPHome *integration*: flashed devices talk to Home Assistant **directly**
+# over the ESPHome Native API (protobuf/TCP :6053, mDNS-discovered), so HA sees them
+# the same regardless of where this dashboard runs. Moving the builder here changes
+# nothing about HA↔device comms — it just gets the heavy compile workload off HA.
+#
+# WHY STANDALONE (extracted from the old HAOS ESPHome add-on):
+#   - Prereq for #250 (HA → Container LXC): HA Container has no add-on store.
+#   - Compiles are heavy (gcc/PlatformIO, multi-GB toolchains) — they have no
+#     business on the 2 GB HA VM (which already fell over under load).
+#   - Same "extract everything from HA" direction as Matter/AirCast/MQTT.
+#
+# SIZED FOR COMPILES — deliberately bigger than the tiny broker: PlatformIO
+# toolchains + per-platform build caches eat disk, and builds are CPU-bound. Bump
+# cores/memory if builds feel slow; grow disk if the cache fills.
+#
+# NETWORK — IoT VLAN 1040 (stack default). The dashboard needs L2 reach to the ESP
+# devices for **OTA flashing + mDNS discovery + the native API**, and the devices
+# live on IoT. DHCP-reserve post-deploy like the other members.
+#
+# EXPOSURE — INTERNAL-ONLY (no tunnel). It's a build tool reached over the LAN.
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+#
+# First job: simple Wi-Fi nodes for the 3× ESP8266 (Wi-Fi-only — no BLE/Zigbee).
+# Tracked by #251.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: esphome
+  stack: SmartHome
+  tags: [smart-home, iot, esphome, community-script]
+
+spec:
+  app: esphome           # community-scripts slug → ct/esphome.sh (native dashboard + toolchain)
+  ctid: 6003
+  cores: 2               # compiles are CPU-bound — bump for faster builds
+  memory: 2048           # MB — comfortable for a single ESPHome build (idle footprint is tiny)
+  disk: 16               # GB — PlatformIO toolchains + per-platform build caches are chunky
+
+  # node / network / os / source / timezone inherited from stack.yaml defaults
+  # (hpe-01, VLAN 1040 IoT, debian 13, community-scripts stable). No Docker features
+  # (native install), no mounts (device YAMLs live on the CT; version-control later).
