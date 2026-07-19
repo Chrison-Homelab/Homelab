@@ -1,7 +1,38 @@
 # Xiaomi Mi Temperature & Humidity Monitor 2 (LYWSD03MMC) ×2
 
 Two Xiaomi **LYWSD03MMC** BLE thermometer/hygrometers (Telink **TLSR8250** SoC, CR2032).
-Owned 2026-07-18, not yet integrated.
+Owned 2026-07-18; **flashed + integrated 2026-07-20** — see Outcome below.
+
+## ✅ Outcome (done 2026-07-20)
+
+Both units **flashed to pvvx `ATC_v58` → BTHome v2 (unencrypted)** and are live in Home Assistant.
+
+| Unit | HW rev | Stock fw | BLE MAC | pvvx name |
+|---|---|---|---|---|
+| #1 | **B1.4** | 2.1.1_0159 | `A4:C1:38:1F:09:C0` | `ATC_1F09C0` |
+| #2 | **B1.4** | 2.1.1_0159 | `A4:C1:38:20:6E:6B` | `ATC_206E6B` |
+
+- **HW was B1.4, not B1.6** — the "unflashable hardware" fear (Part 1 caveat) didn't apply; both
+  flashed cleanly. OTA from **Chrome** (Web Bluetooth) on the MacBook.
+- **BLE relay = the Tube/Cangji gateway's `Esp_Bluetooth` BLE-proxy mode** (Part 2 · option B),
+  re-enabled and currently serving both sensors into HA. ⚠️ This mode previously flooded HA
+  offline twice ([details](../tube-zb-gw-efr32/#-esp_bluetooth-switch--ble-gateway-mode--it-can-take-ha-down))
+  — **working as of 2026-07-20, but monitor it**; if it destabilises, fall back to a dedicated
+  ESP32 `bluetooth_proxy` (option A, #251), which remains the more robust long-term path.
+- Mi Home cloud tokens/bind-keys for both units are saved in **Bitwarden** (item *"Xiaomi Mi Home
+  — device tokens & bind keys (homelab)"*) for a possible stock-firmware restore; unused on custom fw.
+
+### Gotchas the original plan didn't foresee (newer firmware)
+- **Stock fw `2.1.1_0159` blocks the direct OTA flash.** The flasher must first **Login with the
+  device's Mi bind-key + token + `did`**, obtained via a one-time **Mi Home registration** +
+  [`Xiaomi-cloud-tokens-extractor`](https://github.com/PiotrMachowski/Xiaomi-cloud-tokens-extractor).
+  Only then does the custom flash authorize. (The classic "just connect and flash" path is for
+  older firmware.) You do **not** need the original Mi account — bind it fresh to any account.
+- **Reset ≠ battery pull.** The LYWSD03MMC has no button; Mi Home's *"please confirm the device has
+  been reset"* is cleared by **shorting the RESET + GND pads for ~7 s** (screen restarts), *then*
+  Mi Home will re-add it.
+- The B1.5/B1.6 *"flash `Original_OTA` first"* intermediate step is **only** for those revisions —
+  **B1.4 goes straight to `ATC_vNN`** after Login.
 
 ## The actual problem: HA has no Bluetooth
 
@@ -29,6 +60,9 @@ the MacBook), and lands as a native, cloud-free HA device.
 > ~2025.03) ships new Xiaomi firmware that is **incompatible with the custom firmware — it
 > can't be flashed.** The flasher reads the HW version on connect. If ours are B1.6, the
 > pvvx path is out and we fall back to the Hub-2/cloud route (Part 2, option C).
+>
+> ✅ **Resolved:** both our units read **HW B1.4** on connect — flashed cleanly (see Outcome).
+> Their stock fw (`2.1.1_0159`) still needed the Mi bind-key Login step, but not the B1.6 block.
 
 ## Part 2 — The BLE relay (the missing receiver)
 
@@ -55,15 +89,16 @@ support Hub 2's BLE** (only Gateway 2/3, Aqara E1), and the official
 firmware + Xiaomi cloud** — the fallback if flashing is impossible (B1.6 hardware) or we
 don't mind cloud. See [`../xiaomi-smart-home-hub-2/`](../xiaomi-smart-home-hub-2/).
 
-## Recommendation
+## Recommendation → what we did
 
-1. **Check HW revision** on the flasher.
-2. If flashable → **pvvx + BTHome v2** on both sensors.
-3. **BLE relay = a dedicated ESP32 `bluetooth_proxy`** (kicks off the ESP fleet, #251) — or
-   temporarily the Cangji gateway's BLE-proxy mode to prove it out without buying anything.
-4. If **B1.6/unflashable** → keep stock, integrate via the **Hub 2** (cloud), and treat local
-   BLE as blocked until a proxy exists.
+1. ~~Check HW revision~~ → **B1.4** (flashable). ✅
+2. ~~If flashable → pvvx + BTHome v2~~ → **done, both sensors** (`ATC_v58`, unencrypted). ✅
+3. **BLE relay** → we took the *"prove it out without buying anything"* route: the **Cangji
+   gateway's BLE-proxy mode** (option B). Working. A dedicated ESP32 `bluetooth_proxy` (option A,
+   #251) is still the recommended durable relay — switch to it if the gateway proxy misbehaves.
+4. *(B1.6/unflashable fallback never needed.)*
 
-Net: the sensors are the easy part — the durable win is standing up a **Bluetooth proxy**,
-which also unlocks every future BLE device (and is the reason HA "can't pair" anything today).
+Net: the sensors were the easy part. The durable win — a robust **Bluetooth proxy** that unlocks
+every future BLE device — is *interim-solved* via the gateway; the dedicated ESP32 proxy (#251)
+is the graduation path.
 </content>
