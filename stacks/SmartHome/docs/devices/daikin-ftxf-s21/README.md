@@ -37,7 +37,7 @@ and keeps the fleet uniform (same builder/dashboard as every other DIY node).
 
 - **Chosen:** [`joshbenner/esphome-daikin-s21`](https://github.com/joshbenner/esphome-daikin-s21)
   — an ESPHome external component. Config lives at
-  [`esphome-daikin-downstairs.yaml`](esphome-daikin-downstairs.yaml).
+  [`esphome-daikin-downstairs.yaml.example`](esphome-daikin-downstairs.yaml.example).
 - **Alternative (not chosen):** [RevK's Faikin/Faikout](https://codeberg.org/RevK/ESP32-Faikout)
   — purpose-built firmware **+ open-hardware PCB**. Excellent and bulletproof, but
   it's its own MQTT-based firmware/ecosystem; ESPHome fits our stack better. We
@@ -82,7 +82,7 @@ gets its own device doc when we tackle it; this doc is Daikin-only.
 - [ ] Stand up the **ESPHome LXC** ([#251](https://github.com/Chrison-dev/Homelab/issues/251))
       — prerequisite for OTA-flashing + the native API.
 - [ ] Bench-wire C6 ↔ level shifter ↔ a 5 V UART loopback; flash
-      [`esphome-daikin-downstairs.yaml`](esphome-daikin-downstairs.yaml); confirm the
+      [`esphome-daikin-downstairs.yaml.example`](esphome-daikin-downstairs.yaml.example); confirm the
       node boots + joins Wi-Fi.
 - [ ] **Power off at the isolator**, pop the FTXF front grille, locate the white
       **S21** connector on the indoor PCB, plug in the pigtail.

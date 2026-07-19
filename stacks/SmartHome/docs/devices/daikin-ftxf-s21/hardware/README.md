@@ -77,7 +77,7 @@ flowchart LR
   C6's `3V3` output. Common all grounds.
 - **Pins on the C6:** the config uses the XIAO's labelled **TX = D6 (GPIO16)** and
   **RX = D7 (GPIO17)** — any two free GPIOs work; keep them matched to the
-  [`esphome-daikin-downstairs.yaml`](../esphome-daikin-downstairs.yaml).
+  [`esphome-daikin-downstairs.yaml.example`](../esphome-daikin-downstairs.yaml.example).
 
 ## Bill of materials
 

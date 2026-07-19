@@ -61,7 +61,7 @@ coordinator; the XZG firmware move (#259) is still compatible (same socket). ESP
 
 Devices with their own reverse-engineering / integration notes live under [`devices/`](devices/):
 
-- [`daikin-ftxf-s21/`](devices/daikin-ftxf-s21/) — Downstairs Daikin FTXF50 (Cora): local, bidirectional HA climate via the **S21 port** (XIAO ESP32-C6 + ESPHome) instead of IR — incl. wiring, [BOM + level-shifter](devices/daikin-ftxf-s21/hardware/) and a ready [ESPHome config](devices/daikin-ftxf-s21/esphome-daikin-downstairs.yaml).
+- [`daikin-ftxf-s21/`](devices/daikin-ftxf-s21/) — Downstairs Daikin FTXF50 (Cora): local, bidirectional HA climate via the **S21 port** (XIAO ESP32-C6 + ESPHome) instead of IR — incl. wiring, [BOM + level-shifter](devices/daikin-ftxf-s21/hardware/) and a ready [ESPHome config](devices/daikin-ftxf-s21/esphome-daikin-downstairs.yaml.example).
 - [`arrowhead-esl-2/`](devices/arrowhead-esl-2/) — Arrowhead ESL-2 alarm panel: local HA integration via keypad-bus tap (ESP32), incl. the full [RS232 protocol reference](devices/arrowhead-esl-2/rs232-protocol.md).
 - [`tube-zb-gw-efr32/`](devices/tube-zb-gw-efr32/) — TubesZB Zigbee coordinator (ESP32 + EFR32, PoE): access/handbook, the OEM-clone finding, the `Esp_Bluetooth` HA-flood incident, and the Z2M/XZG plans.
 - [`xiaomi-lywsd03mmc/`](devices/xiaomi-lywsd03mmc/) — Xiaomi LYWSD03MMC BLE thermometers: the "HA has no Bluetooth" root cause, pvvx/BTHome flashing, HW-B1.6 caveat, and BLE-proxy relay options.
