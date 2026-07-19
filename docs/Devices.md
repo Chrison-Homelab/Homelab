@@ -2,7 +2,7 @@
 
 Physical inventory for all homelab devices. Auto-documented from the Proxmox +
 UniFi MCP servers (read-only discovery, BL-009).
-**Last updated:** 2026-06-22
+**Last updated:** 2026-07-19
 
 ---
 
@@ -99,6 +99,25 @@ APs live on the **Network Devices** VLAN (10.0.0.0/16).
 ### Zigbee Gateway
 - **Hostname:** `tube-zb-gw-efr32-c762b0` · **IP:** 192.168.179.222 (legacy)
 - **Role:** Zigbee coordinator (feeds Home Assistant)
+
+### Front Door Smart Lock — Yale digital door lock
+- **Role:** Front entry lock (mortise-style, recessed into aluminium door)
+- **Vendor:** Yale (ASSA ABLOY) · fascia branding `www.yalelock.com`
+- **Model:** *unconfirmed* — serial/model sticker photo was too blurred to read.
+  Physical form (lever handle, glass PIN keypad, APAC/NZ market) is consistent
+  with Yale's YDM / mortise digital-lock family; confirm from the sticker inside
+  the battery compartment when convenient.
+- **Access methods:** touch PIN keypad + RFID/NFC card reader (`CARD` tap zone)
+- **Interior:** thumb-turn deadbolt override (LOCK / UNLOCK + green button)
+- **Power:** 4× AA (currently IKEA LADDA 1900 NiMH rechargeables)
+- **Connectivity:** ⚠️ **standalone / offline** — the internal comms-module header
+  (visible in the battery bay, alongside the 0/1/2 slide switch and config button)
+  is **empty**. No network module fitted, so the lock is **not** currently on any
+  VLAN or integrated with Home Assistant.
+- **Integration path (future):** fit a compatible Yale network module
+  (Z-Wave / Zigbee → existing Zigbee coordinator, or Wi-Fi → IoT VLAN
+  `10.40.0.0/16`) to bring it into Home Assistant. Requires model confirmation
+  first to source the correct module.
 
 ---
 
