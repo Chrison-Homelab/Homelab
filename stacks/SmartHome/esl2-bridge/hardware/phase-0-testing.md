@@ -76,7 +76,29 @@ Panel NEG ────────────────────┴── 
    hundreds of µs–1 ms), confirm the `10000001` flag.
 4. Only then flash capture firmware and read on the ESP32.
 
+## Phase-0 capture log
+
+**Board:** ESL-2 `V908.14c` (EliteControl), PN `11003`, S/N `502216`. Plugpack-DC powered
+(switching supply on board) — **no mains on the PCB**.
+
+**Keypad-bus terminal order (top → bottom):** `D` · `C` · `N` · `P`.
+
+**Measured on the `KEYPAD BUS` block (black probe on `N`, DC volts), 2026-07-19:**
+
+| Screw | Reading | Role | Notes |
+|-------|---------|------|-------|
+| `D` (DAT) | **4.63 V** | signal → tap | idles high ~5 V (active-low) — confirms **5 V logic** |
+| `C` (CLK) | **2.32 V** | signal → tap | ≈½ of 5 V on a DMM ⇒ **clock is free-running (~50% duty)**; constant traffic to capture |
+| `N` (NEG) | **0 V** | ground / ESP32 GND | reference |
+| `P` (POS) | **13.56 V** | aux/battery rail | **do NOT connect to ESP32** |
+
+**Implications:** 5 V bus confirmed → 1.8k/3.3k divider (≈3.24 V out) is correctly sized.
+On this **live security bus**, **18k/33k** is a drop-in alternative (same ~3.24 V out, ~10×
+less load ≈0.1 mA) if minimising bus loading is preferred. Free-running clock means capture
+can start any time without forcing keypad traffic.
+
 ## ⚠️ Safety
 
 Live security panel — **read-only tap only**; never disrupt its own monitoring/dialler.
-Sample DAT on CLK falling edge, DAT active-low (firmware note).
+Sample DAT on CLK falling edge, DAT active-low (firmware note). **Continuity mode injects
+test current — never use it on the powered bus; DC-volts only.**
