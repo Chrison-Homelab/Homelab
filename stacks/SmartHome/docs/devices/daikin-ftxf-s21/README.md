@@ -10,8 +10,8 @@ ESP32-C6** running **ESPHome**, instead of an open-loop IR blaster.
 > fire-and-forget: HA never knows the unit's *actual* mode/setpoint, and it drifts
 > the moment anyone touches the handset — which is exactly the unreliability we hit
 > before. Daikin is the one brand where a **wired** tap is easy, so this unit gets
-> the good path. (Upstairs is **Mitsubishi** → a *different* wired route, see
-> [below](#the-upstairs-unit-is-different-mitsubishi--cn105).)
+> the good path. (Upstairs is **Mitsubishi Heavy Industries** → a *different* wired
+> route, see [below](#the-upstairs-unit-is-different-mhi--cns).)
 
 ## Why the S21 route works here
 
@@ -65,15 +65,21 @@ Daikin FTXF50 ──S21 (5V UART)──▶ level shifter ──3.3V──▶ XIA
 - **Transport:** ESPHome **native API** (not MQTT) — HA auto-discovers the node.
   No broker dependency, though it *could* publish to CT 6000 if ever wanted.
 
-## The upstairs unit is different (Mitsubishi → CN105)
+## The upstairs unit is different (MHI → CNS)
 
-Per [`../../devices.md`](../../devices.md) the **upstairs** AC is **Mitsubishi** —
-that does **not** use S21. Its wired-local route is the **CN105** connector with
-[`esphome-mitsubishiheatpump`](https://github.com/geoffdavis/esphome-mitsubishiheatpump)
-(no level shifter needed — CN105 is 5 V but the component drives it directly via a
-5 V-tolerant path / the common PAC-USWHS002 pigtail). So the "**one XIAO C6 per
-unit**" plan holds — just a different component + connector on each end. That build
-gets its own device doc when we tackle it; this doc is Daikin-only.
+Per [`../../devices.md`](../../devices.md) the **upstairs** AC is **Mitsubishi Heavy
+Industries (MHI)** — a *different company* from Mitsubishi Electric, with a different
+protocol. It uses **neither** S21 **nor** the Mitsubishi Electric CN105. MHI
+SRK-series units expose a **CNS** connector (5-pin JST XH, 2.5 mm pitch) speaking an
+**SPI** protocol (the AC is SPI master, the ESP is slave), tapped by
+[`ginkage/MHI-AC-Ctrl-ESPHome`](https://github.com/ginkage/MHI-AC-Ctrl-ESPHome)
+(the ESPHome port of [`absalom-muc/MHI-AC-Ctrl`](https://github.com/absalom-muc/MHI-AC-Ctrl);
+there's even an open [MHI-AC-Ctrl PCB](https://olliver.gitlab.io/MHI-AC-Ctrl_PCB/), the
+MHI equivalent of Faikin). So the "**one XIAO C6 per unit**" plan still holds — same
+outcome (local ESPHome climate entity, no cloud), just a different component +
+connector than the Daikin. ⚠️ **MHI gotcha:** a failed handshake can lock the AC's
+internal bus until you cut mains at the breaker for ~30 s. That build gets its own
+device doc when we tackle it; this doc is Daikin-only.
 
 ## Plan / checklist
 
