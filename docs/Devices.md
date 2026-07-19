@@ -103,10 +103,9 @@ APs live on the **Network Devices** VLAN (10.0.0.0/16).
 ### Front Door Smart Lock — Yale digital door lock
 - **Role:** Front entry lock (mortise-style, recessed into aluminium door)
 - **Vendor:** Yale (ASSA ABLOY) · fascia branding `www.yalelock.com`
-- **Model:** *unconfirmed* — serial/model sticker photo was too blurred to read.
-  Physical form (lever handle, glass PIN keypad, APAC/NZ market) is consistent
-  with Yale's YDM / mortise digital-lock family; confirm from the sticker inside
-  the battery compartment when convenient.
+- **Model:** **YDM3109+** (confirmed — engraved on the interior escutcheon).
+  Yale's ANZ "Assure" mortise digital lock. Shares the network-module slot and
+  accessories with the 3109A / 4109+ / 4109A.
 - **Access methods:** touch PIN keypad + RFID/NFC card reader (`CARD` tap zone)
 - **Interior:** thumb-turn deadbolt override (LOCK / UNLOCK + green button)
 - **Power:** 4× AA (currently IKEA LADDA 1900 NiMH rechargeables)
@@ -114,10 +113,17 @@ APs live on the **Network Devices** VLAN (10.0.0.0/16).
   (visible in the battery bay, alongside the 0/1/2 slide switch and config button)
   is **empty**. No network module fitted, so the lock is **not** currently on any
   VLAN or integrated with Home Assistant.
-- **Integration path (future):** fit a compatible Yale network module
-  (Z-Wave / Zigbee → existing Zigbee coordinator, or Wi-Fi → IoT VLAN
-  `10.40.0.0/16`) to bring it into Home Assistant. Requires model confirmation
-  first to source the correct module.
+- **Integration path (future):** the YDM3109+ takes a slot-in Yale network module.
+  Options (see `docs/adr` / Backlog for the decision):
+  - **Zigbee module (red, YRD-ZBM-1)** — *preferred*. Pairs to the **existing
+    Zigbee coordinator** (`tube-zb-gw`) → local ZHA/Zigbee2MQTT, no cloud, no
+    extra hub. ~NZ$120–180. Zigbee is 2.4 GHz worldwide (region-agnostic).
+  - **Z-Wave module (green, RFHX-YZW51-00)** — similar price but needs a Z-Wave
+    controller we don't run today, and is region-locked (NZ 921.4 MHz). Skip
+    unless we adopt Z-Wave for other reasons.
+  - **Yale Home / Smart module (YDM-YA-1, Bluetooth) + Connect Wi-Fi bridge** —
+    cloud-dependent (Yale Home HA integration), ~NZ$300+ kit, would land on IoT
+    VLAN `10.40.0.0/16`. Least aligned with the local-first philosophy.
 
 ---
 
