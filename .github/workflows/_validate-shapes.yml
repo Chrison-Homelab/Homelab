@@ -18,7 +18,7 @@ name: _validate-shapes
 #     shapes:
 #       uses: Chrison-dev/Homelab/.github/workflows/_validate-shapes.yml@main
 #       secrets:
-#         schema-token: ${{ secrets.SCHEMA_RO_PAT }}   # PAT: contents:read on Chrison-dev/Homelab
+#         schema_token: ${{ secrets.SCHEMA_RO_PAT }}   # PAT: contents:read on Chrison-dev/Homelab
 #
 # The full-fidelity gate stays the superproject's `validate-shapes.yml`
 # (./build.sh ValidateShapes) — this is the lightweight, early-feedback mirror.
@@ -37,8 +37,8 @@ on:
         type: string
         default: '.'
     secrets:
-      schema-token:
-        description: 'PAT with contents:read on the private Chrison-dev/Homelab repo (to download the release asset).'
+      schema_token:
+        description: 'PAT with contents:read on the private Chrison-dev/Homelab repo (to download the release asset). GitHub secret ids allow only alphanumerics + underscore — no hyphen.'
         required: true
 
 jobs:
@@ -50,7 +50,7 @@ jobs:
 
       - name: Download the pinned portable validator
         env:
-          GH_TOKEN: ${{ secrets.schema-token }}
+          GH_TOKEN: ${{ secrets.schema_token }}
         run: |
           set -euo pipefail
           mkdir -p .validator
