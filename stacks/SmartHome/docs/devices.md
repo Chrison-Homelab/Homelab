@@ -43,6 +43,7 @@ Zigbee / cloud / IR devices that never hold a Wi-Fi lease). Annotate the human b
 | Xiaomi Smart Home Hub 2 | Multi-protocol hub | _TODO_ | _TODO_ — Zigbee/BLE/IR ([notes →](devices/xiaomi-smart-home-hub-2/)) | **⚠️ detect** (Wi-Fi) | _TODO_ | Alt Zigbee/BLE hub; not the local-first BLE relay | _owned_ |
 | Leapmotor C10 | EV (telemetry) | Driveway | Leapmotor Mate (CT 4100) → MQTT → HA | _(cloud API)_ | — | VIN `LFZ93AN93SD112595`; incl. Digital Key | _owned_ |
 | **Arrowhead ESL-2** | Alarm panel | whole-house | **RE in progress** — keypad-bus → ESP32 → MQTT → HA ([docs →](devices/arrowhead-esl-2/)) | _not IP (serial/keypad bus)_ | — | ELITE-S; **discontinued/abandonware** | _owned_ |
+| **Doorworks GDC6** | Garage-door opener | Garage | **build in progress** — dry-contact + reed → ESP8266/ESPHome → HA `cover` ([docs →](devices/doorworks-gdc6/)) | IoT 1040 (planned) | — | Dumb opener (no cloud/API); DIY ESP fleet build | _owned_ |
 
 > **Not smart-home devices** (seen in HA/UniFi but infra): the "AC LR (…)" entries are
 > **UniFi U7LR access points** (not air-con), "USW Flex Mini" are UniFi switches, plus the
@@ -63,6 +64,7 @@ Devices with their own reverse-engineering / integration notes live under [`devi
 
 - [`daikin-ftxf-s21/`](devices/daikin-ftxf-s21/) — Downstairs Daikin FTXF50 (Cora): local, bidirectional HA climate via the **S21 port** (XIAO ESP32-C6 + ESPHome) instead of IR — incl. wiring, [BOM + level-shifter](devices/daikin-ftxf-s21/hardware/) and a ready [ESPHome config](devices/daikin-ftxf-s21/esphome-daikin-downstairs.yaml.example).
 - [`arrowhead-esl-2/`](devices/arrowhead-esl-2/) — Arrowhead ESL-2 alarm panel: local HA integration via keypad-bus tap (ESP32), incl. the full [RS232 protocol reference](devices/arrowhead-esl-2/rs232-protocol.md).
+- [`doorworks-gdc6/`](devices/doorworks-gdc6/) — Doorworks GDC6 garage-door opener: dumb-opener → HA `cover` via ESP8266/ESPHome (dry-contact trigger + reed-switch state); staged build plan.
 - [`tube-zb-gw-efr32/`](devices/tube-zb-gw-efr32/) — TubesZB Zigbee coordinator (ESP32 + EFR32, PoE): access/handbook, the OEM-clone finding, the `Esp_Bluetooth` HA-flood incident, and the Z2M/XZG plans.
 - [`xiaomi-lywsd03mmc/`](devices/xiaomi-lywsd03mmc/) — Xiaomi LYWSD03MMC BLE thermometers: the "HA has no Bluetooth" root cause, pvvx/BTHome flashing, HW-B1.6 caveat, and BLE-proxy relay options.
 - [`xiaomi-smart-home-hub-2/`](devices/xiaomi-smart-home-hub-2/) — Xiaomi Hub 2 (Zigbee/BLE/IR): integration options + why it isn't the local-first BLE relay yet.
