@@ -1,0 +1,68 @@
+name: _validate-shapes
+
+# Phase 0 / ADR-0008 — OPT-IN, reusable shape validation for standalone
+# Homelab.Stacks.* repos.
+#
+# A stack repo calls this from its own PR workflow; it downloads the pinned
+# PORTABLE validator from the Homelab `schema-v1` release and runs the SAME C#
+# engine `validate` over the repo's shapes — on ubuntu-latest, with no .NET SDK,
+# no private package feeds and no self-hosted runner. The validator skips any
+# YAML that isn't a `apiVersion: homelab/v1` shape (CI, compose, .env), so
+# pointing it at the repo root is safe.
+#
+# Caller example (in e.g. Homelab.Stacks.SmartHome/.github/workflows/validate.yml):
+#
+#   name: validate
+#   on: { pull_request: {}, workflow_dispatch: {} }
+#   jobs:
+#     shapes:
+#       uses: Chrison-dev/Homelab/.github/workflows/_validate-shapes.yml@main
+#       secrets:
+#         schema-token: ${{ secrets.SCHEMA_RO_PAT }}   # PAT: contents:read on Chrison-dev/Homelab
+#
+# The full-fidelity gate stays the superproject's `validate-shapes.yml`
+# (./build.sh ValidateShapes) — this is the lightweight, early-feedback mirror.
+
+on:
+  workflow_call:
+    inputs:
+      schema-ref:
+        description: 'Homelab release tag to pin the validator to (default: the moving schema-v1 channel).'
+        required: false
+        type: string
+        default: schema-v1
+      shapes-path:
+        description: 'Path within the calling repo to validate (recursive; default: repo root).'
+        required: false
+        type: string
+        default: '.'
+    secrets:
+      schema-token:
+        description: 'PAT with contents:read on the private Chrison-dev/Homelab repo (to download the release asset).'
+        required: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the calling stack repo
+        uses: actions/checkout@v6
+
+      - name: Download the pinned portable validator
+        env:
+          GH_TOKEN: ${{ secrets.schema-token }}
+        run: |
+          set -euo pipefail
+          mkdir -p .validator
+          gh release download "${{ inputs.schema-ref }}" \
+            --repo Chrison-dev/Homelab \
+            --pattern 'homelab-validate-linux-x64.tar.gz' \
+            --dir .validator
+          tar -C .validator -xzf .validator/homelab-validate-linux-x64.tar.gz
+          chmod +x .validator/homelab-infra
+          # Sanity: the schema must sit beside the binary (engine resolves it from
+          # AppContext.BaseDirectory).
+          test -f .validator/schema/shape.schema.json
+
+      - name: Validate shapes (engine `validate`, apiVersion-gated)
+        run: .validator/homelab-infra validate "${{ inputs.shapes-path }}"

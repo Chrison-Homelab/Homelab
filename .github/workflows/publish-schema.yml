@@ -10,6 +10,10 @@ name: publish-schema
 #                                            validator, made portable; runs anywhere,
 #                                            no .NET SDK / private feeds / self-hosted)
 #
+# INTERIM (#275): the packaging + `gh release` steps below are hand-rolled in
+# shell only because Fallout has no native publish/release capability yet. Once
+# it does, this shrinks to `./build.sh <target>` (like validate-shapes.yml).
+#
 # VERSIONING — tracks the shapes' apiVersion (homelab/v1):
 #   - `schema-v1` is a MOVING channel refreshed on every relevant main push.
 #     Consumers pin `@schema-v1` (breaking contract change → a new `schema-v2`).
