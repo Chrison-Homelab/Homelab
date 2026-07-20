@@ -12,7 +12,8 @@ Leapmotor Mate (CT 4100, IoT 1040) ──publish──▶  Mosquitto (CT 6000, I
 ## Members
 
 CTID block **6000–6099** for LXC members (declared in [`stack.yaml`](stack.yaml)).
-Home Assistant is an **adopted, out-of-block VM** (legacy VMID 2000) — see below.
+Home Assistant (VMID 2000) and Leapmotor Mate (CT 4100) are **adopted, out-of-block
+members** kept at their live IDs — see below.
 
 | ID | Member | Kind | Net | Role | Status |
 |----|--------|------|-----|------|--------|
@@ -20,6 +21,7 @@ Home Assistant is an **adopted, out-of-block VM** (legacy VMID 2000) — see bel
 | 6001 | [matter-server](matter-server.lxc.yaml) | Docker host | IoT 1040 · `10.40.62.181` | Matter/Thread controller (ex-HA add-on) | ✅ live |
 | 6002 | [aircast](aircast.lxc.yaml) | Docker host | IoT 1040 · `10.40.147.133` | Chromecast→AirPlay bridge (ex-HA add-on) | ✅ live |
 | 6003 | [esphome](esphome.lxc.yaml) | LXC (native) | IoT 1040 · `10.40.60.203` (reserved) | ESP firmware dashboard/builder (ex-HA add-on) | ✅ live (#251) |
+| 4100 | [leapmotor-mate](leapmotor-mate.lxc.yaml) | Docker host | IoT 1040 · `10.40.169.225` (reserved) | Leapmotor C10 companion → publishes to the broker | 🔎 **adopted in-place, out-of-block** |
 | 2000 | [homeassistant](homeassistant.vm.yaml) | VM (HAOS) | legacy `192.168.179.102` (+ idle IoT NIC) | The hub / consumer | 🔎 **adopted, describe-only** |
 
 ## Extracted-from-HA members (matter-server, aircast)
@@ -71,7 +73,8 @@ The broker's IP is **DHCP-reserved** (`10.40.26.247`) so clients have a stable a
   IoT VLAN is firewalled off from 1010). Enable in Mate → Settings → MQTT:
   broker `10.40.26.247:1883`, user `leapmotor`, discovery **on** (prefix
   `homeassistant`). Mate publishes state to `leapmotor/<VIN>/…` and HA-discovery
-  configs to `homeassistant/sensor/…`.
+  configs to `homeassistant/sensor/…`. See [`leapmotor-mate/`](leapmotor-mate/README.md)
+  for the app itself — the dedicated-account requirement + first-run cert wizard.
 - **Home Assistant (VM 2000)** — reaches the broker over its legacy NIC (legacy →
   1040 routes fine). **Manual step:** Settings → Devices & Services → Add
   Integration → **MQTT** → broker `10.40.26.247`, port `1883`, user
@@ -111,4 +114,7 @@ config/state restores from an **HA backup** (not from this shape).
 |------|---------|
 | `stack.yaml` | Stack defaults + CTID block (6000–6099), IoT VLAN 1040. |
 | `mqtt.lxc.yaml` | Mosquitto broker — CT 6000. |
+| `matter-server.lxc.yaml` · `aircast.lxc.yaml` · `esphome.lxc.yaml` | The ex-HA-add-on members (CT 6001–6003). |
+| `leapmotor-mate.lxc.yaml` | Adopted Docker-host LXC (CT 4100, out-of-block) — the C10 companion. |
+| `leapmotor-mate/` | Its compose + certs + `.env.example` + service README. |
 | `homeassistant.vm.yaml` | Adopted HAOS VM (2000) — describe-only. |
