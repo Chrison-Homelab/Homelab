@@ -38,8 +38,8 @@ Zigbee / cloud / IR devices that never hold a Wi-Fi lease). Annotate the human b
 | Nest Protect | Smoke/CO alarm | _TODO_ | _TODO_ (Nest) | IoT · `10.40.2.131` | `d8:c8:0c:b0:9e:28` | Nest Protect | _owned_ |
 | Meross Smart Plug | Smart plug | Garage | `meross_lan` (local) | IoT · `10.40.170.241` | `48:e1:e9:dd:88:d9` | Meross `mss310` | _owned_ |
 | Samsung Washer | Appliance | Laundry | SmartThings | IoT · `10.40.84.50` | `50:fd:d5:85:6c:92` | Samsung `DA_WM_TP2_20` | _owned_ |
-| Xiaomi Temp & Humidity Monitor 2 ×2 | BLE temp/humidity | _TODO_ | **planned** — pvvx/BTHome + BLE proxy ([options →](devices/xiaomi-lywsd03mmc/)) | _not IP (BLE, battery)_ | — | `LYWSD03MMC`; blocked — **HA has no BT**; check HW rev (B1.6 = unflashable) | _owned (2026-07-18)_ |
-| **Tube's ZB Gateway** | Zigbee coordinator (+ BLE gw, disabled) | Garage | **ZHA** today (`socket://…:6638`); → Z2M planned ([docs →](devices/tube-zb-gw-efr32/)) | legacy · `192.168.179.222` → **move to IoT 1040** | `20:43:a8:c7:62:b3` | OEM "藏机/Cangji" TubesZB `efr32-MGM210-poe` clone; web login `cangji`/`cangji` (in BW); ⚠️ `Esp_Bluetooth` off | _owned_ |
+| Xiaomi Temp & Humidity Monitor 2 ×2 | BLE temp/humidity | _TODO_ | ✅ **pvvx `ATC_v58` → BTHome v2** (unencrypted) → HA via Tube-gw BLE proxy ([done →](devices/xiaomi-lywsd03mmc/)) | _not IP (BLE, battery)_ | `A4:C1:38:1F:09:C0`, `A4:C1:38:20:6E:6B` | `LYWSD03MMC` **HW B1.4**; flashed 2026-07-20 (`ATC_1F09C0` / `ATC_206E6B`); Mi keys in BW | _owned (2026-07-18)_ |
+| **Tube's ZB Gateway** | Zigbee coordinator **+ BLE proxy (ON)** | Garage | **ZHA** today (`socket://…:6638`); → Z2M planned ([docs →](devices/tube-zb-gw-efr32/)) | legacy · `192.168.179.222` → **move to IoT 1040** | `20:43:a8:c7:62:b3` | OEM "藏机/Cangji" TubesZB `efr32-MGM210-poe` clone; web login `cangji`/`cangji` (in BW); ⚠️ `Esp_Bluetooth` **ON since 2026-07-20** as the LYWSD03MMC BLE proxy — *prev flooded HA ×2, monitor* | _owned_ |
 | Xiaomi Smart Home Hub 2 | Multi-protocol hub | _TODO_ | _TODO_ — Zigbee/BLE/IR ([notes →](devices/xiaomi-smart-home-hub-2/)) | **⚠️ detect** (Wi-Fi) | _TODO_ | Alt Zigbee/BLE hub; not the local-first BLE relay | _owned_ |
 | Leapmotor C10 | EV (telemetry) | Driveway | Leapmotor Mate (CT 4100) → MQTT → HA | _(cloud API)_ | — | VIN `LFZ93AN93SD112595`; incl. Digital Key | _owned_ |
 | **Arrowhead ESL-2** | Alarm panel | whole-house | **RE in progress** — keypad-bus → ESP32 → MQTT → HA ([docs →](devices/arrowhead-esl-2/)) | _not IP (serial/keypad bus)_ | — | ELITE-S; **discontinued/abandonware** | _owned_ |
@@ -74,8 +74,12 @@ Devices with their own reverse-engineering / integration notes live under [`devi
 - **Tube's ZB Gateway** (`192.168.179.222`) — on the **legacy** net; move to **IoT 1040** + DHCP-reserve before any Z2M cutover (see [deep-dive](devices/tube-zb-gw-efr32/)).
 - **Consumer/media devices on the legacy net** (Echoes, Apple TV, Philips TV, Sony TV) — still on legacy `192.168.178/9`, not segmented onto **Consumer 1020** or **IoT 1040**. Tidy-up candidate.
 - **Xiaomi Hub 2** — power on + find on UniFi (Wi-Fi), DHCP-reserve, record model/MAC ([notes](devices/xiaomi-smart-home-hub-2/)).
-- **Xiaomi thermometers** — check HW revision (B1.6 = can't flash pvvx) before deciding the integration path ([options](devices/xiaomi-lywsd03mmc/)).
-- **BLE into HA is unsolved** — HAOS has no Bluetooth radio; a **BLE proxy** (dedicated ESP32/ESPHome — see [`esp-fleet.md`](esp-fleet.md)) is the prerequisite for the thermometers and any future BLE device. ⚠️ The Tube gw's `Esp_Bluetooth` BLE-gateway mode is **not** a safe substitute — it flooded HA offline twice ([details](devices/tube-zb-gw-efr32/#-esp_bluetooth-switch--ble-gateway-mode--it-can-take-ha-down)); left OFF.
+- _Resolved 2026-07-20:_ ~~**Xiaomi thermometers** — check HW revision~~ → **B1.4**, both flashed **pvvx `ATC_v58` → BTHome v2** and in HA ([done](devices/xiaomi-lywsd03mmc/)).
+- **BLE into HA — interim-solved 2026-07-20.** HAOS has no Bluetooth radio; the thermometers now
+  reach HA via the **Tube gw's `Esp_Bluetooth` BLE-proxy** — re-enabled and working, but ⚠️ this mode
+  **flooded HA offline twice before** ([details](devices/tube-zb-gw-efr32/#-esp_bluetooth-switch--ble-gateway-mode--it-can-take-ha-down)),
+  so **monitor it**. The durable relay is still a **dedicated ESP32/ESPHome `bluetooth_proxy`**
+  (see [`esp-fleet.md`](esp-fleet.md), #251) — the graduation path if the gateway proxy misbehaves.
 - _Resolved 2026-07-18:_ ~~"Tuya device" `10.40.169.147`~~ → Alen air purifier; ~~"Unknown" `10.40.2.131`~~ → Nest Protect.
 
 ## Related docs
