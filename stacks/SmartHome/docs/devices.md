@@ -20,8 +20,8 @@ Zigbee / cloud / IR devices that never hold a Wi-Fi lease). Annotate the human b
 | Device | Type | Room | Integration | VLAN · IP | MAC | Model / notes | Purchased |
 |--------|------|------|-------------|-----------|-----|---------------|-----------|
 | Yeelight lights | Lights | _TODO_ | Yeelight / `xiaomi_home` | IoT (Lamp4 = `10.40.18.24`) | `58:b6:23:47:0e:79` (Lamp4) | ⚠️ **verify** — HA lists 7 (`lamp4`/`color3`/`color5`/`mono6`/`monoa`) but **most didn't survive the move**; confirm which are actually alive | _owned (partial)_ |
-| AC — Master Bedroom (upstairs) | Air conditioner | Master Bedroom | planned — SmartIR via Broadlink (IR) | _(IR, not IP)_ | — | **Mitsubishi**; **not set up yet** (IR blaster not installed) | _owned_ |
-| AC — 2nd unit | Air conditioner | _TODO_ | planned — SmartIR via Broadlink (IR) | _(IR)_ | — | model **TBC**; **not set up yet** (IR blaster not installed) | _owned_ |
+| AC — Master Bedroom (upstairs) | Air conditioner | Master Bedroom | planned — **wired CNS** (MHI-AC-Ctrl-ESPHome) *or* IR fallback | _(CNS serial / or IR)_ | — | **Mitsubishi Heavy Industries (MHI) SRK-ZSA "Bronte"** R32 inverter — *not* Mitsubishi Electric (remote **RLA502A720** → SRK20/25/35/50ZSA-W family; exact kW **TBC** from the outdoor `SRC…` nameplate). Wired route = CNS/SPI, not Daikin S21 or Mits-Electric CN105. **Not set up yet** | _owned_ |
+| AC — Downstairs | Air conditioner | Downstairs | **planned — S21 wired** (XIAO ESP32-C6 + ESPHome) ([docs →](devices/daikin-ftxf-s21/)) | IoT 1040 · `_TODO_` (C6, Wi-Fi) | — | **Daikin FTXF50TVMA** (Cora, 5.0 kW; ser. `E009281`). **Not IR** — taps the S21 port for local bidirectional control | _owned_ |
 | Sony Bravia KD-49XF7596 | TV / cast | Lounge | `braviatv` + Cast (→ AirCast CT 6002) | legacy · `192.168.179.132` | `d8:9c:67:cb:42:eb` | Sony Android TV (Chromecast built-in); one device, multiple integrations — **move to IoT 1040** | _owned_ |
 | Philips Android TV | TV / cast | Master Bedroom | Android TV / Cast | legacy · `192.168.178.208` | `84:3e:1d:6c:bf:a2` | **TPV / TP Vision** "2020 FHD Android TV" (= Philips) — OUI Gaoshengda ODM | _owned_ |
 | Apple TV 4K (gen 3) | Media / HomeKit-Matter hub | Master Bedroom | `apple_tv` | legacy · `192.168.178.71` | `c4:f7:c1:51:61:76` | Apple | _owned_ |
@@ -61,6 +61,7 @@ coordinator; the XZG firmware move (#259) is still compatible (same socket). ESP
 
 Devices with their own reverse-engineering / integration notes live under [`devices/`](devices/):
 
+- [`daikin-ftxf-s21/`](devices/daikin-ftxf-s21/) — Downstairs Daikin FTXF50 (Cora): local, bidirectional HA climate via the **S21 port** (XIAO ESP32-C6 + ESPHome) instead of IR — incl. wiring, [BOM + level-shifter](devices/daikin-ftxf-s21/hardware/) and a ready [ESPHome config](devices/daikin-ftxf-s21/esphome-daikin-downstairs.yaml.example).
 - [`arrowhead-esl-2/`](devices/arrowhead-esl-2/) — Arrowhead ESL-2 alarm panel: local HA integration via keypad-bus tap (ESP32), incl. the full [RS232 protocol reference](devices/arrowhead-esl-2/rs232-protocol.md).
 - [`tube-zb-gw-efr32/`](devices/tube-zb-gw-efr32/) — TubesZB Zigbee coordinator (ESP32 + EFR32, PoE): access/handbook, the OEM-clone finding, the `Esp_Bluetooth` HA-flood incident, and the Z2M/XZG plans.
 - [`xiaomi-lywsd03mmc/`](devices/xiaomi-lywsd03mmc/) — Xiaomi LYWSD03MMC BLE thermometers: the "HA has no Bluetooth" root cause, pvvx/BTHome flashing, HW-B1.6 caveat, and BLE-proxy relay options.
@@ -81,7 +82,7 @@ Devices with their own reverse-engineering / integration notes live under [`devi
 ## Notes
 - **Integrations at a glance:** Zigbee → **ZHA** (via Tube gw); Matter → matter-server (CT 6001);
   MQTT → broker (CT 6000); Chromecast → AirCast (CT 6002); the C10 → Mate (CT 4100); Tuya/Meross/
-  SmartThings/Tapo/Alexa/Nest → their own integrations; IR → Broadlink RM4 mini + SmartIR (**planned** — blaster not installed yet; controls the two ACs).
+  SmartThings/Tapo/Alexa/Nest → their own integrations; IR → Broadlink RM4 mini + SmartIR (**planned** — blaster not installed yet). **ACs split by brand:** the **downstairs Daikin** goes **wired S21 + ESPHome** (not IR — [docs](devices/daikin-ftxf-s21/)); the **upstairs Mitsubishi Heavy Industries** unit → **wired CNS** (MHI-AC-Ctrl-ESPHome, SPI) or IR fallback (TBD).
 - The SmartHome **services** themselves (broker/matter/aircast/HA) live in
   [`../README.md`](../README.md), not here.
 </content>
