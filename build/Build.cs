@@ -33,6 +33,12 @@ class Build : FalloutBuild
     AbsolutePath EngineProject => RootDirectory / "Infrastructure" / "engine";
     AbsolutePath EngineDll => EngineProject / "bin" / "Release" / "net10.0" / "homelab-infra.dll";
 
+    // Portable validator artifact (Phase 0 / ADR-0008): the SAME engine published as a
+    // self-contained linux-x64 single-file binary + shape.schema.json beside it, so a
+    // standalone stack repo's CI can run `homelab-infra validate <dir>` with no .NET SDK,
+    // no private feeds and no self-hosted runner (published by publish-schema.yml).
+    AbsolutePath ValidatorPublish => RootDirectory / "publish" / "validator";
+
     // PowerOrchestrator (tools/PowerOrchestrator, #191) — a long-running .NET service
     // deployed as a systemd unit ON the nuc-01 node, NOT a converge-able LXC/VM stack.
     // So it gets its own build/test/publish/deploy targets here rather than going
@@ -90,6 +96,17 @@ class Build : FalloutBuild
             Engine($"validate {RootDirectory / "Infrastructure"}");
             Engine($"validate {StacksDirectory}");
         });
+
+    Target PublishValidator => _ => _
+        .Description("Publish the engine's validator as a self-contained linux-x64 single-file binary (+ schema beside) into publish/validator/ — the portable artifact for standalone stack-repo CI (ADR-0008).")
+        .Executes(() =>
+            ProcessTasks
+                .StartProcess(
+                    "dotnet",
+                    $"publish {EngineProject} -c Release -r linux-x64 --self-contained true " +
+                    $"-p:PublishSingleFile=true -p:DebugType=none -o {ValidatorPublish}",
+                    workingDirectory: RootDirectory)
+                .AssertZeroExitCode());
 
     Target Preview => _ => _
         .Description("Dry-run converge for --stack (diff desired vs live; no mutation).")

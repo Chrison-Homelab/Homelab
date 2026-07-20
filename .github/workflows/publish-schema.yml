@@ -1,0 +1,107 @@
+name: publish-schema
+
+# Phase 0 / ADR-0008 — publish the shape contract + a PORTABLE validator so
+# standalone Homelab.Stacks.* repos can validate their own shapes in CI.
+#
+# Publishes two assets to a GitHub Release:
+#   - shape.schema.json                     (the canonical contract, for humans/tools)
+#   - homelab-validate-linux-x64.tar.gz     (the SAME C# engine, self-contained single
+#                                            file + schema beside it — ADR-0001's one
+#                                            validator, made portable; runs anywhere,
+#                                            no .NET SDK / private feeds / self-hosted)
+#
+# VERSIONING — tracks the shapes' apiVersion (homelab/v1):
+#   - `schema-v1` is a MOVING channel refreshed on every relevant main push.
+#     Consumers pin `@schema-v1` (breaking contract change → a new `schema-v2`).
+#   - workflow_dispatch with `version` also cuts an immutable point release
+#     (e.g. `schema-v1.0.0`) for anyone who wants to pin exactly.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Infrastructure/schema/**'
+      - 'Infrastructure/engine/**'
+      - 'build/**'
+      - '.github/workflows/publish-schema.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Optional immutable point release tag (e.g. schema-v1.0.0). Leave blank to only refresh the moving schema-v1 channel.'
+        required: false
+        type: string
+      notes:
+        description: 'Release notes for the point release.'
+        required: false
+        type: string
+
+permissions:
+  contents: write            # create tags + GitHub Releases
+
+jobs:
+  build:
+    # Self-hosted: building the engine restores the cross-org GitHub Packages
+    # feeds (Fallout-build + chrison-dev: ProxmoxSharp/UnifiSharp) — same as
+    # validate-shapes.yml. The PUBLISHED binary needs none of this at runtime.
+    runs-on: [self-hosted, homelab]
+    env:
+      # nuget.config reads the PAT via %GITHUB_PACKAGES_PAT% (GitHub forbids the
+      # reserved GITHUB_ prefix on secret names, so the secret is PACKAGES_PAT).
+      GITHUB_PACKAGES_PAT: ${{ secrets.PACKAGES_PAT }}
+    steps:
+      - uses: actions/checkout@v6
+        # No submodules: the engine + schema are superproject content.
+      - name: Publish the portable validator (self-contained linux-x64 + schema beside)
+        run: ./build.sh PublishValidator
+      - name: Package release assets
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          tar -C publish/validator -czf dist/homelab-validate-linux-x64.tar.gz .
+          cp Infrastructure/schema/shape.schema.json dist/shape.schema.json
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: schema-dist
+          path: dist/
+          retention-days: 7
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest     # gh preinstalled; no build here, just publish
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: schema-dist
+          path: dist
+      - name: Refresh the moving schema-v1 channel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          CHANNEL=schema-v1
+          # Delete + recreate so the tag moves cleanly to this commit.
+          gh release delete "$CHANNEL" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+          gh release create "$CHANNEL" \
+            dist/shape.schema.json \
+            dist/homelab-validate-linux-x64.tar.gz \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Shape contract + validator ($CHANNEL — moving, homelab/v1)" \
+            --notes "Moving channel for \`homelab/v1\` shapes. Pin consumers to \`@$CHANNEL\`. Source commit \`$GITHUB_SHA\`." \
+            --target "$GITHUB_SHA" \
+            --latest=false
+      - name: Cut an immutable point release (dispatch with a version)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.version != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${{ inputs.version }}" \
+            dist/shape.schema.json \
+            dist/homelab-validate-linux-x64.tar.gz \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Shape contract + validator ${{ inputs.version }}" \
+            --notes "${{ inputs.notes || 'Immutable schema + validator release.' }}" \
+            --target "$GITHUB_SHA"
