@@ -93,6 +93,35 @@ force / non-fast-forward pushes, and pushes onto a branch whose PR is already
 MERGED/CLOSED. It auto-installs on `./build.sh`; manual setup is
 `dotnet tool restore && dotnet husky install`.
 
+## Stack submodules (meta-repo model, ADR-0008)
+
+Domain stacks live in their own **`Homelab.Stacks.<Name>`** repos, composed here
+as submodules under `stacks/<Name>`. The engine is unaffected — it loads a stack
+by directory path, so a submodule checkout is discovered exactly like in-tree
+content. Converge/validate authority stays in this superproject; stack repos are
+independently versioned.
+
+### New stack submodule → grant it the schema secret
+
+Each stack repo runs an **opt-in** `validate.yml` (calls the superproject's
+reusable [`_validate-shapes.yml`](.github/workflows/_validate-shapes.yml)), which
+downloads the pinned schema/validator from the private Homelab `schema-v1` release.
+That download needs the **`SCHEMA_RO_PAT`** Actions secret — a fine-grained PAT with
+`contents:read` on `Chrison-dev/Homelab`, stored in Bitwarden as *"Homelab Schema
+Read PAT"*. **Whenever you extract/create a new stack repo, make sure it's in the
+secret's visibility scope**, else its `validate` check fails at the download step:
+
+```bash
+# zero-maintenance: covers every current + future private stack repo
+bw get password "Homelab Schema Read PAT" | gh secret set SCHEMA_RO_PAT --org Chrison-dev --visibility all
+# or tight (must re-run with the new repo appended each time):
+bw get password "Homelab Schema Read PAT" | gh secret set SCHEMA_RO_PAT --org Chrison-dev \
+  --visibility selected --repos Homelab.Stacks.SmartHome,Homelab.Stacks.BuildLab,Homelab.Stacks.<New>
+```
+
+The caller passes it through as `schema_token` (underscore — GitHub secret ids
+forbid hyphens). Setting org secrets needs org-admin; scope the PAT to `contents:read`.
+
 ## Key Commands
 
 ### Testing Scripts Locally (Debian test container)
