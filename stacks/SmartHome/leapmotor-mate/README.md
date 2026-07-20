@@ -11,6 +11,10 @@ Upstream: <https://github.com/ProtossBlaster/leapmotor-mate>
 > client certs. It can break whenever Leapmotor changes their backend — this is
 > a hobby integration, treat it as such.
 
+> Part of the **SmartHome** stack — the CT is declared one level up at
+> [`../leapmotor-mate.lxc.yaml`](../leapmotor-mate.lxc.yaml); see
+> [`../README.md`](../README.md) for the MQTT broker / Home Assistant wiring.
+
 ## How it works
 
 ```
@@ -55,10 +59,12 @@ You upload them in Mate's first-run wizard.
 
 ## Deploy
 
-The CT itself is defined declaratively: `stack.yaml` (stack defaults + CTID
-block 4100–4199) and `leapmotor-mate.lxc.yaml` (a Docker host on CT **4100**,
-Homelab VLAN 1010, internal-only). It's provisioned via community-scripts like
-the rest of the fleet (see `../Infrastructure/deploy/`), then the compose is
+The CT is defined declaratively as a **member of the SmartHome stack**:
+[`../stack.yaml`](../stack.yaml) (stack defaults) and
+[`../leapmotor-mate.lxc.yaml`](../leapmotor-mate.lxc.yaml) (a Docker host on CT
+**4100**, IoT VLAN 1040, internal-only — adopted in-place, outside SmartHome's
+6000-block; see the stack README). It's provisioned via community-scripts like
+the rest of the fleet (see `../../Infrastructure/deploy/`), then the compose is
 layered on. On the resulting LXC:
 
 ```bash
@@ -92,11 +98,10 @@ curl -fsSL -o app.key https://raw.githubusercontent.com/markoceri/leapmotor-cert
 
 ## Files
 
-| Path                       | Purpose                                                   |
-|----------------------------|-----------------------------------------------------------|
-| `stack.yaml`               | Stack defaults + CTID block (4100–4199).                  |
-| `leapmotor-mate.lxc.yaml`  | The LXC definition — Docker host on CT 4100, internal.    |
-| `compose.yml`              | The single-service stack.                                 |
-| `.env.example`             | Runtime knobs — copy to `.env` (gitignored) and fill in.  |
-| `certs/`                   | `app.crt` + `app.key` for mTLS (uploaded in the wizard).  |
-| `data/`                    | Created on first run — SQLite, stored creds, secret key.  |
+| Path                          | Purpose                                                   |
+|-------------------------------|-----------------------------------------------------------|
+| `../leapmotor-mate.lxc.yaml`  | The LXC definition — Docker host on CT 4100 (SmartHome stack root). |
+| `compose.yml`                 | The single-service stack.                                 |
+| `.env.example`                | Runtime knobs — copy to `.env` (gitignored) and fill in.  |
+| `certs/`                      | `app.crt` + `app.key` for mTLS (uploaded in the wizard).  |
+| `data/`                       | Created on first run — SQLite, stored creds, secret key.  |

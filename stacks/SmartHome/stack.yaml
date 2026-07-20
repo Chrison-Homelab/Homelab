@@ -8,6 +8,10 @@
 # Members:
 #   - mqtt (Mosquitto) — CT 6000, native community-scripts install (ct/mqtt.sh).
 #     The broker Leapmotor Mate publishes to and Home Assistant subscribes to.
+#   - leapmotor-mate — CT 4100, Docker host (ct/docker.sh + our compose). The
+#     Leapmotor C10 companion; publishes state + HA-discovery to the mqtt broker
+#     above. ADOPTED IN-PLACE / out-of-block: it's live at 4100 (outside 6000–6099)
+#     and kept there to avoid a redeploy — a documented exception like the HA VM.
 #   - homeassistant — VMID 2000, ADOPTED (see homeassistant.vm.yaml). Legacy-
 #     numbered, describe-only; it predates this stack and its number sits far
 #     from the 6000 block, so it's an explicit out-of-range adopted member (like
@@ -33,7 +37,8 @@ metadata:
 spec:
   ctidRange:
     start: 6000           # fresh block — 1xxx/2xxx/3xxx/4xxx/51xx were taken.
-    end: 6099             # governs newly-allocated LXC members; HA VM 2000 is the adopted exception.
+    end: 6099             # governs newly-allocated LXC members; the adopted out-of-block members
+                          # (HA VM 2000, leapmotor-mate CT 4100) sit outside this range by design.
   defaults:
     node: hpe-01          # co-located with Home Assistant (VM 2000) + Leapmotor (CT 4100).
     source:
