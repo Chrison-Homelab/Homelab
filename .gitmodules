@@ -22,3 +22,6 @@
 [submodule "stacks/Azure"]
 	path = stacks/Azure
 	url = https://github.com/Chrison-dev/Homelab.Stacks.Azure.git
+[submodule "stacks/BuildLab"]
+	path = stacks/BuildLab
+	url = https://github.com/Chrison-dev/Homelab.Stacks.BuildLab.git
