@@ -25,3 +25,6 @@
 [submodule "stacks/SmartHome"]
 	path = stacks/SmartHome
 	url = https://github.com/Chrison-dev/Homelab.Stacks.SmartHome.git
+[submodule "stacks/BuildLab"]
+	path = stacks/BuildLab
+	url = https://github.com/Chrison-dev/Homelab.Stacks.BuildLab.git
