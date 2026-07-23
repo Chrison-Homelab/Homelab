@@ -1,6 +1,3 @@
-[submodule "stacks/Infrastructure"]
-	path = stacks/Infrastructure
-	url = https://github.com/Chrison-dev/Homelab.Stacks.Infrastructure.git
 [submodule "stacks/Komodo"]
 	path = stacks/Komodo
 	url = https://github.com/Chrison-dev/Homelab.Stacks.Komodo.git
