@@ -1,6 +1,6 @@
 # Plan: BL-015 — DevOps stack (Forgejo, runners, Woodpecker)
 
-**Issue:** [#51](https://github.com/Chrison-dev/Homelab/issues/51) (Project #7 "Homelab Backlog") ·
+**Issue:** [#51](https://github.com/Chrison-Homelab/Homelab/issues/51) (Project #7 "Homelab Backlog") ·
 **Relates to:** [BL-013 community-scripts deploy](BL-013-community-scripts-deploy.md),
 [BL-009/010 C#-native IaC](iac-csharp-native.md), [ADR-0001](../adr/ADR-0001-iac-tooling.md)
 **Status:** Planned — 2026-05-31. Schema + shapes + renderer wiring landed and

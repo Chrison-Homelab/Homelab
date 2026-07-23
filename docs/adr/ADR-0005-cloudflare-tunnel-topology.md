@@ -5,8 +5,8 @@
 - **Deciders:** Chris
 - **Relates to:** [ADR-0001](ADR-0001-iac-tooling.md),
   [BL-001 Teleport](../plans/BL-001-teleport.md),
-  Teleport exposure [#117](https://github.com/Chrison-dev/Homelab/issues/117),
-  cloudflared redeploy [#118](https://github.com/Chrison-dev/Homelab/issues/118)
+  Teleport exposure [#117](https://github.com/Chrison-Homelab/Homelab/issues/117),
+  cloudflared redeploy [#118](https://github.com/Chrison-Homelab/Homelab/issues/118)
 
 ## Context
 

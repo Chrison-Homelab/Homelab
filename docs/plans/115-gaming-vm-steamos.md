@@ -1,6 +1,6 @@
 # Plan: #115 — Gaming VM (Bazzite/SteamOS) on desktop-01 with GPU passthrough
 
-**Issue:** [#115](https://github.com/Chrison-dev/Homelab/issues/115) ·
+**Issue:** [#115](https://github.com/Chrison-Homelab/Homelab/issues/115) ·
 **Relates to:** [#57 SynoSharp write path](057-synosharp-write-path.md) (the layered, dry-run-default
 pattern this mirrors), [ADR-0001 shape contract](../adr/), [#113 converge apply](BL-010-converge.md)
 **Status (2026-06-15):** Phases **A–D DONE + L4 DONE**. Both `bazzite` (1003) and the adopted
@@ -93,7 +93,7 @@ Adoption-friendly: reconciling against an **existing** VM (1003) must emit only 
 - `stacks/Gaming/bazzite.vm.yaml` — `kind: VM`, **vmid 1003 (adopted)**, clones the 1002
   passthrough recipe (`hostpci0: 0000:09:00,pcie=1,x-vga=1`).
 - Scaffolded **locally** for now (not yet a submodule repo) — promote to
-  `Chrison-dev/Homelab.Stacks.Gaming` when the shape stabilises.
+  `Chrison-Homelab/Homelab.Stacks.Gaming` when the shape stabilises.
 
 ## Streaming to the MacBook
 

@@ -1,6 +1,6 @@
 # Plan: #57 — SynoSharp write path (SSH-runner → reconciler)
 
-**Issue:** [#57](https://github.com/Chrison-dev/Homelab/issues/57) ·
+**Issue:** [#57](https://github.com/Chrison-Homelab/Homelab/issues/57) ·
 **Relates to:** [ADR-0002 (SynoSharp SSH-runner)](../adr/ADR-0002-synosharp.md),
 [iac-csharp-native plan](iac-csharp-native.md), [BL-013 deploy renderer](BL-013-community-scripts-deploy.md) (the dry-run pattern this mirrors)
 **Status:** Phase A + Phase C done — 2026-06-15. Transport wedge live-verified

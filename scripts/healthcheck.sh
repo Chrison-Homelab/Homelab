@@ -12,7 +12,7 @@
 #   ./scripts/healthcheck.sh -q               # quiet: table only, no hints
 #
 # Remote one-liner (from an always-on node):
-#   bash <(wget -qO- https://raw.githubusercontent.com/Chrison-dev/Homelab/main/scripts/healthcheck.sh)
+#   bash <(wget -qO- https://raw.githubusercontent.com/Chrison-Homelab/Homelab/main/scripts/healthcheck.sh)
 #
 # Exit codes: 0 = all critical hosts up · 1 = a critical host is down.
 #

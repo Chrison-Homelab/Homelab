@@ -4,7 +4,7 @@
 - **Date:** 2026-06-01
 - **Deciders:** Chris
 - **Relates to:** [ADR-0001](ADR-0001-iac-tooling.md), [BL-016 NFS hardening](../plans/BL-016-nfs-hardening.md),
-  build issue [#108](https://github.com/Chrison-dev/Homelab/issues/108), consumer [#105](https://github.com/Chrison-dev/Homelab/issues/105)
+  build issue [#108](https://github.com/Chrison-Homelab/Homelab/issues/108), consumer [#105](https://github.com/Chrison-Homelab/Homelab/issues/105)
 
 ## Context
 

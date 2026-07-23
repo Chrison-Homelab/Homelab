@@ -1,6 +1,6 @@
 # PowerOrchestrator
 
-Demand-driven node power management for the Proxmox fleet ([#191](https://github.com/Chrison-dev/Homelab/issues/191)):
+Demand-driven node power management for the Proxmox fleet ([#191](https://github.com/Chrison-Homelab/Homelab/issues/191)):
 sleep heavy nodes when nobody's using them, wake them on demand. Full-stack C# (`net10.0`),
 dogfooding **ProxmoxSharp** + **UniFiSharp**. The repo's first long-running Generic-Host service.
 

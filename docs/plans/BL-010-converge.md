@@ -1,6 +1,6 @@
 # Plan: BL-010 — Converge: post-create config, dependencies & secrets
 
-**Issue:** [#45](https://github.com/Chrison-dev/Homelab/issues/45) (Project #7 "Homelab Backlog") ·
+**Issue:** [#45](https://github.com/Chrison-Homelab/Homelab/issues/45) (Project #7 "Homelab Backlog") ·
 **Relates to:** [BL-013 community-scripts deploy](BL-013-community-scripts-deploy.md), [BL-009 discover](BL-009-proxmoxsharp-codegen.md), [iac-csharp-native](iac-csharp-native.md), [ADR-0001](../adr/ADR-0001-iac-tooling.md)
 **Status:** Planned — 2026-05-31. Declarative contract landed in the schema; the engine (provisioners + `converge` command) is the build.
 
@@ -43,8 +43,8 @@ The crux: secrets come in **two kinds** — *pre-existing* (`env:`) and **derive
 # forgejo            → config: { rootUrl: https://forgejo.chrison.dev }
 # forgejo-runner     → dependsOn: [forgejo]; config: { runnerLabels: [homelab] }
 #                      secrets: [{ name: runnerToken, valueFrom: { service: { ref: forgejo, action: generate-runner-token } } }]
-# github-runner      → config: { githubOrg: Chrison-dev }
-#                      secrets: [{ name: registrationToken, valueFrom: { provider: { name: github, action: org-runner-token, with: { org: Chrison-dev }, auth: { env: GH_RUNNER_PAT } } } }]
+# github-runner      → config: { githubOrg: Chrison-Homelab }
+#                      secrets: [{ name: registrationToken, valueFrom: { provider: { name: github, action: org-runner-token, with: { org: Chrison-Homelab }, auth: { env: GH_RUNNER_PAT } } } }]
 # cloudflared        → dependsOn: [forgejo]; config: { tunnel: Homelab.Stacks.DevOps, ingress: [...] }
 #                      secrets: [{ name: tunnelToken, valueFrom: { provider: { name: cloudflare, action: tunnel-token, auth: { env: CF_API_TOKEN } } } }]
 ```

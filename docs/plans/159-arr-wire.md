@@ -1,6 +1,6 @@
 # Plan: #159 — `arr-wire` config migration (self-contained, side-by-side)
 
-**Issue:** [#159](https://github.com/Chrison-dev/Homelab/issues/159) ·
+**Issue:** [#159](https://github.com/Chrison-Homelab/Homelab/issues/159) ·
 **Builds on:** [#105 declarative stack](105-arr-declarative-stack.md), [ADR-0006](../adr/ADR-0006-media-stack.md) ·
 **Status:** Building — 2026-06-21 · branch `feat/159-arr-wire`.
 

@@ -67,7 +67,7 @@ Template sketch:
 # ── non-secret: literal, passed through verbatim ──
 PROXMOX_BASE_URL=https://192.168.179.3:8006/api2/json
 PROXMOX_VERIFY_TLS=false
-GH_ORG=Chrison-dev
+GH_ORG=Chrison-Homelab
 ARR_USER=csimon
 
 # ── secret: filled from Secrets Manager (key == env var name) ──

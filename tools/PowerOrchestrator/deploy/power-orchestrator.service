@@ -1,6 +1,6 @@
 [Unit]
 Description=Homelab node power orchestrator (presence/idle → sleep/wake; dry-run by default)
-Documentation=https://github.com/Chrison-dev/Homelab/issues/191
+Documentation=https://github.com/Chrison-Homelab/Homelab/issues/191
 After=network-online.target
 Wants=network-online.target
 

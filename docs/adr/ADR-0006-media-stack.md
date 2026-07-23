@@ -8,7 +8,7 @@
   [#105 declarative *arr stack](../plans/105-arr-declarative-stack.md),
   [BL-013 community-scripts deploy](../plans/BL-013-community-scripts-deploy.md),
   [BL-016 NFS hardening](../plans/BL-016-nfs-hardening.md)
-- **Defers to:** [#106 Komodo + Maintainerr](https://github.com/Chrison-dev/Homelab/issues/106)
+- **Defers to:** [#106 Komodo + Maintainerr](https://github.com/Chrison-Homelab/Homelab/issues/106)
 
 ## Context
 

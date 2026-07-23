@@ -4,8 +4,8 @@ GPU-passthrough VMs on `desktop-01` — for playing games (streamed to a MacBook
 and for testing **ErpForFactoryGames** against real games under Proton.
 
 > Scaffolded **locally** for now (not yet a submodule). Promote to
-> `Chrison-dev/Homelab.Stacks.Gaming` once the shape stabilises.
-> Plan: [#115](https://github.com/Chrison-dev/Homelab/issues/115) ·
+> `Chrison-Homelab/Homelab.Stacks.Gaming` once the shape stabilises.
+> Plan: [#115](https://github.com/Chrison-Homelab/Homelab/issues/115) ·
 > [`docs/plans/115-gaming-vm-steamos.md`](../../docs/plans/115-gaming-vm-steamos.md).
 
 ## Members

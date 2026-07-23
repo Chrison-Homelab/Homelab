@@ -1,12 +1,12 @@
 [submodule "stacks/Komodo"]
 	path = stacks/Komodo
-	url = https://github.com/Chrison-dev/Homelab.Stacks.Komodo.git
+	url = https://github.com/Chrison-Homelab/Homelab.Stacks.Komodo.git
 [submodule "stacks/DevOps"]
 	path = stacks/DevOps
-	url = https://github.com/Chrison-dev/Homelab.Stacks.DevOps.git
+	url = https://github.com/Chrison-Homelab/Homelab.Stacks.DevOps.git
 [submodule "stacks/ErpForFactoryGames"]
 	path = stacks/ErpForFactoryGames
-	url = https://github.com/Chrison-dev/Homelab.Stacks.ErpForFactoryGames.git
+	url = https://github.com/Chrison-Homelab/Homelab.Stacks.ErpForFactoryGames.git
 [submodule "vendor/ProxmoxSharp"]
 	path = vendor/ProxmoxSharp
 	url = https://github.com/Chrison-dev/ProxmoxSharp.git
@@ -18,10 +18,10 @@
 	url = https://github.com/Chrison-dev/SynoSharp.git
 [submodule "stacks/Azure"]
 	path = stacks/Azure
-	url = https://github.com/Chrison-dev/Homelab.Stacks.Azure.git
+	url = https://github.com/Chrison-Homelab/Homelab.Stacks.Azure.git
 [submodule "stacks/SmartHome"]
 	path = stacks/SmartHome
-	url = https://github.com/Chrison-dev/Homelab.Stacks.SmartHome.git
+	url = https://github.com/Chrison-Homelab/Homelab.Stacks.SmartHome.git
 [submodule "stacks/BuildLab"]
 	path = stacks/BuildLab
-	url = https://github.com/Chrison-dev/Homelab.Stacks.BuildLab.git
+	url = https://github.com/Chrison-Homelab/Homelab.Stacks.BuildLab.git

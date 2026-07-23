@@ -107,15 +107,15 @@ Each stack repo runs an **opt-in** `validate.yml` (calls the superproject's
 reusable [`_validate-shapes.yml`](.github/workflows/_validate-shapes.yml)), which
 downloads the pinned schema/validator from the private Homelab `schema-v1` release.
 That download needs the **`SCHEMA_RO_PAT`** Actions secret — a fine-grained PAT with
-`contents:read` on `Chrison-dev/Homelab`, stored in Bitwarden as *"Homelab Schema
+`contents:read` on `Chrison-Homelab/Homelab`, stored in Bitwarden as *"Homelab Schema
 Read PAT"*. **Whenever you extract/create a new stack repo, make sure it's in the
 secret's visibility scope**, else its `validate` check fails at the download step:
 
 ```bash
 # zero-maintenance: covers every current + future private stack repo
-bw get password "Homelab Schema Read PAT" | gh secret set SCHEMA_RO_PAT --org Chrison-dev --visibility all
+bw get password "Homelab Schema Read PAT" | gh secret set SCHEMA_RO_PAT --org Chrison-Homelab --visibility all
 # or tight (must re-run with the new repo appended each time):
-bw get password "Homelab Schema Read PAT" | gh secret set SCHEMA_RO_PAT --org Chrison-dev \
+bw get password "Homelab Schema Read PAT" | gh secret set SCHEMA_RO_PAT --org Chrison-Homelab \
   --visibility selected --repos Homelab.Stacks.SmartHome,Homelab.Stacks.BuildLab,Homelab.Stacks.<New>
 ```
 

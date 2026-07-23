@@ -5,8 +5,8 @@
 - **Deciders:** Chris
 - **Relates to:** [ADR-0001 IaC tooling](ADR-0001-iac-tooling.md) (establishes "submodules
   declare the *shape*; the hub converges" — this ADR extends that to a first-class
-  composition model), Phase 0 epic [#272](https://github.com/Chrison-dev/Homelab/issues/272),
-  Leapmotor→SmartHome fold [#271](https://github.com/Chrison-dev/Homelab/pull/271)
+  composition model), Phase 0 epic [#272](https://github.com/Chrison-Homelab/Homelab/issues/272),
+  Leapmotor→SmartHome fold [#271](https://github.com/Chrison-Homelab/Homelab/pull/271)
 
 ## Context
 
@@ -73,7 +73,7 @@ their own `Homelab.Stacks.<Name>` repos, composed as submodules at `stacks/<Name
    turning drift into a reviewable PR and removing the manual second PR.
 
 Phase 0 (items 4 + 5, plus the schema publish) is tracked in
-[#272](https://github.com/Chrison-dev/Homelab/issues/272) and **unlocks** the
+[#272](https://github.com/Chrison-Homelab/Homelab/issues/272) and **unlocks** the
 extractions.
 
 ### What qualifies a stack for extraction

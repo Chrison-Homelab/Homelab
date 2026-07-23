@@ -17,7 +17,7 @@
 #   pwsh ./wake-node.ps1 desktop-01 -Port 7         # custom UDP port (default 9)
 #
 # Remote one-liner:
-#   pwsh -c "Invoke-Expression (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/Chrison-dev/Homelab/main/src/Proxmox/wake-node.ps1' -UseBasicParsing).Content" -- desktop-01
+#   pwsh -c "Invoke-Expression (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/Chrison-Homelab/Homelab/main/src/Proxmox/wake-node.ps1' -UseBasicParsing).Content" -- desktop-01
 #
 # Requirements: PowerShell Core (uses .NET UdpClient — no extra packages).
 

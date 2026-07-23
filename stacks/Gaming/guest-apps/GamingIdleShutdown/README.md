@@ -6,7 +6,7 @@ on the shared, RAM-tight desktop-01. When it detects idle it shows a small
 always-on-top **countdown you can Cancel / Snooze / Shut down now**, so it never
 pulls the rug while you're playing (or actively idling).
 
-Story: [#144](https://github.com/Chrison-dev/Homelab/issues/144). Part of the
+Story: [#144](https://github.com/Chrison-Homelab/Homelab/issues/144). Part of the
 Gaming stack's guest-side seam — like [`../../guest-setup/`](../../guest-setup/),
 it's re-installed after a throwaway-OS rebuild; the converge engine doesn't touch
 the guest.
