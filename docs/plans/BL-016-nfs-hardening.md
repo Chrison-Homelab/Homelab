@@ -1,6 +1,6 @@
 # Plan: BL-016 — Harden NFS into containers (host-level, storage-backed mounts)
 
-**Issue:** [#52](https://github.com/Chrison-dev/Homelab/issues/52) (Project #7 "Homelab Backlog") ·
+**Issue:** [#52](https://github.com/Chrison-Homelab/Homelab/issues/52) (Project #7 "Homelab Backlog") ·
 **Relates to:** [BL-010 Converge](iac-csharp-native.md), [BL-013 community-scripts deploy](BL-013-community-scripts-deploy.md), `CLAUDE.md` (NFS-at-host convention)
 **Status:** In progress — first application landed. Pattern decided 2026-05-31;
 **Forgejo (CT 3000) migrated + verified live 2026-06-01** (see "Applied: Forgejo" below).

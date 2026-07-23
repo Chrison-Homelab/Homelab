@@ -6,7 +6,7 @@
 # Automatically creates mount points and persists them in /etc/fstab
 #
 # Usage: 
-#   Direct execution: pwsh -c "Invoke-Expression (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/Chrison-dev/Homelab/main/src/Proxmox/setup-nfs-shares.ps1' -UseBasicParsing).Content"
+#   Direct execution: pwsh -c "Invoke-Expression (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/Chrison-Homelab/Homelab/main/src/Proxmox/setup-nfs-shares.ps1' -UseBasicParsing).Content"
 #   With parameters: pwsh -c "Invoke-Expression (Invoke-WebRequest -Uri '...' -UseBasicParsing).Content" -- -NasIP "192.168.1.100" -NasName "MyNAS"
 #   Local execution: pwsh ./setup-nfs-shares.ps1 -NasIP "192.168.1.100" -NasName "MyNAS"
 #

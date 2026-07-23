@@ -17,7 +17,7 @@
 #   ./wake-node.sh -p 7 desktop-01            # custom UDP port (default 9)
 #
 # Remote one-liner:
-#   bash <(wget -qO- https://raw.githubusercontent.com/Chrison-dev/Homelab/main/src/Proxmox/wake-node.sh) desktop-01
+#   bash <(wget -qO- https://raw.githubusercontent.com/Chrison-Homelab/Homelab/main/src/Proxmox/wake-node.sh) desktop-01
 #
 # Requirements: one of wakeonlan / etherwake / python3 (python3 needs no extra pkg).
 

@@ -102,7 +102,7 @@ is a self-contained service/stack with its own lifecycle. Cross-cutting concerns
 ### Stack conventions
 
 Every `Homelab.Stacks.*` repo follows the same shape (see
-[`ErpForFactoryGames`](https://github.com/Chrison-dev/Homelab.Stacks.ErpForFactoryGames)
+[`ErpForFactoryGames`](https://github.com/Chrison-Homelab/Homelab.Stacks.ErpForFactoryGames)
 as the reference):
 
 - **`compose.yml`** + per-service `*.env` / `stack.env` — the stack itself.

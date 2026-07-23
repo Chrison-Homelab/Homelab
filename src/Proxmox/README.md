@@ -51,16 +51,16 @@ Most scripts can be executed directly from the repository:
 
 ```bash
 # Using curl
-bash <(curl -fsSL https://raw.githubusercontent.com/Chrison-dev/Homelab/main/src/Proxmox/SCRIPT_NAME.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Chrison-Homelab/Homelab/main/src/Proxmox/SCRIPT_NAME.sh)
 
 # Using wget
-bash <(wget -qO- https://raw.githubusercontent.com/Chrison-dev/Homelab/main/src/Proxmox/SCRIPT_NAME.sh)
+bash <(wget -qO- https://raw.githubusercontent.com/Chrison-Homelab/Homelab/main/src/Proxmox/SCRIPT_NAME.sh)
 ```
 
 For PowerShell scripts:
 
 ```bash
-pwsh -c "Invoke-Expression (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/Chrison-dev/Homelab/main/src/Proxmox/SCRIPT_NAME.ps1' -UseBasicParsing).Content"
+pwsh -c "Invoke-Expression (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/Chrison-Homelab/Homelab/main/src/Proxmox/SCRIPT_NAME.ps1' -UseBasicParsing).Content"
 ```
 
 ## Testing

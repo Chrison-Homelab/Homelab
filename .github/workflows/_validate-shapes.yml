@@ -16,9 +16,9 @@ name: _validate-shapes
 #   on: { pull_request: {}, workflow_dispatch: {} }
 #   jobs:
 #     shapes:
-#       uses: Chrison-dev/Homelab/.github/workflows/_validate-shapes.yml@main
+#       uses: Chrison-Homelab/Homelab/.github/workflows/_validate-shapes.yml@main
 #       secrets:
-#         schema_token: ${{ secrets.SCHEMA_RO_PAT }}   # PAT: contents:read on Chrison-dev/Homelab
+#         schema_token: ${{ secrets.SCHEMA_RO_PAT }}   # PAT: contents:read on Chrison-Homelab/Homelab
 #
 # The full-fidelity gate stays the superproject's `validate-shapes.yml`
 # (./build.sh ValidateShapes) — this is the lightweight, early-feedback mirror.
@@ -38,7 +38,7 @@ on:
         default: '.'
     secrets:
       schema_token:
-        description: 'PAT with contents:read on the private Chrison-dev/Homelab repo (to download the release asset). GitHub secret ids allow only alphanumerics + underscore — no hyphen.'
+        description: 'PAT with contents:read on the private Chrison-Homelab/Homelab repo (to download the release asset). GitHub secret ids allow only alphanumerics + underscore — no hyphen.'
         required: true
 
 jobs:
@@ -55,7 +55,7 @@ jobs:
           set -euo pipefail
           mkdir -p .validator
           gh release download "${{ inputs.schema-ref }}" \
-            --repo Chrison-dev/Homelab \
+            --repo Chrison-Homelab/Homelab \
             --pattern 'homelab-validate-linux-x64.tar.gz' \
             --dir .validator
           tar -C .validator -xzf .validator/homelab-validate-linux-x64.tar.gz

@@ -5,10 +5,10 @@
 - **Deciders:** Chris
 - **Relates to:** [ADR-0005 tunnel topology](ADR-0005-cloudflare-tunnel-topology.md)
   (**supersedes its Teleport-front-door decision**, §4–5), [BL-001 Teleport](../plans/BL-001-teleport.md),
-  Teleport exposure [#117](https://github.com/Chrison-dev/Homelab/issues/117),
-  cloudflared redeploy [#118](https://github.com/Chrison-dev/Homelab/issues/118),
-  [#136](https://github.com/Chrison-dev/Homelab/issues/136) (this),
-  [#137](https://github.com/Chrison-dev/Homelab/issues/137) (China VPN — co-tenant of the future VPS stack)
+  Teleport exposure [#117](https://github.com/Chrison-Homelab/Homelab/issues/117),
+  cloudflared redeploy [#118](https://github.com/Chrison-Homelab/Homelab/issues/118),
+  [#136](https://github.com/Chrison-Homelab/Homelab/issues/136) (this),
+  [#137](https://github.com/Chrison-Homelab/Homelab/issues/137) (China VPN — co-tenant of the future VPS stack)
 
 ## Context
 

@@ -1,6 +1,6 @@
 # Plan: BuildLab — Windows 11 dev/build VM (IaC)
 
-**Issue:** [#233](https://github.com/Chrison-dev/Homelab/issues/233).
+**Issue:** [#233](https://github.com/Chrison-Homelab/Homelab/issues/233).
 **Relates to:** [#115 Gaming VM](115-gaming-vm-steamos.md) (the `kind: VM` shape + ProxmoxSharp
 write path this reuses), [ADR-0001 shape contract].
 **Status (2026-07-01):** Phase A **DONE** (stack + greenfield VM shape, validates). Phases B–C

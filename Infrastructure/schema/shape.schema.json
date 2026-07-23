@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Chrison-dev/Homelab/Infrastructure/schema/shape.schema.json",
+  "$id": "https://github.com/Chrison-Homelab/Homelab/Infrastructure/schema/shape.schema.json",
   "title": "Homelab Infrastructure Shape",
   "description": "Declarative shape of a unit of homelab infrastructure provisioned by the C#-native engine / community-scripts renderer. See ADR-0001. kind: Stack groups LXC members and carries a CTID range + inheritable defaults; kind: LXC describes a container with the full Proxmox surface (most fields optional). The community-scripts create path (Deploy-Shape.ps1) honours a subset; the rest is converge-only (ProxmoxSharp, BL-010).",
   "type": "object",
@@ -323,7 +323,7 @@
           "properties": {
             "name": { "type": "string", "description": "Provider key the engine knows (e.g. 'github', 'cloudflare')." },
             "action": { "type": "string", "description": "Provider verb (e.g. 'org-runner-token', 'tunnel-token')." },
-            "with": { "type": "object", "description": "Action arguments (e.g. { org: Chrison-dev }).", "additionalProperties": true },
+            "with": { "type": "object", "description": "Action arguments (e.g. { org: Chrison-Homelab }).", "additionalProperties": true },
             "auth": { "$ref": "#/$defs/secretSource", "description": "How to authenticate to the provider — typically { env: <PAT name> }." }
           }
         }

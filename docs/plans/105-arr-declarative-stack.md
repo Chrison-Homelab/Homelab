@@ -1,9 +1,9 @@
 # Plan: #105 — Declarative *arr media stack (rebuild as IaC, NFS-hardened)
 
-**Issue:** [#105](https://github.com/Chrison-dev/Homelab/issues/105) ·
+**Issue:** [#105](https://github.com/Chrison-Homelab/Homelab/issues/105) ·
 **Relates to:** [#43 shapes](iac-csharp-native.md), [BL-013 community-scripts deploy](BL-013-community-scripts-deploy.md),
 [#45 converge](BL-010-converge.md), [BL-016 NFS hardening](BL-016-nfs-hardening.md) ·
-**Defers to:** [#106 Komodo revival + Maintainerr](https://github.com/Chrison-dev/Homelab/issues/106) ·
+**Defers to:** [#106 Komodo revival + Maintainerr](https://github.com/Chrison-Homelab/Homelab/issues/106) ·
 **Status:** Scoping — 2026-06-01.
 
 ## Goal
