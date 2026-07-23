@@ -85,7 +85,6 @@ and orchestration; each submodule owns one stack end to end.
 ```
 Homelab (this repo)            ← hub: shared infra, networking, docs, CI/CD glue
 ├── stacks/
-│   ├── Infrastructure         ← Homelab.Stacks.Infrastructure   (container hosts)
 │   ├── Komodo                 ← Homelab.Stacks.Komodo           (Docker host mgmt)
 │   ├── DevOps                 ← Homelab.Stacks.DevOps
 │   └── ErpForFactoryGames     ← Homelab.Stacks.ErpForFactoryGames
