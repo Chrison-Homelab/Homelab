@@ -9,12 +9,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Dogfood our own clients. Pins mirror Infrastructure/engine: ProxmoxSharp is
-         pinned exact (the `0.2.0-preview.*` float is non-deterministic across NuGet
-         caches); preview.31 carries the LXC/VM lifecycle write path (PctWriter/QemuWriter)
-         we use to gracefully stop guests before a host poweroff. -->
-    <PackageReference Include="ProxmoxSharp" Version="0.2.0-preview.31" />
-    <PackageReference Include="UnifiSharp" Version="0.1.0-preview.*" />
+    <!-- Dogfood our own clients, now from nuget.org (Chrison.* prefix; assembly names
+         and namespaces unchanged). Pins mirror Infrastructure/engine: Chrison.ProxmoxSharp
+         pinned exact (the `-preview.*` float is non-deterministic across NuGet caches) —
+         carries the LXC/VM lifecycle write path (PctWriter/QemuWriter) we use to gracefully
+         stop guests before a host poweroff. -->
+    <PackageReference Include="Chrison.ProxmoxSharp" Version="0.2.0-preview.5" />
+    <PackageReference Include="Chrison.UnifiSharp" Version="0.1.0-preview.*" />
     <!-- ILogger only (Abstractions) — the concrete logger is wired by the host. -->
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.*" />
   </ItemGroup>

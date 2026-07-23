@@ -38,8 +38,8 @@ wiring is the `deploy/deploy.sh` "sugar" the `Deploy` target shells out to.
 
 Requires the .NET 10 SDK (see `../global.json`) and `GITHUB_PACKAGES_PAT` in the
 environment — Fallout restores from the Fallout-build GitHub Packages edge feed
-(`../nuget.config`), and the engine restores ProxmoxSharp/UnifiSharp from the
-chrison-dev feed. A live `Deploy` also needs Proxmox API creds, `CF_API_TOKEN`,
+(`../nuget.config`); the engine restores `Chrison.ProxmoxSharp`/`Chrison.UnifiSharp`
+from nuget.org (public, no auth). A live `Deploy` also needs Proxmox API creds, `CF_API_TOKEN`,
 and SSH to the target node (all per `secrets.env`).
 
 ## CI

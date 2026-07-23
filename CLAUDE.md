@@ -32,7 +32,7 @@ setup that is NOT in this repo** — most notably **Cloudflare** (account + the
 ## Proxmox access: prefer the `proxmoxsharp` CLI
 
 For Proxmox read/discovery tasks, **use our own `proxmoxsharp` CLI first** (our
-dogfooded client, `vendor/ProxmoxSharp` → installed via `dotnet tool install -g ProxmoxSharp.Cli`).
+dogfooded client, `vendor/ProxmoxSharp` → installed via `dotnet tool install -g Chrison.ProxmoxSharp.Cli`).
 The `pve` MCP is a **fallback** (use it if the CLI is unavailable or for an
 endpoint the CLI doesn't expose yet).
 

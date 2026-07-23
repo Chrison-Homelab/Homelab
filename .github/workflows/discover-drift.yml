@@ -9,10 +9,9 @@ name: discover-drift
 # CF-Access-gated `proxmox.chrison.dev` hostname. This sidesteps the Cloudflare WAF
 # (which 403s datacenter/runner IPs) that blocked GitHub-hosted runners before.
 #
-# Package restore uses the built-in GITHUB_TOKEN — no PAT needed (the engine only
-# restores same-org ProxmoxSharp*; the cross-org Fallout feed is build/-only). The
-# ProxmoxSharp + ProxmoxSharp.Api packages must grant this repo read access:
-# each package → Package settings → Manage Actions access → add Chrison-dev/Homelab (Read).
+# Package restore uses the built-in GITHUB_TOKEN — no PAT needed (the engine restores
+# Chrison.ProxmoxSharp/Chrison.UnifiSharp from nuget.org, public/no-auth; the cross-org
+# Fallout feed is build/-only and not touched here).
 #
 # Cluster-reach secrets are shared with _deploy-stack.yml (PROXMOX_BASE_URL points
 # at the LAN, PROXMOX_VERIFY_TLS=false for the self-signed direct cert):
