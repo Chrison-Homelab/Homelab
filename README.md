@@ -1,55 +1,47 @@
 # Homelab
 
-> The single source of truth for my homelab. Infrastructure, configuration, and
-> documentation as code — provisioned via GitOps, deployed by my own CI/CD.
+[![validate](https://github.com/Chrison-Homelab/Homelab/actions/workflows/validate-shapes.yml/badge.svg)](https://github.com/Chrison-Homelab/Homelab/actions/workflows/validate-shapes.yml)
+[![Built with Fallout](https://img.shields.io/badge/built%20with-Fallout-8A2BE2)](https://github.com/Fallout-build/Fallout)
+[![IaC](https://img.shields.io/badge/IaC-C%23--native-5C2D91)](docs/adr/ADR-0001-iac-tooling.md)
+[![.NET](https://img.shields.io/badge/.NET-10-512BD4)](global.json)
+[![License](https://img.shields.io/github/license/Chrison-Homelab/Homelab.svg)](LICENSE)
 
-This is an **eat-your-own-dogfood** repository. Everything that runs in the lab
-is described here (or in a linked submodule), version-controlled, and reconciled
-from Git. If it isn't in the repo, it doesn't exist.
+> The single source of truth for my homelab. Infrastructure, configuration, and
+> documentation **as code** — reconciled from Git, deployed by my own C#-native CI/CD.
+
+This is an **eat-your-own-dogfood** repo: the lab is provisioned by a build engine
+I wrote ([Fallout](https://github.com/Fallout-build/Fallout)) driving API clients I
+wrote ([ProxmoxSharp](https://github.com/Chrison-dev/ProxmoxSharp) ·
+[UnifiSharp](https://github.com/Chrison-dev/UnifiSharp) ·
+[SynoSharp](https://github.com/Chrison-dev/SynoSharp)). If it isn't in the repo, it
+doesn't exist.
 
 ---
 
-## 🗺️ Environment
+## 🏗️ Architecture
 
-![Snapshot updated](https://img.shields.io/badge/snapshot_updated-2026--05--31-2ea44f)
-![Cluster](https://img.shields.io/badge/cluster-3_nodes_%7C_29_LXC_%7C_4_VM-blue)
-![NAS](https://img.shields.io/badge/NAS-DS1813%2B_%7C_9_shares-orange)
-![Network](https://img.shields.io/badge/network-Cloud_Gateway_Ultra_%7C_7_devices_%7C_25_clients-8b5cf6)
-
-A live snapshot of the lab — discovered entirely with our own clients
-(`proxmoxsharp` / `synosharp` / `unifisharp`). Full machine-readable inventory:
-[`docs/environment-snapshot.json`](docs/environment-snapshot.json).
+Three Proxmox VE nodes + a Synology NAS behind a UniFi Cloud Gateway, fronted by
+Cloudflare (cloudflared tunnels + Pangolin for public ingress). `desktop-01` is the
+heavy node — it sleeps when idle and is woken on demand (Wake-on-LAN).
 
 ```mermaid
 graph TB
-  Internet([🌐 Internet]) --> CF["☁️ Cloudflare<br/>chrison.dev"]
+  Internet(["🌐 Internet"]) --> CF["☁️ Cloudflare · chrison.dev<br/>(tunnels + Pangolin ingress)"]
 
-  subgraph NET["📡 UniFi · Cloud Gateway Ultra · 7 devices · 25 clients"]
+  subgraph NET["📡 UniFi · Cloud Gateway Ultra"]
     direction LR
-    GW["🛡️ Cloud Gateway Ultra<br/>UDRULT · 192.168.178.1"] --- SW["🔌 US-24-PoE<br/>+ 2× Flex Mini"] --- AP["📶 3× U7LR APs"]
+    GW["🛡️ Gateway<br/>192.168.178.1"] --- SW["🔌 US-24-PoE"] --- AP["📶 U7LR APs"]
   end
-  CF -. cloudflared tunnels .-> NET
+  CF -. cloudflared .-> NET
 
-  subgraph PVE["🖥️ Proxmox VE cluster · 29 LXC · 4 VM"]
+  subgraph PVE["🖥️ Proxmox VE cluster"]
     direction LR
-    NUC["nuc-01<br/>9 LXC"]
-    DESK["desktop-01<br/>8 LXC · 3 VM"]
-    HPE["hpe-01<br/>12 LXC · 1 VM"]
+    NUC["<b>nuc-01</b><br/>always-on · edge/control"]
+    HPE["<b>hpe-01</b><br/>always-on · media/home"]
+    DESK["<b>desktop-01</b><br/>Wake-on-LAN · dev/CI"]
   end
   NET ==> PVE
-
-  subgraph WL["Workloads by role"]
-    direction LR
-    EDGE["🔀 Edge<br/>Traefik · cloudflared · Teleport"]
-    MEDIA["🎬 Media<br/>Plex · Tautulli · audiobookshelf · romm · shelfmark"]
-    ARR["📥 *arr + DL<br/>radarr · sonarr · bazarr · prowlarr · seerr · qbittorrent"]
-    DEV["⚙️ Dev / CI<br/>Forgejo (+runner) · GitHub runners · ERP4FG · asp-dev"]
-    AI["🤖 AI<br/>OpenWebUI · SearXNG"]
-    HOME["🏠 Home / Other<br/>Home Assistant · cookbook · obsidian · 2× gaming VM · PDM"]
-  end
-  PVE --- WL
-
-  NAS[("🗄️ Synology DS1813+<br/>DSM 7.1.1 · 9 shares")]
+  NAS[("🗄️ Synology DS1813+<br/>NFS datastore")]
   NAS == NFS ==> PVE
 
   classDef store fill:#fef3c7,stroke:#d97706;
@@ -58,130 +50,120 @@ graph TB
   class NET,GW,SW,AP edge;
 ```
 
-> **Networks (live from UniFi):** Homelab `10.10/16` · Consumer `10.20/16` · IOT
-> `10.40/16` · Network Devices `10.0/16` · Old Network `192.168.178/23` (legacy).
-> Generated manually for now via our own clients (`proxmoxsharp` / `synosharp` /
-> `unifisharp` discover) — **CI will refresh it on a schedule**; the badge date
-> tracks the last update.
+> **VLANs:** Homelab `10.10/16` · Consumer `10.20/16` · IoT `10.40/16` · Network
+> devices `10.0/16` · legacy `192.168.178–179` (being retired). See
+> [`docs/Network.md`](docs/Network.md).
 
-## 🎯 Mission
+## 🔁 Build & deploy
 
-1. **Infrastructure as Code** — provision and configure the homelab (Proxmox
-   nodes, LXCs/VMs, Synology NAS, networking) declaratively. No manual clicking
-   in web UIs where it can be avoided.
-2. **GitOps-driven** — Git is the source of truth. Changes land via commits and
-   are rolled out by **[Fallout](#-cicd-fallout)**, my own CI/CD system. Pushing
-   to the repo is how the lab changes.
-3. **Documented** — the network, devices, and architecture are described here so
-   the lab is understandable and rebuildable by future-me (and anyone else).
+There is **no hand-written pipeline YAML for the logic**. A commit triggers GitHub
+Actions on a **self-hosted runner** (in the lab, for LAN reach), which runs the
+[Fallout](https://github.com/Fallout-build/Fallout) build (`./build.sh`) — a C#
+console app. Fallout drives the **engine** (`Infrastructure/engine`), which
+reconciles declared *shapes* (`stack.yaml`) against live state via our own API
+clients. PRs `validate`; merges/dispatches `converge`.
 
-## 🧱 Repository model
+```mermaid
+flowchart LR
+  Dev["💻 git push / PR"] --> GHA["⚙️ GitHub Actions"]
 
-This is the **main repository** — the hub. Self-contained, reusable stacks live
-in their **own `Homelab.Stacks.*` repositories and are linked here as Git
-submodules**. The hub owns shared infrastructure, conventions, networking, docs,
-and orchestration; each submodule owns one stack end to end.
+  subgraph Runner["🏃 self-hosted runner · in-lab"]
+    direction TB
+    GHA -->|"pull_request"| VAL["validate-shapes.yml<br/>./build.sh ValidateShapes"]
+    GHA -->|"merge / dispatch"| DEP["deploy-stack.yml<br/>./build.sh Deploy --stack X"]
+    VAL --> FO1["🧰 Fallout build"]
+    DEP --> FO2["🧰 Fallout build"]
+    FO1 --> ENGV["engine · validate shapes"]
+    FO2 --> ENGC["engine · converge --apply"]
+  end
 
+  FEEDS["📦 nuget.org · Chrison.*<br/>+ Fallout-build feed"] -. restore .-> FO1
+  FEEDS -. restore .-> FO2
+
+  ENGC -->|ProxmoxSharp| PVE["🖥️ Proxmox VE<br/>LXCs / VMs"]
+  ENGC -->|UnifiSharp| UNI["📡 UniFi networks"]
+  ENGC -->|SynoSharp| NAS["🗄️ Synology NAS"]
+
+  classDef feed fill:#e0e7ff,stroke:#4f46e5;
+  class FEEDS feed;
 ```
-Homelab (this repo)            ← hub: shared infra, networking, docs, CI/CD glue
-├── stacks/
-│   ├── Komodo                 ← Homelab.Stacks.Komodo           (Docker host mgmt)
-│   ├── DevOps                 ← Homelab.Stacks.DevOps
-│   └── ErpForFactoryGames     ← Homelab.Stacks.ErpForFactoryGames
-└── Infrastructure, infra, docs, src, …   ← shared, cross-cutting concerns
+
+```bash
+./build.sh                      # default: ValidateShapes (validate all stacks)
+./build.sh Preview --stack Core # dry-run converge for one stack
+./build.sh Deploy  --stack Core # live apply
 ```
 
-> The `*arr` media stack is **not** a submodule: it runs as individual LXCs and
-> will be recreated from discovered state (Define → Discover → Converge), not
-> from a hand-authored compose stack.
+Requires the .NET 10 SDK (see [`global.json`](global.json)) and `GITHUB_PACKAGES_PAT`
+for the Fallout-build feed; the `*Sharp` clients come from **nuget.org** (public). Git
+guardrails (PR-only, no direct `main` push) are enforced client-side by a Husky.NET
+`pre-push` hook.
 
-**Rule of thumb:** a thing becomes its own `Homelab.Stacks.*` submodule when it
-is a self-contained service/stack with its own lifecycle. Cross-cutting concerns
-(networking, monitoring, base provisioning, conventions) stay in the hub.
+## 🧩 Infrastructure — what runs where
 
-### Stack conventions
+Stacks are declared as `stack.yaml` *shapes*; domain stacks live in their own
+**`Homelab.Stacks.*`** repos, composed here as submodules under `stacks/`
+(meta-repo model, [ADR-0008](docs/adr/ADR-0008-stack-extraction-meta-repo.md)).
 
-Every `Homelab.Stacks.*` repo follows the same shape (see
-[`ErpForFactoryGames`](https://github.com/Chrison-Homelab/Homelab.Stacks.ErpForFactoryGames)
-as the reference):
+```mermaid
+flowchart TB
+  subgraph NUC["🟢 nuc-01 · always-on"]
+    N1["Pangolin (ingress)"] --- N2["Traefik"] --- N3["cloudflared"] --- N4["Proxmox DC Manager"]
+  end
+  subgraph HPE["🟢 hpe-01 · always-on"]
+    H1["🎬 Media · Plex + arr"] --- H2["📊 monitoring"] --- H3["🏠 Home Assistant"] --- H4["📡 IoT · MQTT/Matter/ESPHome"]
+  end
+  subgraph DESK["🌙 desktop-01 · Wake-on-LAN"]
+    D1["Forgejo (+runner)"] --- D2["GitHub runners"] --- D3["ERP4FG"] --- D4["Topaz / Azure"]
+  end
 
-- **`compose.yml`** + per-service `*.env` / `stack.env` — the stack itself.
-- **`ingress.json`** — Cloudflare Tunnel ingress rules (TLS terminates at the
-  edge; plain HTTP inside the Docker network).
-- **`bin/*.ps1`** — deploy lifecycle (`provision.ps1`, `deploy.ps1`,
-  `load-secrets.ps1`). Runs on a Proxmox LXC, SSH from the dev box.
-- **Secrets from Bitwarden** — fetched at deploy time, never written to disk
-  (file fallback only until BW is fully adopted).
-- **`README.md`** with an architecture diagram + first-time setup, **`LICENSE`**.
+  classDef on fill:#dcfce7,stroke:#16a34a;
+  classDef wol fill:#e0e7ff,stroke:#6366f1;
+  class NUC,HPE on;
+  class DESK wol;
+```
+
+| Stack | Repo | Runs |
+|---|---|---|
+| `SmartHome` | [Homelab.Stacks.SmartHome](https://github.com/Chrison-Homelab/Homelab.Stacks.SmartHome) | IoT/home-automation support layer for HA (MQTT, Matter, ESPHome, Leapmotor Mate) |
+| `BuildLab` | [Homelab.Stacks.BuildLab](https://github.com/Chrison-Homelab/Homelab.Stacks.BuildLab) | Windows 11 VM to test the Fallout build across VS toolchains |
+| `Azure` | [Homelab.Stacks.Azure](https://github.com/Chrison-Homelab/Homelab.Stacks.Azure) | Local Azure (Topaz emulator) |
+| `DevOps` | [Homelab.Stacks.DevOps](https://github.com/Chrison-Homelab/Homelab.Stacks.DevOps) | Forgejo + runners, self-hosted DevOps |
+| `Core` · `Media` · `monitoring` · `Gaming` | *in-tree* `stacks/` | Networking/edge · media fleet · Prometheus/Grafana · gaming VMs |
 
 ## 🧭 Principles
 
-Applied to everything in this repo:
-
 - **IaC-first** — declarative over imperative; UIs are a last resort.
 - **Idempotent** — running the same thing twice changes nothing the second time.
-- **Reversible** — changes can be rolled back; destructive steps are explicit.
-- **Modular** — small, composable pieces; link and reuse instead of duplicating.
-- **Explicit over implicit** — no hidden behavior.
+- **Reversible** — changes roll back; destructive steps are explicit.
+- **Modular** — small composable pieces; link and reuse, don't duplicate.
 - **Multi-everything** — assume multiple nodes, multiple NAS, multiple services.
 
 ## 🗂️ What lives where
 
 | Path | Purpose |
 | --- | --- |
-| `Infrastructure/` | **New world** — C#-native, reproducible provisioning. Shapes + (soon) engine. |
-| `docs/` | [Network](docs/Network.md), [devices](docs/Devices.md), [services](docs/Services.md), [backlog](docs/Backlog.md), [ADRs](docs/adr), and plans. |
-| `src/Proxmox/` | Bash + PowerShell scripts for node bootstrap & inventory. |
-| `.containers/` | Local dev/test environments (Proxmox, DSM, Debian). |
-| `stacks/` | Stacks — mostly submodules (one self-contained stack per repo); also the in-repo `monitoring/` stack. Each declares its `shape`. |
-| `vendor/` | Vendored dependencies as submodules — our own libraries we dogfood: [`ProxmoxSharp`](https://github.com/Chrison-dev/ProxmoxSharp) (C# Proxmox client). |
+| [`build/`](build) | The Fallout build project (`Compile`/`ValidateShapes`/`Preview`/`Deploy`). |
+| [`Infrastructure/`](Infrastructure) | The C#-native engine (`homelab-infra`) + the `shape` schema + node bootstrap. |
+| [`stacks/`](stacks) | One stack per directory — mostly `Homelab.Stacks.*` submodules; each declares a `stack.yaml`. |
+| [`src/Proxmox/`](src/Proxmox) | Bash + PowerShell node-bootstrap / inventory scripts (`.sh` + `.ps1` in sync). |
+| [`vendor/`](vendor) | Our own API clients as submodules, dogfooded — `ProxmoxSharp` / `UnifiSharp` / `SynoSharp` (consumed from nuget.org). |
+| [`docs/`](docs) | [Network](docs/Network.md), [devices](docs/Devices.md), [services](docs/Services.md), [ADRs](docs/adr), and plans. |
+| [`tools/PowerOrchestrator/`](tools/PowerOrchestrator) | Demand-driven node sleep/wake (WoL) — powers `desktop-01` down when idle. |
 
-> **Tooling decision (locked in):** we build our **own C#-native IaC**, run from
-> `/Infrastructure`, dogfooding ProxmoxSharp / SynoSharp / Fallout. Submodules
-> declare *shape* (YAML); the hub provisions. The old `/infra` (OpenTofu/Ansible)
-> is legacy and frozen. See [ADR-0001](docs/adr/ADR-0001-iac-tooling.md).
+## ⚙️ The stack, end to end
 
-## ⚙️ CI/CD: Fallout
+- **Build system:** [Fallout](https://github.com/Fallout-build/Fallout) — my C#/.NET
+  build system (a NUKE successor). Build logic is code, not YAML.
+- **Engine:** `Infrastructure/engine` (`homelab-infra`) — validates + converges shapes.
+- **API clients (dogfooded, on nuget.org):**
+  [`Chrison.ProxmoxSharp`](https://www.nuget.org/packages/Chrison.ProxmoxSharp) ·
+  [`Chrison.UnifiSharp`](https://www.nuget.org/packages/Chrison.UnifiSharp) ·
+  `Chrison.SynoSharp`.
+- **Ingress:** Cloudflare tunnels + [Pangolin](docs/adr/ADR-0007-pangolin-remote-access.md).
+- **Decisions:** see the [ADRs](docs/adr) (0001 IaC tooling → 0008 meta-repo model).
 
-GitOps is driven by **[Fallout](https://github.com/Fallout-build/Fallout)** — my
-own C#/.NET build system (a successor to NUKE). Instead of hand-written YAML, the
-build/deploy logic is a **C# console app**, and Fallout *generates* the
-`.github/workflows/*.yml` that GitHub Actions executes. Build steps live in code,
-with full IDE support, type-safety, and debugging.
+## 🔗 Links
 
-The intent: commits to this repo (and its submodules) drive deployment to the lab
-via GitHub Actions — no out-of-band manual deploys.
-
-```bash
-dotnet tool install -g Fallout.Cli   # or pin per-repo via .config/dotnet-tools.json
-fallout                              # run the build locally
-```
-
-Wiring the Fallout build project into this repo is in-progress (see
-[Roadmap](#-roadmap)).
-
-## 🌐 Network & devices
-
-See [`docs/Network.md`](docs/Network.md) for the VLAN-segmented architecture
-(Unifi Cloud Gateway) and [`docs/Devices.md`](docs/Devices.md) for the hardware
-inventory.
-
-## 🛠️ Development & testing
-
-Local dev environments, tool installation, and how to test scripts before they
-touch real nodes are documented in [`docs/Development.md`](docs/Development.md).
-
-## 🗺️ Roadmap
-
-- [x] Wire the 5 existing `Homelab.Stacks.*` repos in as submodules under `stacks/`.
-- [x] Lock in the IaC approach — C#-native, run from `/Infrastructure` ([ADR-0001](docs/adr/ADR-0001-iac-tooling.md)).
-- [ ] **Define** the shape contract ([BL-008](docs/Backlog.md)) — in progress.
-- [ ] **Discover** live Proxmox state read-only via ProxmoxSharp ([BL-009](docs/Backlog.md)).
-- [ ] **Converge** — reproducible provisioning, plan/apply ([BL-010](docs/Backlog.md)).
-- [ ] Unifi discovery + C# client ([BL-011](docs/Backlog.md)); homelab dashboard ([BL-012](docs/Backlog.md)).
-- [ ] Add a Fallout build project + private-submodule CI auth ([BL-007](docs/Backlog.md)).
-
-## 🔗 Useful links
-
-- [Synology DSM File Station API](https://global.download.synology.com/download/Document/Software/DeveloperGuide/Package/FileStation/All/enu/Synology_File_Station_API_Guide.pdf)
-- [Proxmox VE API](https://pve.proxmox.com/wiki/Proxmox_VE_API)
+- [Proxmox VE API](https://pve.proxmox.com/wiki/Proxmox_VE_API) · [Synology DSM API](https://global.download.synology.com/download/Document/Software/DeveloperGuide/Package/FileStation/All/enu/Synology_File_Station_API_Guide.pdf)
+- [Fallout](https://github.com/Fallout-build/Fallout) — the build system behind all of this.
