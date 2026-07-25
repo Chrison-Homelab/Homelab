@@ -151,6 +151,10 @@ services:
       POSTGRES_PASSWORD: ${NOP_DB_PASSWORD:?set NOP_DB_PASSWORD in stack.env}
     volumes:
       - nop-db-data:/var/lib/postgresql/data
+      # Installs the `citext` extension into template1 on first init, so the
+      # DB nopCommerce recreates during /install inherits it (else the install
+      # fails: type "citext" does not exist). Runs once on an empty data dir.
+      - ./nop-initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d nopcommerce"]
       interval: 10s
