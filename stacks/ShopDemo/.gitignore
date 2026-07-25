@@ -1,0 +1,2 @@
+# Real secrets file — never commit. Copy from stack.env.example.
+stack.env
