@@ -1,0 +1,170 @@
+# ShopDemo — open-source eCommerce bake-off (throwaway, LAN-only).
+#
+# Purpose: stand three self-hostable webshop platforms up side-by-side on one
+# Docker host so a non-technical evaluator can click through each real
+# storefront + admin and pick a winner. This is deliberately NOT a formal
+# Homelab.Stacks.* submodule (ADR-0008) — it's a disposable bake-off. Once a
+# winner is chosen we throw this away and formalise just the winner.
+#
+# Three independent app groups, each on its own host port; nothing here is
+# internet-facing (no cloudflared, no ingress.json — reach them on the LXC's
+# LAN IP only):
+#
+#   WooCommerce   http://<host>:8081        WordPress + WooCommerce + Storefront
+#                 http://<host>:8081/wp-admin   theme, sample products auto-loaded
+#   Bagisto       http://<host>:8082        Laravel shop, all-in-one image
+#                 http://<host>:8082/admin/login
+#   nopCommerce   http://<host>:8083        .NET shop; first hit -> /install wizard
+#                 http://<host>:8083/admin      (see README for the values to type)
+#
+# Bring it up:   cp stack.env.example stack.env && edit passwords
+#                docker compose --env-file stack.env up -d
+# Tear it down:  docker compose down -v     # -v wipes all demo data
+#
+# Data policy: WooCommerce + nopCommerce persist to named volumes so a restart
+# keeps state. Bagisto's all-in-one image bundles its own MySQL; we leave it
+# stateless (a `down`/recreate gives a clean store) — fine for a demo.
+
+name: shop-demo
+
+services:
+  # ── WooCommerce ────────────────────────────────────────────────────────────
+  # The safe, most-popular small-retail default. WordPress core + the
+  # WooCommerce plugin + the Storefront theme, with WooCommerce's bundled
+  # sample products imported so the shop isn't empty on first look.
+  woo-db:
+    image: mariadb:11
+    container_name: shopdemo-woo-db
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wordpress
+      MARIADB_PASSWORD: ${WOO_DB_PASSWORD:?set WOO_DB_PASSWORD in stack.env}
+      MARIADB_ROOT_PASSWORD: ${WOO_DB_ROOT_PASSWORD:?set WOO_DB_ROOT_PASSWORD in stack.env}
+    volumes:
+      - woo-db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  woo:
+    image: wordpress:latest
+    container_name: shopdemo-woo
+    restart: unless-stopped
+    depends_on:
+      woo-db:
+        condition: service_healthy
+    environment:
+      WORDPRESS_DB_HOST: woo-db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: ${WOO_DB_PASSWORD:?set WOO_DB_PASSWORD in stack.env}
+      WORDPRESS_DB_NAME: wordpress
+      # Derive the site URL from whatever host:port the browser actually used,
+      # so links work whether you hit localhost:8081 or the LXC's LAN IP:8081
+      # without hard-coding an address. This is the usual fix for "WordPress
+      # redirects me to localhost" on a LAN box.
+      WORDPRESS_CONFIG_EXTRA: |
+        if (isset($$_SERVER['HTTP_HOST'])) {
+          define('WP_HOME', 'http://' . $$_SERVER['HTTP_HOST']);
+          define('WP_SITEURL', 'http://' . $$_SERVER['HTTP_HOST']);
+        }
+    ports:
+      - "8081:80"
+    volumes:
+      - woo-data:/var/www/html
+
+  # One-shot: installs WP core, activates WooCommerce + Storefront, imports the
+  # sample catalogue, then exits. Shares the web volume so wp-cli sees the same
+  # files. Re-running `up` is safe — it's idempotent (skips an already-installed
+  # site; plugin/theme installs are no-ops once present).
+  woo-init:
+    image: wordpress:cli
+    container_name: shopdemo-woo-init
+    # wordpress:cli runs as www-data (uid 33); matches the files the woo
+    # service writes, so no --allow-root needed.
+    user: "33:33"
+    depends_on:
+      - woo
+    environment:
+      WP_ADMIN_USER: ${WOO_ADMIN_USER:-admin}
+      WP_ADMIN_PASSWORD: ${WOO_ADMIN_PASSWORD:?set WOO_ADMIN_PASSWORD in stack.env}
+      WP_ADMIN_EMAIL: ${WOO_ADMIN_EMAIL:-admin@example.com}
+    volumes:
+      - woo-data:/var/www/html
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "woo-init: waiting for wp-config + database...";
+        until wp config path >/dev/null 2>&1; do sleep 3; done;
+        until wp db check >/dev/null 2>&1; do sleep 3; done;
+        if ! wp core is-installed >/dev/null 2>&1; then
+          echo "woo-init: installing WordPress core...";
+          wp core install \
+            --url="http://localhost:8081" \
+            --title="Bake-off Demo Shop (WooCommerce)" \
+            --admin_user="$$WP_ADMIN_USER" \
+            --admin_password="$$WP_ADMIN_PASSWORD" \
+            --admin_email="$$WP_ADMIN_EMAIL" \
+            --skip-email;
+        fi;
+        echo "woo-init: WooCommerce + Storefront + sample products...";
+        wp plugin install woocommerce --activate;
+        wp theme install storefront --activate;
+        wp plugin install wordpress-importer --activate;
+        wp import wp-content/plugins/woocommerce/sample-data/sample_products.xml --authors=create || true;
+        echo "woo-init: done.";
+    restart: "no"
+
+  # ── Bagisto ────────────────────────────────────────────────────────────────
+  # Modern Laravel shop. Official all-in-one image (Nginx + PHP 8.3-FPM +
+  # MySQL 8 + Supervisor in one container) — zero-config, full store + admin on
+  # first boot. Admin: admin@example.com / admin123 (change after first login).
+  bagisto:
+    image: webkul/bagisto:latest
+    container_name: shopdemo-bagisto
+    restart: unless-stopped
+    ports:
+      - "8082:80"
+
+  # ── nopCommerce ────────────────────────────────────────────────────────────
+  # .NET shop (fits the wider stack). Official prebuilt image + its own
+  # Postgres. First browser hit redirects to /install — a short wizard where
+  # you pick PostgreSQL and enter the connection (values in the README), which
+  # creates the schema and admin user. State persists via the named volumes.
+  nop-db:
+    image: postgres:16
+    container_name: shopdemo-nop-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nopcommerce
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${NOP_DB_PASSWORD:?set NOP_DB_PASSWORD in stack.env}
+    volumes:
+      - nop-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d nopcommerce"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  nop:
+    image: nopcommerceteam/nopcommerce:4.90.6
+    container_name: shopdemo-nop
+    restart: unless-stopped
+    depends_on:
+      nop-db:
+        condition: service_healthy
+    ports:
+      - "8083:80"
+    volumes:
+      # Persists the install config (the connection string the wizard writes)
+      # and data-protection keys, so a restart doesn't re-trigger /install.
+      - nop-data:/app/App_Data
+
+volumes:
+  woo-db-data:
+  woo-data:
+  nop-db-data:
+  nop-data:
