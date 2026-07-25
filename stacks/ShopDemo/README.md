@@ -55,6 +55,10 @@ First hit on `:8083` redirects to `/install`. Fill in:
 
 Click install. It seeds the schema + sample data and drops you at the store.
 
+> The `citext` PostgreSQL extension nopCommerce requires is auto-provisioned into
+> `template1` by `nop-initdb/01-citext.sh`, so the wizard installs cleanly. (On the
+> live CT this was scripted end-to-end; a fresh `up` just needs the wizard once.)
+
 ## Tear it down
 
 ```bash
