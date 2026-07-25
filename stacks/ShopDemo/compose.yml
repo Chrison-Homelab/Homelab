@@ -88,6 +88,14 @@ services:
     depends_on:
       - woo
     environment:
+      # The stock wp-config.php resolves DB_HOST from WORDPRESS_DB_HOST at
+      # runtime (getenv_docker(..., 'mysql')). wp-cli reads that same config,
+      # so without these it falls back to the 'mysql' default and can never
+      # reach the DB. Must mirror the `woo` service's DB settings.
+      WORDPRESS_DB_HOST: woo-db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: ${WOO_DB_PASSWORD:?set WOO_DB_PASSWORD in stack.env}
+      WORDPRESS_DB_NAME: wordpress
       WP_ADMIN_USER: ${WOO_ADMIN_USER:-admin}
       WP_ADMIN_PASSWORD: ${WOO_ADMIN_PASSWORD:?set WOO_ADMIN_PASSWORD in stack.env}
       WP_ADMIN_EMAIL: ${WOO_ADMIN_EMAIL:-admin@example.com}
