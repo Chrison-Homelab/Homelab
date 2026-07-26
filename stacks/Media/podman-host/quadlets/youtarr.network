@@ -1,0 +1,13 @@
+# Shared network for the youtarr containers, so `youtarr` can resolve `youtarr-db` by name.
+#
+# Compose gave every service a shared default network with service-name DNS for free;
+# quadlets do NOT. Without this, DB_HOST=youtarr-db does not resolve and youtarr can't
+# reach its database. Rootless podman runs aardvark-dns on a user-defined network, which
+# is what provides the name resolution.
+#
+# This is the first multi-container quadlet deployment in the homelab (Phase 1 was a single
+# container with no peers), so this file is the pattern the Monitoring migration (#303, ten
+# containers) will follow.
+
+[Network]
+NetworkName=youtarr

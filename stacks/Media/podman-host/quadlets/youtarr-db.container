@@ -1,0 +1,51 @@
+# Youtarr's bundled MariaDB. Converted from stacks/Media/youtarr/compose.yml.
+#
+# FIXED-UID CASE — the opposite of the youtarr container next door. MariaDB runs as
+# mysql (uid 999) inside the image and its data dir on CT 5113 is owned by 999. So:
+#   UserNS=keep-id:uid=999,gid=999  → the host `podman` user appears as 999 inside the
+#   container, so the migrated data dir must be owned by `podman` on the host (the
+#   migration chowns it once). No :U — that would chown recursively on EVERY start.
+# Local disk (~130 MB), so unlike /mnt/youtube this is a safe place for either approach;
+# keep-id is chosen for consistency and to avoid repeated recursive chowns as the DB grows.
+
+[Unit]
+Description=Youtarr MariaDB
+Documentation=https://github.com/Chrison-Homelab/Homelab/issues/302
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/library/mariadb:10.3
+ContainerName=youtarr-db
+Network=youtarr.network
+
+# Root password as a podman secret rather than an env file.
+Secret=youtarr_db_root_password,type=env,target=MYSQL_ROOT_PASSWORD
+Environment=MYSQL_DATABASE=youtarr
+Environment=MYSQL_TCP_PORT=3321
+Environment=MYSQL_CHARSET=utf8mb4
+Environment=MYSQL_COLLATION=utf8mb4_unicode_ci
+
+Volume=/home/podman/youtarr/database:/var/lib/mysql
+UserNS=keep-id:uid=999,gid=999
+
+# compose `command:` → quadlet Exec=. No quoting needed here, so it survives systemd's
+# parser intact (contrast HealthCmd below).
+Exec=--port=3321 --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --innodb-file-per-table=1 --innodb-large-prefix=ON
+
+AutoUpdate=registry
+
+# NO HEALTHCHECK — deliberate, and for TWO reasons (see gotcha #10 in
+# docs/plans/284-podman-platform.md). The compose healthcheck is
+#   mysqladmin ping -h localhost -P 3321 -u root -p${DB_ROOT_PASSWORD}
+# which (a) needs quoting that quadlet destroys, and (b) would put the root password in the
+# unit file. Readiness is handled by youtarr's crash-retry instead.
+
+[Service]
+# Podman does not create missing bind-mount source dirs (gotcha #9).
+ExecStartPre=/usr/bin/mkdir -p /home/podman/youtarr/database
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target
