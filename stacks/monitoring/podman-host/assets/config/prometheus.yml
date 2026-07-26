@@ -1,0 +1,36 @@
+scrape_configs:
+  # Synology NAS via SNMP. Prometheus scrapes the snmp_exporter, passing the NAS
+  # as ?target=; the exporter does the SNMP walk (module 'synology' in snmp.yml,
+  # community 'homelab'). The relabel rewrites the scrape address to the exporter
+  # while keeping the NAS as the target/instance — the standard snmp_exporter
+  # pattern (without it, prometheus would try to scrape the NAS directly).
+  - job_name: 'synology'
+    metrics_path: /snmp
+    params:
+      # new-format snmp_exporter: auth name (from snmp.yml `auths:`) + modules.
+      auth: [synology]
+      module: [if_mib, synology]
+    static_configs:
+      - targets: ['192.168.179.11']   # DS1813 NAS (SNMP v2c, community 'homelab')
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: snmp_exporter:9116
+  # *arr apps via exportarr (one instance per app, /metrics). 'app' label lets
+  # dashboards split radarr/sonarr/prowlarr.
+  - job_name: 'exportarr'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['exportarr-radarr:9708']
+        labels: { app: radarr }
+      - targets: ['exportarr-sonarr:9709']
+        labels: { app: sonarr }
+      - targets: ['exportarr-prowlarr:9710']
+        labels: { app: prowlarr }
+  # PowerOrchestrator metrics, re-exported by the OTel collector (#191).
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8889']

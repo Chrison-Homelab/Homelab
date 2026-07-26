@@ -1,0 +1,79 @@
+# Monitoring podman host — the stack's rootless Podman + quadlet host (ADR-0009 Phase 2b, #303).
+#
+# GENERIC by convention, like CT 6004 (SmartHome) and CT 5114 (Media), though this stack
+# happens to fill it entirely: ten containers plus a shared network.
+#
+# Replaces the Docker host CT 4000. In-block either way (Monitoring owns 4000–4099).
+#
+# ⚠ THIS HOST WATCHES EVERYTHING ELSE. Migrating it blinds monitoring for the duration —
+# including the Prometheus that would otherwise tell you the migration broke something.
+# It is also PowerOrchestrator's OTLP sink (#191), so that telemetry gaps until the
+# endpoint is repointed. See podman-host/README.md for the cutover order.
+#
+# TWO THINGS THAT MAKE THIS DIFFERENT FROM PHASES 1 AND 2a:
+#
+#  1. It is mostly CONFIGURATION (prometheus/snmp/loki/tempo/otel YAML + Grafana
+#     provisioning and dashboards), which quadlets cannot carry. That is what
+#     `config.assets` exists for (#305) — the tree under podman-host/assets/ is rendered
+#     to assetsTarget BEFORE any unit starts, and its contents are folded into the managed
+#     marker so editing a config re-converges and restarts the units consuming it. This
+#     replaces stacks/monitoring/deploy/install.sh, which shipped the same tree by tar.
+#
+#  2. FIXED-UID DATA DIRS on 3.9 GB of state (tempo 3.2G · pulse 616M · grafana 50M ·
+#     loki 68K). Each container runs as a uid we don't control, so each gets
+#     `UserNS=keep-id:uid=N,gid=N` with its host dir owned by `podman`.
+#     `:U` is REJECTED here — it chowns RECURSIVELY on EVERY container start, i.e. 3.9 GB
+#     of pointless IO per restart, growing with retention. (On the Media host's NFS mount
+#     `:U` is not merely wasteful but dangerous; see stacks/Media/podman-host.)
+#     Per-image, verified against the LIVE containers rather than assumed: grafana 472,
+#     tempo/loki 10001, prometheus 65534 (nobody), exportarr 65532 (distroless) all need
+#     keep-id; snmp_exporter and pulse run as ROOT and must NOT have it (the default mapping
+#     already sends container-root to the `podman` user).
+#
+# NETWORKING: DHCP, deliberately. CT 4000 pinned 10.10.0.40 and things hard-coded it
+# (OTEL_EXPORTER_OTLP_ENDPOINT). The replacement is a DHCP reservation plus a UniFi local
+# DNS record — monitoring.homelab.chrison.internal — so nothing points at an address again.
+#
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: podman-host
+  stack: Monitoring
+  tags: [podman, quadlet, container-host, adr-0009]
+
+spec:
+  app: podman            # community-scripts ct/podman.sh + the `podman` provisioner
+  ctid: 4001             # in-block (4000–4099); 4000 is the Docker host this replaces
+  cores: 2               # matches CT 4000
+  memory: 4096           # MB — Prometheus TSDB + Loki + Tempo + Grafana + collector + Pulse
+  disk: 30               # GB — matches CT 4000; 3.9 GB of state today, grows with retention
+
+  features:
+    nesting: true        # rootless podman needs nesting for its own nested userns
+    keyctl: true         # containers keyring — settable only via the pct/SSH create path
+    fuse: true           # fuse-overlayfs fallback storage driver
+                         # NOTE: ct/podman.sh silently DROPS var_fuse; the provisioner
+                         # reconciles features from this shape after create (#284).
+
+  # node / network / os / storage inherited from stack.yaml defaults (hpe-01, VLAN 1010).
+  # ipv4 is left unset → DHCP (see the NETWORKING note above).
+
+  config:
+    user: podman
+    quadlets: podman-host/quadlets
+
+    # Config tree rendered onto the host (#305). Quadlets bind-mount from here read-only.
+    assets: podman-host/assets
+    assetsTarget: /home/podman/monitoring
+
+    # podman secrets seeded from secrets.env, add-only. Only the four genuine secrets live
+    # here; GF_SECURITY_ADMIN_USER / GRAFANA_PORT / the *arr URLs are plain config and are
+    # set as Environment= in the quadlets instead.
+    secrets:
+      grafana_admin_password: GF_SECURITY_ADMIN_PASSWORD
+      radarr_api_key: RADARR_API_KEY
+      sonarr_api_key: SONARR_API_KEY
+      prowlarr_api_key: PROWLARR_API_KEY

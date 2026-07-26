@@ -1,0 +1,34 @@
+# exportarr (radarr) — Prometheus exporter for the *arr app. One instance per app.
+#
+# ContainerName is load-bearing: prometheus.yml scrapes exportarr-radarr:9708.
+# The API key is a podman secret; the URL is plain config (an internal address, not a secret).
+# Replaced the archived ghcr.io/onedr0p/servarr_exporter image.
+
+[Unit]
+Description=exportarr (radarr)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=ghcr.io/onedr0p/exportarr:latest
+ContainerName=exportarr-radarr
+Network=monitoring.network
+# DISTROLESS uid 65532. Without this, crun refuses to start it ("setgroups: Invalid argument")
+# because container uid 65532 is outside the subuid window the LXC's own 65536-uid map allows.
+# keep-id aligns the host `podman` user with that single uid, which is all a one-process
+# container needs. The image PULL additionally needs storage.conf's ignore_chown_errors, which
+# the provisioner writes (#303, platform gotcha 12).
+UserNS=keep-id:uid=65532,gid=65532
+PublishPort=9708:9708
+Environment=PORT=9708
+Environment=URL=http://10.10.48.217:7878
+Secret=radarr_api_key,type=env,target=API_KEY
+Exec=radarr
+AutoUpdate=registry
+
+[Service]
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

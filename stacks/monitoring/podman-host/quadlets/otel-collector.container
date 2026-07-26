@@ -1,0 +1,30 @@
+# OpenTelemetry collector — the OTLP ingress for PowerOrchestrator (#191).
+# OTLP in → Prometheus (metrics, scraped off :8889) / Tempo (traces) / Loki (logs).
+#
+# ⚠ This is the endpoint OTEL_EXPORTER_OTLP_ENDPOINT points at. After cutover that value
+# must reference monitoring.homelab.chrison.internal, NOT an IP — see podman-host/README.md.
+#
+# ContainerName=otel-collector is load-bearing: prometheus.yml scrapes otel-collector:8889.
+
+[Unit]
+Description=OpenTelemetry collector
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/otel/opentelemetry-collector-contrib:latest
+ContainerName=otel-collector
+Network=monitoring.network
+PublishPort=4317:4317
+PublishPort=4318:4318
+PublishPort=8889:8889
+Volume=/home/podman/monitoring/config/otel-collector.yml:/etc/otelcol/config.yml:ro
+Exec=--config=/etc/otelcol/config.yml
+AutoUpdate=registry
+
+[Service]
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

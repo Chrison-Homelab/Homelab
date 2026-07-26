@@ -1,0 +1,45 @@
+# Prometheus — scrapes the exporters below plus the Synology via snmp_exporter.
+#
+# NOTE: compose gave this service NO container_name, so it resolved by SERVICE name.
+# ContainerName=prometheus is therefore required — datasources.yml points at
+# http://prometheus:9090.
+
+[Unit]
+Description=Prometheus
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/prom/prometheus
+ContainerName=prometheus
+Network=monitoring.network
+PublishPort=9090:9090
+# Runs as nobody (uid 65534) — verified on the live container, not assumed. That is outside the
+# subuid window the LXC's 65536-uid map allows, so without keep-id crun refuses to start it.
+# There is no data volume here (Prometheus's TSDB is ephemeral in this stack, as it was under
+# Docker), so this aligns the process uid only — nothing to chown.
+UserNS=keep-id:uid=65534,gid=65534
+Volume=/home/podman/monitoring/config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+# EXPLICIT data volume — and this is a deliberate IMPROVEMENT on the Docker setup, not just a
+# port. compose declared no volume for Prometheus, so its TSDB lived in an anonymous volume
+# that was destroyed on every container recreate: metrics history was silently ephemeral.
+#
+# It also has to be explicit under rootless. With keep-id:uid=65534 the container's uid maps to
+# the `podman` user, but podman's ANONYMOUS volume is not owned by that mapped uid, so
+# Prometheus panicked on startup:
+#     open /prometheus/queries.active: permission denied
+#     panic: Unable to create mmap-ed active query log
+# A host dir owned by `podman` is writable by the mapped uid, so this fixes the crash loop and
+# makes the TSDB survive restarts. Nothing to migrate — there was never persisted data.
+Volume=/home/podman/monitoring/data/prometheus:/prometheus
+AutoUpdate=registry
+
+[Service]
+ExecStartPre=/usr/bin/mkdir -p /home/podman/monitoring/data/prometheus
+Restart=always
+RestartSec=10
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

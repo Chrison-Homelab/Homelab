@@ -1,0 +1,35 @@
+# Grafana — dashboards over Prometheus/Tempo/Loki.
+#
+# FIXED-UID: runs as uid 472, and its data dir on CT 4000 is owned by 472. keep-id maps the
+# host `podman` user to 472 inside the container, so the migrated dir must be owned by
+# `podman` (the migration chowns it once). NOT :U — that would chown recursively on every
+# start (50 MB here, but the same rule keeps tempo's 3.2 GB sane).
+
+[Unit]
+Description=Grafana
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/grafana/grafana:latest
+ContainerName=grafana
+Network=monitoring.network
+PublishPort=3000:3000
+UserNS=keep-id:uid=472,gid=472
+
+Environment=GF_SECURITY_ADMIN_USER=admin
+Secret=grafana_admin_password,type=env,target=GF_SECURITY_ADMIN_PASSWORD
+
+Volume=/home/podman/monitoring/data/grafana:/var/lib/grafana
+Volume=/home/podman/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+Volume=/home/podman/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+AutoUpdate=registry
+
+[Service]
+ExecStartPre=/usr/bin/mkdir -p /home/podman/monitoring/data/grafana
+Restart=always
+RestartSec=10
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

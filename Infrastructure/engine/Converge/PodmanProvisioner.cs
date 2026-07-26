@@ -154,6 +154,11 @@ public sealed class PodmanProvisioner : IAppProvisioner
         var (hostMsg, hostFailed) = await EnsureHostConfigAsync(s, ctx, node, ctid);
         if (hostFailed is not null) return ApplyResult.Failed(hostFailed);
 
+        // Assets BEFORE the deploy script: units must never start before the configs they
+        // mount exist. Chunked into separate commands — see AssetChunkBytes for why.
+        var (assetMsg, assetFailed) = await PushAssetsAsync(s, ctx, node, ctid, user);
+        if (assetFailed is not null) return ApplyResult.Failed(assetFailed);
+
         var files = QuadletFiles(s);
         var script = BuildDeploy(s, user, marker, markerPath, files, secretValues);
 
@@ -164,7 +169,71 @@ public sealed class PodmanProvisioner : IAppProvisioner
             ? "prepared rootless podman host (no quadlets declared)"
             : $"prepared rootless podman host + deployed {files.Count} quadlet(s): {string.Join(", ", UnitNames(files))}";
         return ApplyResult.Applied(
-            string.Join("; ", new[] { hostMsg, $"{what} (marker {marker})" }.Where(x => x is not null)));
+            string.Join("; ", new[] { hostMsg, assetMsg, $"{what} (marker {marker})" }.Where(x => x is not null)));
+    }
+
+    // ── assets: chunked push (#303) ─────────────────────────────────────────────────
+    // One command per chunk so no single `pct exec` command line can overflow. Ensures the
+    // user and target directory exist first, because this runs BEFORE the deploy script.
+    // Idempotent: every file is rewritten from its first chunk, so a partial previous run
+    // cannot leave a truncated file behind.
+    internal static async Task<(string? Msg, string? Failed)> PushAssetsAsync(
+        Shape s, ConvergeContext ctx, string node, string ctid, string user)
+    {
+        IReadOnlyList<(string Rel, string B64, bool Exec)> assets;
+        try { assets = ReadAssets(s); }
+        catch (Exception ex) { return (null, ex.Message); }
+        if (assets.Count == 0) return (null, null);
+
+        var target = AssetsTarget(s);
+
+        // The deploy script also does this (idempotently) — but assets land first, so the
+        // user and directory have to exist by now.
+        var prep = await ctx.Exec.InContainerAsync(node, ctid, string.Join("\n", new[]
+        {
+            "set -e",
+            $"id -u {user} >/dev/null 2>&1 || useradd -m -s /bin/bash {user}",
+            $"install -d -o {user} -g {user} -m 755 {target}",
+        }));
+        if (!prep.Ok) return (null, $"preparing assets dir {target} failed: {prep.Stderr}");
+
+        var chunks = 0;
+        foreach (var (rel, b64, exec) in assets)
+        {
+            var dirPart = Path.GetDirectoryName(rel)?.Replace('\\', '/');
+            if (!string.IsNullOrEmpty(dirPart))
+            {
+                var mk = await ctx.Exec.InContainerAsync(node, ctid,
+                    $"install -d -o {user} -g {user} -m 755 {target}/{dirPart}");
+                if (!mk.Ok) return (null, $"creating {target}/{dirPart} failed: {mk.Stderr}");
+            }
+
+            // First chunk truncates, the rest append; then decode once. Writing base64 and
+            // decoding at the end keeps each command self-contained and restartable.
+            for (var off = 0; off < b64.Length; off += AssetChunkBytes)
+            {
+                var part = b64.Substring(off, Math.Min(AssetChunkBytes, b64.Length - off));
+                var redirect = off == 0 ? ">" : ">>";
+                var put = await ctx.Exec.InContainerAsync(node, ctid,
+                    $"printf '%s' '{part}' {redirect} {target}/{rel}.b64");
+                if (!put.Ok) return (null, $"writing {rel} (offset {off}) failed: {put.Stderr}");
+                chunks++;
+            }
+
+            var fin = await ctx.Exec.InContainerAsync(node, ctid, string.Join("\n", new[]
+            {
+                "set -e",
+                $"base64 -d < {target}/{rel}.b64 > {target}/{rel}",
+                $"rm -f {target}/{rel}.b64",
+                $"chmod {(exec ? "0755" : "0644")} {target}/{rel}",
+            }));
+            if (!fin.Ok) return (null, $"decoding {rel} failed: {fin.Stderr}");
+        }
+
+        var own = await ctx.Exec.InContainerAsync(node, ctid, $"chown -R {user}:{user} {target}");
+        if (!own.Ok) return (null, $"chown {target} failed: {own.Stderr}");
+
+        return ($"rendered {assets.Count} asset file(s) → {target} ({chunks} chunk(s))", null);
     }
 
     // ── host-side prerequisites (pct/SSH, not in-CT) ────────────────────────────────
@@ -282,8 +351,6 @@ public sealed class PodmanProvisioner : IAppProvisioner
         IReadOnlyList<string> files, IReadOnlyDictionary<string, string> secrets)
     {
         var (start, count) = SubidRange(s);
-        var assetsTarget = AssetsTarget(s);
-        var assets = ReadAssets(s);
         var sb = new StringBuilder();
         sb.Append("set -e\n");
         // cwd matters: `pct exec` lands in /root, which the rootless user cannot read, and
@@ -327,6 +394,27 @@ public sealed class PodmanProvisioner : IAppProvisioner
         }
         // podman must re-read the mapping after it changes; migrate is a no-op on a fresh host.
         sb.Append($"runuser -u {user} -- podman system migrate 2>/dev/null || true\n");
+
+        // 4a. storage.conf: ignore_chown_errors.
+        //
+        //     Rootless podman must map every uid an image LAYER contains, and our subuid
+        //     window is bounded by the LXC's own 65536-uid map — so a DISTROLESS image whose
+        //     files are owned by 65532 (`/home/nonroot`, the distroless convention) cannot be
+        //     unpacked at all:
+        //       "potentially insufficient UIDs or GIDs available in user namespace
+        //        (requested 65532:65532 for /home/nonroot)"
+        //     Widening the range is not an option: mapping container uid 65532 would need
+        //     ~65533 subuids inside a 65536-wide window, leaving nothing for real accounts.
+        //
+        //     ignore_chown_errors makes podman map those files to the user instead of failing.
+        //     Hit on CT 4001 with ghcr.io/onedr0p/exportarr (#303). Note this only fixes the
+        //     PULL — running such an image as its own high uid additionally needs
+        //     `UserNS=keep-id:uid=<uid>,gid=<uid>` on the quadlet, or crun rejects it with
+        //     "setgroups: Invalid argument".
+        sb.Append($"install -d -o {user} -g {user} -m 755 /home/{user}/.config/containers\n");
+        sb.Append($"printf '%s\\n' '[storage]' 'driver = \"overlay\"' '[storage.options.overlay]' " +
+                  $"'ignore_chown_errors = \"true\"' > /home/{user}/.config/containers/storage.conf\n");
+        sb.Append($"chown -R {user}:{user} /home/{user}/.config/containers\n");
 
         // 4b. Make network-online.target actually REACHABLE — without this, quadlets don't
         //     start at boot until a 90-second timeout expires.
@@ -377,23 +465,9 @@ public sealed class PodmanProvisioner : IAppProvisioner
         // with "Failed to connect to bus". Bounded so a genuinely broken host still errors.
         sb.Append($"for i in $(seq 1 30); do [ -S /run/user/$UID_N/bus ] && break; sleep 1; done\n");
 
-        // 5b. Assets → the host, before anything that mounts them. Per-file base64 keeps the
-        //     script deterministic (a tarball's mtimes would churn the marker every run), and
-        //     nested directories are created as needed. Rendered as the ROOT user then chowned,
-        //     because the target may sit outside the rootless user's home.
-        if (assets.Count > 0)
-        {
-            sb.Append($"install -d -o {user} -g {user} -m 755 {assetsTarget}\n");
-            foreach (var (rel, b64, exec) in assets)
-            {
-                var dirPart = Path.GetDirectoryName(rel)?.Replace('\\', '/');
-                if (!string.IsNullOrEmpty(dirPart))
-                    sb.Append($"install -d -o {user} -g {user} -m 755 {assetsTarget}/{dirPart}\n");
-                sb.Append($"echo {b64} | base64 -d > {assetsTarget}/{rel}\n");
-                sb.Append($"chmod {(exec ? "0755" : "0644")} {assetsTarget}/{rel}\n");
-            }
-            sb.Append($"chown -R {user}:{user} {assetsTarget}\n");
-        }
+        // NOTE: assets are NOT rendered here — they go out as separate chunked commands via
+        //       PushAssetsAsync before this script runs, because embedding them blew past the
+        //       pct exec command-length limit (see AssetChunkBytes).
 
         // 6. Quadlet files → the user's systemd generator dir. base64 so arbitrary content
         //    (quotes, $, backticks in Exec= lines) survives the shell round-trip intact.
@@ -515,9 +589,22 @@ public sealed class PodmanProvisioner : IAppProvisioner
     // change on every run.
     internal const string DefaultAssetsTargetSuffix = "assets";
 
-    // Everything is delivered inside ONE `pct exec` command line, so a large tree would
-    // blow past the shell's argument limit with a baffling error. Fail early and clearly.
-    internal const int MaxAssetBytes = 1024 * 1024;
+    // Assets are pushed in their OWN chunked commands, NOT inside the deploy script.
+    //
+    // Learned the hard way on CT 4001 (#303): the monitoring tree is 286 KiB of base64
+    // (a 100 KB generated snmp.yml + a 97 KB Grafana dashboard), and embedding that in the
+    // single `pct exec` deploy script killed the SSH connection outright — "Connection reset
+    // by peer", with NOTHING executed, not even the first useradd. Measured limit on this
+    // path: 96 KiB of command line works, 128 KiB does not. Keepalives cannot help; it is a
+    // command-length rejection, not a timeout.
+    //
+    // So each file is written in chunks well under that limit, one command per chunk
+    // (`>` for the first, `>>` for the rest). Tree size then stops mattering at all.
+    internal const int AssetChunkBytes = 32 * 1024;
+
+    // Not a shell limit any more — just a sanity bound, since every chunk is a separate
+    // round trip and a very large tree would be slow to ship this way.
+    internal const int MaxAssetBytes = 16 * 1024 * 1024;
 
     internal static string? AssetsSourceDir(Shape s)
     {
