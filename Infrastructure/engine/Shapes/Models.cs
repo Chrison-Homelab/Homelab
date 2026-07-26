@@ -1,3 +1,5 @@
+using YamlDotNet.Serialization;
+
 namespace Homelab.Infrastructure.Shapes;
 
 // homelab/v1 shape model — the subset the converge engine needs (BL-010).
@@ -10,6 +12,12 @@ public sealed class Shape
     public string Kind { get; set; } = "";
     public ShapeMetadata Metadata { get; set; } = new();
     public LxcSpec Spec { get; set; } = new();
+
+    // The stack directory this shape was loaded from — set by ShapeLoader, never authored
+    // in YAML. Lets a provisioner read sibling assets that live next to the shape rather
+    // than being embedded in it (the podman path reads the stack's quadlet files this way).
+    [YamlIgnore]
+    public string? SourceDir { get; set; }
 }
 
 public sealed class ShapeMetadata
