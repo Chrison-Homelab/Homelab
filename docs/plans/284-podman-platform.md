@@ -37,11 +37,12 @@ Quadlet files (`*.container`, `*.volume`, `*.network`, `*.pod`) go in the `quadl
 rendered into `~<user>/.config/containers/systemd/`. No `*.kube` — ADR-0009 rules out any
 `podman kube` path.
 
-## The eight gotchas
+## The ten gotchas
 
-All were found by provisioning a throwaway CT, not by reading docs. **#1–4, #7 and #8 are fixed
-in the engine** — you inherit those. **#5 and #6 are rules you must follow when authoring quadlet
-files**; nothing enforces them yet.
+All were found by deploying, not by reading docs. **#1–4, #7 and #8 are fixed in the engine** —
+you inherit those. **#5, #6, #9 and #10 are rules you must follow when authoring quadlet files**;
+nothing enforces them yet. #9 and #10 came out of the first real workload (Phase 1, Leapmotor
+Mate on CT 6004) rather than the throwaway host.
 
 ### 1. Rootless networking needs `/dev/net/tun` — an LXC has none
 
@@ -168,6 +169,45 @@ the same run completed in 6m20s.
 
 The canonical path (self-hosted runner on the node LAN) is far less exposed than a laptop, which
 is why this hadn't bitten before — it affects every provisioner, not just podman.
+
+### 9. Podman does not create missing bind-mount source directories
+
+Docker silently creates them; podman refuses:
+
+```
+Error: statfs /home/podman/leapmotor/certs: no such file or directory
+```
+
+With `Restart=always` this becomes a crash loop that ends in
+`start request repeated too quickly` — six restarts in under two seconds on CT 6004. Any quadlet
+using a host-path `Volume=` must ensure its source exists. `[Service] ExecStartPre=` is the place:
+
+```ini
+[Service]
+ExecStartPre=/usr/bin/mkdir -p /home/podman/<app>/data /home/podman/<app>/certs
+```
+
+That also keeps the unit self-sufficient: a first start creates empty dirs, and a later data
+migration seeds them.
+
+### 10. `HealthCmd` cannot carry a quoted command — at all
+
+Quadlet takes systemd's **word-split** value and rejoins it, so inner quoting is destroyed no
+matter how you write it. Both forms verified broken on CT 6004:
+
+| Written | What podman received |
+|---|---|
+| `HealthCmd=python -c "…'http://…'…"` | unterminated string → `/bin/sh: Syntax error: Unterminated quoted string` every 30s |
+| `HealthCmd="python -c \"…\""` | the backslashes survived **literally** |
+
+The first is the dangerous one: the container sits permanently **`unhealthy`** while the
+application serves HTTP 200 perfectly well, so any monitoring keyed on health status lies.
+
+A healthcheck here must be **quote-free**. If the check needs quotes (e.g. a python one-liner,
+because the image ships no `curl`/`wget`), you cannot express it as a quadlet — either drop it and
+rely on `Restart=always` for process death, or render a script onto the host and call it
+quote-free (`HealthCmd=python /opt/health.py`). The latter needs the provisioner to render
+non-quadlet assets, which it currently does not — a platform change, not a quadlet tweak.
 
 ## Nested user namespaces (the risk ADR-0009 flagged)
 
