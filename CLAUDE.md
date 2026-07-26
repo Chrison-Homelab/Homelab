@@ -56,8 +56,21 @@ node IP `192.168.179.3:8006` uses a self-signed cert (`PROXMOX_VERIFY_TLS=false`
 
 **PR-only — never commit to `main` directly.** These repos can't use GitHub branch
 protection (private + free tier), so the rules are enforced **client-side** by a
-**Husky.NET `pre-push` hook** ([`.husky/pre-push`](.husky/pre-push)). All homelab
-repos squash-merge with auto-delete of the merged branch (`delete_branch_on_merge`).
+**Husky.NET `pre-push` hook** ([`.husky/pre-push`](.husky/pre-push)).
+
+**Merge strategy — rebase by default, squash to collapse a noisy branch. Never a merge
+commit.** `main` stays linear either way; the choice is about commit granularity, so a PR
+whose commits each tell part of the story keeps them, and a PR full of WIP/fixup commits
+gets squashed. Merged branches auto-delete (`delete_branch_on_merge`). This applies to
+**every** homelab repo — see [ADR-0010](docs/adr/ADR-0010-repo-settings-convention.md), and
+run [`scripts/align-repo-settings.sh`](scripts/align-repo-settings.sh) after creating any new
+repo (a fresh GitHub repo starts at defaults, which allow merge commits and never delete
+branches).
+
+```bash
+gh pr merge <n> --rebase --delete-branch    # default
+gh pr merge <n> --squash --delete-branch    # noisy branch
+```
 
 Always branch fresh off an up-to-date `main`:
 
