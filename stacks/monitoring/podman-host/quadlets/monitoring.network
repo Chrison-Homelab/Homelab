@@ -1,0 +1,16 @@
+# Shared network for the whole monitoring stack — REQUIRED, not optional.
+#
+# Compose gave every service a default network with service-name DNS for free; quadlets do
+# not. Without this, none of the by-name wiring resolves and the stack silently half-works:
+#   prometheus.yml  scrapes  exportarr-radarr:9708 · exportarr-sonarr:9709 ·
+#                            exportarr-prowlarr:9710 · otel-collector:8889 ·
+#                            snmp_exporter:9116 (relabelled __address__)
+#   datasources.yml points at prometheus:9090 · tempo:3200 · loki:3100
+# Every ContainerName= in this directory is therefore load-bearing: rename one and the
+# corresponding scrape or datasource breaks without any unit failing.
+#
+# Rootless podman runs aardvark-dns on a user-defined network, which is what provides the
+# resolution. Pattern proven on the Media host (CT 5114) in #302 first.
+
+[Network]
+NetworkName=monitoring

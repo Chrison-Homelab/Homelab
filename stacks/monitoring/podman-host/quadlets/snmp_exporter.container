@@ -1,0 +1,28 @@
+# SNMP exporter — how Prometheus reaches the DS1813 NAS.
+#
+# Pinned v0.30.1: snmp.yml's format is version-coupled to the exporter (the 0.20 "auth
+# split" broke the old version:/auth: module layout). Keep in lockstep with the generator
+# that produced config/snmp.yml. AutoUpdate is therefore deliberately ABSENT — an
+# auto-upgrade here would silently break scraping.
+#
+# ContainerName keeps the UNDERSCORE: prometheus.yml relabels __address__ to
+# snmp_exporter:9116, and compose resolved it by service name.
+
+[Unit]
+Description=SNMP exporter (DS1813 NAS)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/prom/snmp-exporter:v0.30.1
+ContainerName=snmp_exporter
+Network=monitoring.network
+PublishPort=9116:9116
+Volume=/home/podman/monitoring/config/snmp.yml:/etc/snmp_exporter/snmp.yml:ro
+
+[Service]
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

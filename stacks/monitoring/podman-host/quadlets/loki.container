@@ -1,0 +1,25 @@
+# Loki — log storage. datasources.yml points at loki:3100.
+# FIXED-UID (10001), same treatment as tempo.
+
+[Unit]
+Description=Loki (logs)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/grafana/loki:latest
+ContainerName=loki
+Network=monitoring.network
+UserNS=keep-id:uid=10001,gid=10001
+Volume=/home/podman/monitoring/config/loki-config.yml:/etc/loki/loki-config.yml:ro
+Volume=/home/podman/monitoring/data/loki:/loki
+Exec=-config.file=/etc/loki/loki-config.yml
+AutoUpdate=registry
+
+[Service]
+ExecStartPre=/usr/bin/mkdir -p /home/podman/monitoring/data/loki
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

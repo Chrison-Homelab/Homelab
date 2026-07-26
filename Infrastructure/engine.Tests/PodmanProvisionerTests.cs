@@ -305,46 +305,74 @@ public sealed class PodmanProvisionerTests : IDisposable
     }
 
     [Fact]
-    public void Deploy_RendersAssets_CreatingNestedDirsAndChowning()
+    public async Task Assets_ArePushedInSeparateChunkedCommands_NotInsideTheDeployScript()
     {
         var shape = WithAssets(PodmanShape(("mate.container", "[Container]\nImage=x:1\n")),
             ("config/prometheus.yml", "scrape_configs: []\n"),
             ("grafana/dashboards/node.json", "{}\n"));
         shape.Spec.Config["assetsTarget"] = "/home/podman/monitoring";
-        var script = Build(shape);
 
-        // Nested paths need their parent created — podman/base64 won't do it for us.
-        Assert.Contains("install -d -o podman -g podman -m 755 /home/podman/monitoring/grafana/dashboards", script);
-        Assert.Contains("> /home/podman/monitoring/config/prometheus.yml", script);
-        Assert.Contains("chown -R podman:podman /home/podman/monitoring", script);
+        var exec = new FakeNodeExec(_ => new ExecResult(0, "", ""));
+        var (msg, failed) = await PodmanProvisioner.PushAssetsAsync(shape, Ctx(exec), "pve1", "4001", "podman");
+
+        Assert.Null(failed);
+        Assert.Contains("2 asset file(s)", msg);
+        // Nested parents created, content decoded, temp removed, ownership fixed.
+        Assert.Contains(exec.Commands, c => c.Contains("install -d -o podman -g podman -m 755 /home/podman/monitoring/grafana/dashboards"));
+        Assert.Contains(exec.Commands, c => c.Contains("base64 -d < /home/podman/monitoring/config/prometheus.yml.b64"));
+        Assert.Contains(exec.Commands, c => c.Contains("rm -f /home/podman/monitoring/config/prometheus.yml.b64"));
+        Assert.Contains(exec.Commands, c => c.Contains("chown -R podman:podman /home/podman/monitoring"));
+
+        // THE POINT: no single command may approach the pct exec command-length limit.
+        // CT 4001 died at 286 KiB embedded in one script; 128 KiB already fails on this path.
+        Assert.All(exec.Commands, c => Assert.True(c.Length < 64 * 1024,
+            $"command of {c.Length} bytes risks the pct exec command-length limit"));
+
+        // And the deploy script itself must no longer carry them.
+        Assert.DoesNotContain("prometheus.yml", Build(shape));
     }
 
     [Fact]
-    public void Deploy_RendersAssetsBeforeStartingUnits()
+    public async Task Assets_LargeFile_IsSplitAcrossAppendingChunks()
     {
-        var shape = WithAssets(PodmanShape(("mate.container", "[Container]\nImage=x:1\n")),
-            ("config/prometheus.yml", "scrape_configs: []\n"));
-        var script = Build(shape);
+        // One file bigger than a chunk: first write truncates, the rest append, so a partial
+        // previous run can never leave a truncated file behind.
+        var big = new string('y', PodmanProvisioner.AssetChunkBytes * 2);
+        var shape = WithAssets(PodmanShape(), ("config/big.yml", big));
 
-        // A unit that bind-mounts a config must not start before that config exists.
-        var asset = script.IndexOf("/assets/config/prometheus.yml", StringComparison.Ordinal);
-        var start = script.IndexOf("systemctl --user restart", StringComparison.Ordinal);
-        Assert.True(asset >= 0 && start >= 0);
-        Assert.True(asset < start, "assets must be rendered before units are started");
+        var exec = new FakeNodeExec(_ => new ExecResult(0, "", ""));
+        await PodmanProvisioner.PushAssetsAsync(shape, Ctx(exec), "pve1", "4001", "podman");
+
+        var writes = exec.Commands.Where(c => c.Contains("big.yml.b64")).ToList();
+        Assert.True(writes.Count >= 3, $"expected the file to be chunked, got {writes.Count} write(s)");
+        Assert.Contains("> /home/podman/assets/config/big.yml.b64", writes[0]);
+        Assert.DoesNotContain(">> ", writes[0]);
+        Assert.Contains(">> /home/podman/assets/config/big.yml.b64", writes[1]);
     }
 
     [Fact]
-    public void Deploy_MakesShellScriptsExecutable_ButNotConfigFiles()
+    public async Task Assets_PushEnsuresUserAndTargetExist_BecauseItRunsBeforeTheDeployScript()
     {
-        var shape = WithAssets(PodmanShape(),
-            ("health.sh", "#!/bin/sh\nexit 0\n"),
-            ("config/app.yml", "k: v\n"));
-        var script = Build(shape);
+        var shape = WithAssets(PodmanShape(), ("config/app.yml", "k: v\n"));
+        var exec = new FakeNodeExec(_ => new ExecResult(0, "", ""));
 
-        // A rendered script is the only workable way to have a healthcheck that needs quoting
-        // (gotcha #10), so it has to land executable.
-        Assert.Contains("chmod 0755 /home/podman/assets/health.sh", script);
-        Assert.Contains("chmod 0644 /home/podman/assets/config/app.yml", script);
+        await PodmanProvisioner.PushAssetsAsync(shape, Ctx(exec), "pve1", "4001", "podman");
+
+        Assert.Contains(exec.Commands, c => c.Contains("useradd -m -s /bin/bash podman"));
+        Assert.Contains(exec.Commands, c => c.Contains("install -d -o podman -g podman -m 755 /home/podman/assets"));
+    }
+
+    [Fact]
+    public async Task Assets_ShellScriptsLandExecutable()
+    {
+        var shape = WithAssets(PodmanShape(), ("health.sh", "#!/bin/sh\nexit 0\n"), ("config/app.yml", "k: v\n"));
+        var exec = new FakeNodeExec(_ => new ExecResult(0, "", ""));
+
+        await PodmanProvisioner.PushAssetsAsync(shape, Ctx(exec), "pve1", "4001", "podman");
+
+        // A rendered script is the only workable healthcheck when the command needs quotes.
+        Assert.Contains(exec.Commands, c => c.Contains("chmod 0755 /home/podman/assets/health.sh"));
+        Assert.Contains(exec.Commands, c => c.Contains("chmod 0644 /home/podman/assets/config/app.yml"));
     }
 
     [Fact]
@@ -374,7 +402,7 @@ public sealed class PodmanProvisionerTests : IDisposable
         var shape = WithAssets(PodmanShape(), ("big.bin", new string('x', PodmanProvisioner.MaxAssetBytes + 1)));
 
         var ex = Assert.Throws<InvalidOperationException>(() => PodmanProvisioner.ReadAssets(shape));
-        Assert.Contains("single pct exec command line", ex.Message);
+        Assert.Contains("assets under", ex.Message);
     }
 
     [Fact]
@@ -382,6 +410,24 @@ public sealed class PodmanProvisionerTests : IDisposable
     {
         var script = Build(PodmanShape(("mate.container", "[Container]\nImage=x:1\n")));
         Assert.DoesNotContain("/assets", script);
+    }
+
+    [Fact]
+    public void Deploy_WritesStorageConf_SoDistrolessImagesCanBeUnpacked()
+    {
+        var script = Build(PodmanShape(("mate.container", "[Container]\nImage=x:1\n")));
+
+        // A distroless image owns files as uid 65532, which is outside the subuid window the
+        // LXC's own 65536-uid map allows — the pull fails outright without this. Widening the
+        // range can't fix it (65533 subuids inside a 65536-wide window leaves no real accounts).
+        Assert.Contains("/home/podman/.config/containers/storage.conf", script);
+        Assert.Contains("ignore_chown_errors", script);
+
+        // Must precede anything that pulls an image.
+        var conf = script.IndexOf("storage.conf", StringComparison.Ordinal);
+        var start = script.IndexOf("systemctl --user restart", StringComparison.Ordinal);
+        Assert.True(conf >= 0 && start >= 0 && conf < start,
+            "storage.conf must be written before any unit (and therefore any image pull)");
     }
 
     // ---- host-side prerequisites ------------------------------------------

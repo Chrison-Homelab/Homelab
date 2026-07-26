@@ -1,0 +1,34 @@
+# exportarr (prowlarr) — Prometheus exporter for the *arr app. One instance per app.
+#
+# ContainerName is load-bearing: prometheus.yml scrapes exportarr-prowlarr:9710.
+# The API key is a podman secret; the URL is plain config (an internal address, not a secret).
+# Replaced the archived ghcr.io/onedr0p/servarr_exporter image.
+
+[Unit]
+Description=exportarr (prowlarr)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=ghcr.io/onedr0p/exportarr:latest
+ContainerName=exportarr-prowlarr
+Network=monitoring.network
+# DISTROLESS uid 65532. Without this, crun refuses to start it ("setgroups: Invalid argument")
+# because container uid 65532 is outside the subuid window the LXC's own 65536-uid map allows.
+# keep-id aligns the host `podman` user with that single uid, which is all a one-process
+# container needs. The image PULL additionally needs storage.conf's ignore_chown_errors, which
+# the provisioner writes (#303, platform gotcha 12).
+UserNS=keep-id:uid=65532,gid=65532
+PublishPort=9710:9710
+Environment=PORT=9710
+Environment=URL=http://10.10.201.184:9696
+Secret=prowlarr_api_key,type=env,target=API_KEY
+Exec=prowlarr
+AutoUpdate=registry
+
+[Service]
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

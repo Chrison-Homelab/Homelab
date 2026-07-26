@@ -1,0 +1,31 @@
+# Pulse — fleet monitoring (Proxmox cluster + per-host agents). UI on :7655.
+#
+# State in ./data/pulse (616 MB): node config, agent registrations, admin creds, API token.
+#
+# NO UserNS= — verified against the live container, which runs as ROOT (uid 0). The default
+# rootless mapping therefore sends container-root to the `podman` user, so writes land as
+# CT uid 1000, which is exactly what the migrated dir is chowned to. An earlier draft had
+# keep-id:uid=1000 here on the mistaken assumption that the data dir's 1000 ownership meant
+# the process ran as 1000; with keep-id, container-root would map to a SUBUID instead and
+# could not write its own data dir.
+
+[Unit]
+Description=Pulse (fleet monitoring)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/rcourtman/pulse:latest
+ContainerName=pulse
+Network=monitoring.network
+PublishPort=7655:7655
+Volume=/home/podman/monitoring/data/pulse:/data
+AutoUpdate=registry
+
+[Service]
+ExecStartPre=/usr/bin/mkdir -p /home/podman/monitoring/data/pulse
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
