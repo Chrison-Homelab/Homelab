@@ -34,7 +34,21 @@ public sealed class NodeExec : INodeExec
     // known_hosts, decoupling auth from $HOME entirely. See issue #162.
     private string[] BuildSshArgs(string node, string command)
     {
-        var args = new List<string> { "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new" };
+        // Keepalives: a community-scripts create holds ONE ssh session open for the whole
+        // template download + apt install — 30+ minutes on a cold template. Without keepalives
+        // an idle-looking connection gets reset by something in between (observed 2026-07-26
+        // provisioning CT 9900 from a laptop across VLANs: "Read from remote host ...
+        // Connection reset by peer" after 31 minutes, with the CT actually created but the
+        // result never returned, so converge reported CREATE FAILED for a create that worked).
+        // 30s × 10 tolerates ~5 minutes of silence before giving up.
+        var args = new List<string>
+        {
+            "-o", "BatchMode=yes",
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-o", "TCPKeepAlive=yes",
+            "-o", "ServerAliveInterval=30",
+            "-o", "ServerAliveCountMax=10",
+        };
         var key = Environment.GetEnvironmentVariable("NODE_SSH_KEY");
         if (!string.IsNullOrWhiteSpace(key))
         {
