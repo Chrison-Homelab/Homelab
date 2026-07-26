@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Fallout.Common;
 using Fallout.Common.IO;
 using Fallout.Common.Tooling;
@@ -32,6 +33,7 @@ class Build : FalloutBuild
     AbsolutePath StacksDirectory => RootDirectory / "stacks";
     AbsolutePath EngineProject => RootDirectory / "Infrastructure" / "engine";
     AbsolutePath EngineDll => EngineProject / "bin" / "Release" / "net10.0" / "homelab-infra.dll";
+    AbsolutePath EngineTests => RootDirectory / "Infrastructure" / "engine.Tests";
 
     // Portable validator artifact (Phase 0 / ADR-0008): the SAME engine published as a
     // self-contained linux-x64 single-file binary + shape.schema.json beside it, so a
@@ -87,6 +89,30 @@ class Build : FalloutBuild
             ProcessTasks
                 .StartProcess("dotnet", $"build {EngineProject} -c Release --nologo", workingDirectory: RootDirectory)
                 .AssertZeroExitCode());
+
+    Target TestEngine => _ => _
+        .Description("Run the engine unit tests (Infrastructure/engine.Tests) — the PR gate for the engine.")
+        .DependsOn(CompileEngine)
+        .Executes(() =>
+        {
+            // No --no-build: CompileEngine builds the ENGINE project only, not the test project
+            // (unlike PowerOrchestrator, where CompilePowerOrchestrator builds the whole solution).
+            var proc = ProcessTasks
+                .StartProcess("dotnet", $"test {EngineTests} -c Release --nologo", workingDirectory: RootDirectory)
+                .AssertZeroExitCode();
+
+            // Guard against a SILENT pass: `dotnet test` exits 0 when it discovers nothing, so a
+            // renamed/moved test project would turn the gate green while testing nothing at all.
+            // Assert we actually ran tests (issue #299 asked for exactly this).
+            var text = string.Join("\n", proc.Output.Select(o => o.Text));
+            var match = Regex.Match(text, @"Total:\s*(\d+)");
+            if (!match.Success || int.Parse(match.Groups[1].Value) == 0)
+                throw new Exception(
+                    $"TestEngine ran but discovered NO tests (expected the {nameof(EngineTests)} suite). " +
+                    "A green run here would be meaningless — check the test project still exists and is discoverable.");
+
+            Log.Information("Engine tests passed — {Total} test(s)", match.Groups[1].Value);
+        });
 
     Target ValidateShapes => _ => _
         .Description("Validate every shape against shape.schema.json (engine `validate`).")

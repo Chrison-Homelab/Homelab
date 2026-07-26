@@ -369,15 +369,23 @@ public sealed class PodmanProvisionerTests : IDisposable
     [Fact]
     public async Task Fails_WhenADeclaredSecretIsMissingFromSecretsEnv()
     {
+        // Sentinel key, per the HL<issue>_TEST_* convention already used in ConvergeCoreTests.
+        // MUST NOT be a real secrets.env key: SecretsEnv.Load(null) deliberately folds in process
+        // env vars, so a realistic name makes this test pass or fail depending on whether the
+        // developer has sourced secrets.env. It was originally written with MATE_AUTH_PASSWORD
+        // and started failing the moment that key was registered for real (#285/#299).
+        const string absentKey = "HL299_TEST_ABSENT_SECRET";
+        Environment.SetEnvironmentVariable(absentKey, null);   // ensure unset
+
         var shape = PodmanShape(("mate.container", "[Container]\nImage=x:1\n"));
-        shape.Spec.Config["secrets"] = new Dictionary<string, object?> { ["mate_password"] = "MATE_AUTH_PASSWORD" };
+        shape.Spec.Config["secrets"] = new Dictionary<string, object?> { ["mate_password"] = absentKey };
 
         var exec = new FakeNodeExec(_ => new ExecResult(0, "", ""));
         var result = await new PodmanProvisioner().ApplyAsync(shape, Ctx(exec));
 
         // Better a clear failure than an empty podman secret the unit silently mis-consumes.
         Assert.Equal(ApplyOutcome.Failed, result.Outcome);
-        Assert.Contains("MATE_AUTH_PASSWORD", result.Message);
+        Assert.Contains(absentKey, result.Message);
     }
 
     [Fact]

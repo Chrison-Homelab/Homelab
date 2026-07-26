@@ -1,7 +1,23 @@
+# engine-ci — build AND TEST the converge engine (Infrastructure/engine).
+#
+# Runs the Fallout `TestEngine` target rather than raw `dotnet` commands, so the repo keeps
+# ONE build entrypoint (ADR-0001) and CI can't drift from what runs locally — the same reason
+# power-orchestrator-ci calls `./build.sh TestPowerOrchestrator`.
+#
+# Before #299 this workflow only restored + built, so a green check meant "it compiles" and
+# nothing more: the engine's unit tests (idempotency, the nested-userns guard, the rootless
+# posture) had never run in CI at all.
 name: engine-ci
 on:
   pull_request:
-    paths: ['Infrastructure/engine/**', 'nuget.config', '.github/workflows/engine-ci.yml']
+    paths:
+      - 'Infrastructure/engine/**'
+      - 'Infrastructure/engine.Tests/**'   # #299: a test-only PR MUST run this workflow
+      - 'Infrastructure/schema/**'         # app-catalogue/schema drift is asserted by the tests
+      - 'build/**'                         # the TestEngine target itself
+      - 'nuget.config'
+      - 'global.json'
+      - '.github/workflows/engine-ci.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,9 +26,15 @@ jobs:
   build:
     runs-on: [self-hosted, homelab]
     env:
-      GITHUB_PACKAGES_PAT: ${{ secrets.GITHUB_TOKEN }}   # NuGet org feed auth (nuget.config)
+      # PACKAGES_PAT, not GITHUB_TOKEN: driving the build through Fallout means restoring
+      # Fallout.* from the Fallout-build org's GitHub Packages feed, and the default
+      # GITHUB_TOKEN cannot read packages across orgs. Same reason power-orchestrator-ci
+      # uses it. (Our own *Sharp packages come from nuget.org now and need no auth.)
+      GITHUB_PACKAGES_PAT: ${{ secrets.PACKAGES_PAT }}
       DOTNET_ROOT: /usr/local/dotnet                      # .NET SDK pre-installed on the runner
     steps:
       - uses: actions/checkout@v6
-      - run: dotnet restore Infrastructure/engine/Homelab.Infrastructure.csproj
-      - run: dotnet build Infrastructure/engine/Homelab.Infrastructure.csproj -c Release --no-restore
+      # TestEngine depends on CompileEngine, so this both builds and tests. It also fails
+      # loudly if zero tests are discovered — `dotnet test` exits 0 on an empty run, which
+      # would otherwise make a renamed test project look like a passing gate.
+      - run: ./build.sh TestEngine
