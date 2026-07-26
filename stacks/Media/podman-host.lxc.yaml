@@ -1,0 +1,71 @@
+# Media podman host — the stack's rootless Podman + quadlet host (ADR-0009 Phase 2a, #302).
+#
+# DELIBERATELY GENERIC, like the SmartHome one (CT 6004): this is *the Media stack's
+# container host*, not the youtarr box. Youtarr is simply the first (and today only)
+# Docker member of this stack, so it's what lands here first; further containerised
+# Media services join as extra quadlets rather than as new one-app Docker CTs.
+#
+# Replaces the Docker host CT 5113. In-block either way (Media owns 5100–5199).
+#
+# THE NFS BIT — the reason this migration is interesting (see podman-host/README.md):
+# the youtube share is mounted at the PROXMOX HOST level and passed in as mp0, exactly
+# as CT 5113 has it. Rootless podman then adds a THIRD userns layer on top of the
+# unprivileged LXC's own. Consequences, in short:
+#   * NEVER use `:U` on /mnt/youtube — it chowns RECURSIVELY, i.e. 879 GB over NFS.
+#   * NO UserNS= on the youtarr container: it runs as container-root, which the DEFAULT
+#     rootless mapping already sends to the `podman` user — one stable uid. keep-id would
+#     push container-root out into the subuid range and make it worse.
+#   * youtarr-db is the opposite case (fixed uid 999 on LOCAL disk) → keep-id there.
+# Verified live: the NAS export squashes every incoming uid to 1024:100, so rootless writes are
+# indistinguishable from the old Docker ones and Plex reads them unchanged.
+#
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: podman-host
+  stack: Media
+  tags: [podman, quadlet, container-host, adr-0009]
+
+spec:
+  app: podman            # community-scripts ct/podman.sh + the `podman` provisioner
+  ctid: 5114             # in-block (5100–5199); highest in use was 5113 (the CT this replaces)
+  cores: 2               # matches CT 5113 — node app + MariaDB + yt-dlp work
+  memory: 2048           # MB — podman + youtarr + MariaDB
+  disk: 15               # GB — image layers + MariaDB store (~130 MB) + jobs/config; videos are on NFS
+
+  features:
+    nesting: true        # rootless podman needs nesting for its own nested userns
+    keyctl: true         # containers keyring — settable only via the pct/SSH create path
+    fuse: true           # fuse-overlayfs fallback storage driver
+                         # NOTE: ct/podman.sh silently DROPS var_fuse; the provisioner
+                         # reconciles features from this shape after create (#284).
+
+  # node / network / os / storage inherited from stack.yaml defaults (hpe-01, VLAN 1010, DHCP).
+
+  mounts:
+    - type: nfs
+      storage: ds1813-nfs-volume-4
+      source: youtube                    # volume4 subpath only (self-provisioned by MountReconciler)
+      target: /mnt/youtube               # same path as CT 5113, so YOUTUBE_OUTPUT_DIR is unchanged
+      acl: true
+      backup: false
+
+  # Pre-start guard, carried over from CT 5113 unchanged: refuse to start unless volume4 is
+  # actually mounted. LXC-level and runtime-agnostic — rootless podman doesn't affect it, and
+  # it's what protects against the NAS-drop rootfs-fill failure mode.
+  hookscript: local:snippets/ensure-data-mount.sh
+
+  config:
+    user: podman
+    quadlets: podman-host/quadlets
+
+    # podman secrets seeded from secrets.env, add-only. Namespaced per service, because this
+    # host will grow more of them (the SM/template keys are YOUTARR_*, the podman secret names
+    # are lower-case).
+    secrets:
+      youtarr_db_root_password: YOUTARR_DB_ROOT_PASSWORD
+      youtarr_auth_username: YOUTARR_AUTH_USERNAME
+      youtarr_auth_password: YOUTARR_AUTH_PASSWORD

@@ -1,0 +1,83 @@
+# Youtarr — YouTube→Plex downloader. Converted from stacks/Media/youtarr/compose.yml.
+#
+# NFS + USERNS: this container writes downloaded video to the NFS share at
+# /mnt/youtube (host-level mount, passed in as mp0). Two rules, both load-bearing:
+#
+#   * NO `:U` on that Volume=. It chowns RECURSIVELY — 879 GB across NFS, rewriting
+#     ownership on the NAS. Cheap-looking flag, hours of damage.
+#   * NO UserNS= at all. The app runs as container-root (compose defaulted
+#     YOUTARR_UID/GID to 0:0, and the live container confirms uid=0), and the DEFAULT
+#     rootless mapping already sends container-root to the `podman` user — a single
+#     stable uid. keep-id would align the *user's* uid instead, pushing container-root
+#     out into the subuid range: strictly worse here.
+#
+# OWNERSHIP — verified empirically, and it is BETTER than predicted. The concern was that
+# rootless (which cannot map container-root to CT root) would write files under a different
+# host uid than Docker did, leaving two owner uids on the share. It does not: the NAS export
+# ALREADY SQUASHES every incoming uid to 1024:100. A probe written by this container landed as
+# 1024:100 — byte-identical ownership to files the old Docker setup wrote — and Plex (CT 5008,
+# same share) read it back fine. So the userns layers are irrelevant to NFS ownership here, and
+# the "proper fix" of NAS-side squashing that #208 would have added is already in place.
+
+[Unit]
+Description=Youtarr — YouTube to Plex downloader
+Documentation=https://github.com/Chrison-Homelab/Homelab/issues/302
+After=network-online.target youtarr-db.service
+Wants=network-online.target
+# Ordering only. compose had `depends_on: condition: service_healthy`, which has NO
+# quadlet/systemd equivalent — After= waits for the unit to have STARTED, not to be
+# healthy. The readiness gap is covered by Restart=always + RestartSec below: if youtarr
+# starts before MariaDB accepts connections it exits and systemd retries until it can.
+# A host-side ExecStartPre wait is NOT an option — `youtarr-db` is a podman-network DNS
+# name, unresolvable from the CT.
+Requires=youtarr-db.service
+
+[Container]
+Image=docker.io/dialmaster/youtarr:latest
+ContainerName=youtarr
+Network=youtarr.network
+PublishPort=3087:3011
+
+Environment=IN_DOCKER_CONTAINER=1
+Environment=TZ=Pacific/Auckland
+Environment=DB_HOST=youtarr-db
+Environment=DB_PORT=3321
+Environment=DB_USER=root
+Environment=DB_NAME=youtarr
+Environment=AUTH_ENABLED=true
+Environment=LOG_LEVEL=info
+# NOTE: this is the HOST path, not the container path, exactly as CT 5113 has it — the live
+# container is told /mnt/youtube while the data is mounted at /usr/src/app/data. Verified on
+# the running container before conversion; do not "correct" it to the mount target.
+Environment=YOUTUBE_OUTPUT_DIR=/mnt/youtube
+
+Secret=youtarr_db_root_password,type=env,target=DB_PASSWORD
+Secret=youtarr_auth_username,type=env,target=AUTH_PRESET_USERNAME
+Secret=youtarr_auth_password,type=env,target=AUTH_PRESET_PASSWORD
+
+# The NFS video output. No :U, no UserNS — see the header.
+Volume=/mnt/youtube:/usr/src/app/data
+# Local state, migrated from CT 5113.
+Volume=/home/podman/youtarr/config:/app/config
+Volume=/home/podman/youtarr/jobs:/app/jobs
+Volume=/home/podman/youtarr/server/images:/app/server/images
+
+# A healthcheck IS expressible here, unlike Mate's (gotcha #10): this image ships curl, so the
+# command needs no quotes and survives systemd's parser intact. Worth having — it catches a
+# hung-but-alive app, which Restart= alone cannot.
+HealthCmd=curl --fail --silent --show-error --output /dev/null http://localhost:3011/api/health
+HealthInterval=30s
+HealthTimeout=10s
+HealthRetries=3
+HealthStartPeriod=40s
+
+AutoUpdate=registry
+
+[Service]
+ExecStartPre=/usr/bin/mkdir -p /home/podman/youtarr/config /home/podman/youtarr/jobs /home/podman/youtarr/server/images
+Restart=always
+RestartSec=10
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target
