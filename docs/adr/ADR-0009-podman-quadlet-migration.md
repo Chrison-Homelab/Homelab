@@ -3,9 +3,9 @@
 - **Status:** Accepted (direction) · implementation phased, not started
 - **Date:** 2026-07-23
 - **Deciders:** Chris
-- **Relates to:** epic [#283](https://github.com/Chrison-dev/Homelab/issues/283),
-  Phase-0 groundwork [#284](https://github.com/Chrison-dev/Homelab/issues/284),
-  Leapmotor pilot [#285](https://github.com/Chrison-dev/Homelab/issues/285);
+- **Relates to:** epic [#283](https://github.com/Chrison-Homelab/Homelab/issues/283),
+  Phase-0 groundwork [#284](https://github.com/Chrison-Homelab/Homelab/issues/284),
+  Leapmotor pilot [#285](https://github.com/Chrison-Homelab/Homelab/issues/285);
   [ADR-0001 IaC tooling](ADR-0001-iac-tooling.md) (self-contained stacks, Define→Discover→Converge),
   [ADR-0007 Pangolin](ADR-0007-pangolin-remote-access.md) (Docker EE — deliberately out of scope here),
   [ADR-0008 stack extraction / meta-repo](ADR-0008-stack-extraction-meta-repo.md) (quadlet files live in the stack submodules);
@@ -85,7 +85,7 @@ start on every clean stack, proving the fiddly plumbing on the smallest stack fi
    trickiest plumbing (nested userns, linger, driving `systemctl --user` over `pct exec`) onto the
    **pilot**, where the blast radius is smallest.
 
-3. **`app: podman` engine path (Phase 0, [#284](https://github.com/Chrison-dev/Homelab/issues/284)).**
+3. **`app: podman` engine path (Phase 0, [#284](https://github.com/Chrison-Homelab/Homelab/issues/284)).**
    A bespoke provisioner (mirroring `PangolinProvisioner`), created via the **pct/SSH path**, that
    makes an unprivileged LXC with `features: nesting=1,keyctl=1,fuse=1`, installs `podman` +
    `podlet`, creates the `podman` user + linger, and renders/starts the stack's quadlets — replacing
@@ -104,8 +104,8 @@ start on every clean stack, proving the fiddly plumbing on the smallest stack fi
 
 | Phase | Scope | Issue |
 |---|---|---|
-| 0 | Platform groundwork: `app: podman` provisioner + quadlet render/deploy | [#284](https://github.com/Chrison-dev/Homelab/issues/284) |
-| 1 | **Pilot — Leapmotor (CT 4100)**, side-by-side (proves the whole path) | [#285](https://github.com/Chrison-dev/Homelab/issues/285) |
+| 0 | Platform groundwork: `app: podman` provisioner + quadlet render/deploy | [#284](https://github.com/Chrison-Homelab/Homelab/issues/284) |
+| 1 | **Pilot — Leapmotor (CT 4100)**, side-by-side (proves the whole path) | [#285](https://github.com/Chrison-Homelab/Homelab/issues/285) |
 | 2 | Media/youtarr (CT 5113, NFS-through-2-userns) + Monitoring (CT 4000, fixed-uid data dirs) | — |
 | 3 | Observe: Cockpit + podman exporter → CT 4000; auto-update/prune timers | — |
 | 4 | Resolve hard cases (see below) | — |
