@@ -37,7 +37,11 @@ Quadlet files (`*.container`, `*.volume`, `*.network`, `*.pod`) go in the `quadl
 rendered into `~<user>/.config/containers/systemd/`. No `*.kube` — ADR-0009 rules out any
 `podman kube` path.
 
-## The seven gotchas
+## The eight gotchas
+
+All were found by provisioning a throwaway CT, not by reading docs. **#1–4, #7 and #8 are fixed
+in the engine** — you inherit those. **#5 and #6 are rules you must follow when authoring quadlet
+files**; nothing enforces them yet.
 
 ### 1. Rootless networking needs `/dev/net/tun` — an LXC has none
 
@@ -143,6 +147,27 @@ WantedBy=multi-user.target
 
 Masking the podman helper would also remove the delay, but throws away the network-readiness
 guarantee the quadlets legitimately want.
+
+### 8. A long create needs SSH keepalives, or a working create reports as failed
+
+`CommunityScriptsCreator` holds **one** ssh session open for the entire template download + apt
+install — 30+ minutes on a cold template. Without keepalives something in between resets the
+idle-looking connection:
+
+```
+Read from remote host 192.168.179.2: Connection reset by peer
+client_loop: send disconnect: Broken pipe
+```
+
+Observed provisioning CT 9900 from a laptop across VLANs (31 minutes in). The insidious part:
+**the CT was actually created**, but the result never came back, so converge reported
+`CREATE FAILED` for a create that had worked — leaving the next run to reconcile a CT the plan
+believed didn't exist. `NodeExec` now sets `TCPKeepAlive=yes` +
+`ServerAliveInterval=30`/`ServerAliveCountMax=10` (~5 min of tolerated silence). With keepalives
+the same run completed in 6m20s.
+
+The canonical path (self-hosted runner on the node LAN) is far less exposed than a laptop, which
+is why this hadn't bitten before — it affects every provisioner, not just podman.
 
 ## Nested user namespaces (the risk ADR-0009 flagged)
 
