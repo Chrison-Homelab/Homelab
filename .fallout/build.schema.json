@@ -30,6 +30,8 @@
         "DeployPowerOrchestrator",
         "Preview",
         "PublishPowerOrchestrator",
+        "PublishValidator",
+        "TestEngine",
         "TestPowerOrchestrator",
         "ValidateShapes"
       ]
