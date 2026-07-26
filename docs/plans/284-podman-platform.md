@@ -37,12 +37,13 @@ Quadlet files (`*.container`, `*.volume`, `*.network`, `*.pod`) go in the `quadl
 rendered into `~<user>/.config/containers/systemd/`. No `*.kube` — ADR-0009 rules out any
 `podman kube` path.
 
-## The ten gotchas
+## The eleven gotchas
 
 All were found by deploying, not by reading docs. **#1–4, #7 and #8 are fixed in the engine** —
-you inherit those. **#5, #6, #9 and #10 are rules you must follow when authoring quadlet files**;
-nothing enforces them yet. #9 and #10 came out of the first real workload (Phase 1, Leapmotor
-Mate on CT 6004) rather than the throwaway host.
+you inherit those. **#5, #6, #9, #10 and #11 are rules you must follow when authoring quadlet
+files**; nothing enforces them yet. #9 and #10 came out of the first real workload (Phase 1,
+Leapmotor Mate on CT 6004); #11 came out of the first *multi-container* one (Phase 2a, youtarr
+on CT 5114).
 
 ### 1. Rootless networking needs `/dev/net/tun` — an LXC has none
 
@@ -203,11 +204,64 @@ matter how you write it. Both forms verified broken on CT 6004:
 The first is the dangerous one: the container sits permanently **`unhealthy`** while the
 application serves HTTP 200 perfectly well, so any monitoring keyed on health status lies.
 
-A healthcheck here must be **quote-free**. If the check needs quotes (e.g. a python one-liner,
-because the image ships no `curl`/`wget`), you cannot express it as a quadlet — either drop it and
-rely on `Restart=always` for process death, or render a script onto the host and call it
-quote-free (`HealthCmd=python /opt/health.py`). The latter needs the provisioner to render
-non-quadlet assets, which it currently does not — a platform change, not a quadlet tweak.
+A healthcheck here must be **quote-free**. This is a constraint on *quoting*, not on healthchecks
+as a category — youtarr's works fine, because its image ships `curl` and the command needs no
+quotes at all:
+
+```ini
+HealthCmd=curl --fail --silent --show-error --output /dev/null http://localhost:3011/api/health
+```
+
+So: check whether the image gives you a quote-free probe before giving up. If the check genuinely
+needs quotes (a python one-liner, because the image ships no `curl`/`wget`), you cannot express it
+as a quadlet — either drop it and rely on `Restart=always` for process death, or render a script
+onto the host and call it quote-free (`HealthCmd=python /opt/health.py`). The latter needs the
+provisioner to render non-quadlet assets, which it currently does not — a platform change, not a
+quadlet tweak.
+
+Also never put a **secret** in `HealthCmd`: it lands in the unit file. youtarr's MariaDB check
+(`mysqladmin ping … -p$DB_ROOT_PASSWORD`) was dropped for that reason as much as the quoting.
+
+### 11. `depends_on: condition: service_healthy` has NO quadlet or systemd equivalent
+
+compose can gate one service on another being *healthy*. Quadlet cannot, and neither can systemd:
+`After=`/`Requires=` wait for a unit to have **started**, not to be **ready**. Converting a
+compose file with a health-gated `depends_on` therefore silently loses the gate.
+
+Nor can you paper over it with a host-side wait:
+
+```ini
+# WRONG — youtarr-db is a podman-network DNS name, unresolvable from the CT
+ExecStartPre=/usr/bin/sh -c until nc -z youtarr-db 3321; do sleep 2; done
+```
+
+The container names only resolve *inside* the podman network (via aardvark-dns), and
+`ExecStartPre` runs on the CT.
+
+Do it the systemd way instead — let it fail and retry:
+
+```ini
+[Service]
+Restart=always
+RestartSec=10
+```
+
+The dependent unit crash-loops harmlessly until its dependency accepts connections. Keep
+`After=`/`Requires=` as well, so startup *order* is still right and the dependency is pulled in.
+
+### Multi-container stacks need an explicit `.network`
+
+Not a gotcha so much as a missing default: compose gives every service a shared network with
+service-name DNS for free. **Quadlets do not.** Two containers that talk to each other need a
+`.network` quadlet and `Network=<name>.network` on each, which is what enables aardvark-dns:
+
+```ini
+# youtarr.network
+[Network]
+NetworkName=youtarr
+```
+
+Verified on CT 5114: `youtarr-db.dns.podman` → `10.89.0.2`, resolvable from the youtarr container.
 
 ## Nested user namespaces (the risk ADR-0009 flagged)
 
@@ -215,6 +269,13 @@ An unprivileged LXC is itself userns-mapped — the host grants a window (conven
 `0 100000 65536`), so **inside** the CT only uids `0..65535` exist. The host convention of giving
 a rootless user `100000:65536` points outside that window and podman fails at first run
 (`newuidmap: write to uid_map failed`).
+
+**Before agonising over NFS ownership, check whether the export squashes.** Phase 2a expected
+rootless writes to land under a different host uid than Docker's, leaving two owner uids on the
+share — and it simply doesn't happen: the Synology export maps *every* incoming uid to `1024:100`,
+so podman's writes are byte-identical to Docker's and Plex reads them unchanged. The userns layers
+turn out to be irrelevant to ownership on that share. Verify with a probe file rather than
+reasoning about the map.
 
 Default is therefore `podman:10000:50000` — below `65534` (nobody), leaving room for real
 accounts. The provisioner **verifies** rather than assumes, reading field 3 of
