@@ -100,6 +100,16 @@ public sealed class PodmanProvisioner : IAppProvisioner
         foreach (var f in QuadletFiles(s))
             parts.Add($"{Path.GetFileName(f)}:{Sha(SafeRead(f))}");
 
+        // Hash the generated script too, so a change to the deploy RECIPE — not just to its
+        // inputs — also re-converges. Without this, fixing a bug in BuildDeploy silently
+        // no-ops on every host that already carries the old marker: exactly what happened on
+        // CT 9900, where the network-online fix reported NOCHANGE and never landed.
+        // Placeholders for marker/path/secret-values keep it deterministic (the values
+        // themselves are already covered by the secret name→key pairs above).
+        parts.Add(Sha(BuildDeploy(
+            s, User(s), "<marker>", "<markerPath>", QuadletFiles(s),
+            SecretNames(s).ToDictionary(kv => kv.Key, _ => "", StringComparer.Ordinal))));
+
         return Sha(string.Join('|', parts))[..12];
     }
 
@@ -127,6 +137,10 @@ public sealed class PodmanProvisioner : IAppProvisioner
             secretValues[secretName] = val;
         }
 
+        // HOST-side prerequisites first — the in-CT setup cannot fix these from inside.
+        var (hostMsg, hostFailed) = await EnsureHostConfigAsync(s, ctx, node, ctid);
+        if (hostFailed is not null) return ApplyResult.Failed(hostFailed);
+
         var files = QuadletFiles(s);
         var script = BuildDeploy(s, user, marker, markerPath, files, secretValues);
 
@@ -136,7 +150,115 @@ public sealed class PodmanProvisioner : IAppProvisioner
         var what = files.Count == 0
             ? "prepared rootless podman host (no quadlets declared)"
             : $"prepared rootless podman host + deployed {files.Count} quadlet(s): {string.Join(", ", UnitNames(files))}";
-        return ApplyResult.Applied($"{what} (marker {marker})");
+        return ApplyResult.Applied(
+            string.Join("; ", new[] { hostMsg, $"{what} (marker {marker})" }.Where(x => x is not null)));
+    }
+
+    // ── host-side prerequisites (pct/SSH, not in-CT) ────────────────────────────────
+    // Two things rootless Podman needs that only the HOST can grant, both found the hard
+    // way on the first live provision (2026-07-26, throwaway CT 9900):
+    //
+    //  1. /dev/net/tun. Rootless networking is pasta (or slirp4netns), and BOTH open
+    //     /dev/net/tun to build the tap device. An LXC has no /dev/net, so every container
+    //     start dies with "pasta failed ... Failed to open() /dev/net/tun". ADR-0009 noted
+    //     rootless networking has no routable IP but not this prerequisite. The host device
+    //     node is mode 666, so an unprivileged CT can open it once bind-mounted — no
+    //     privileged container, no host-net workaround needed.
+    //  2. The declared `features:` actually landing. ct/podman.sh accepted var_fuse and
+    //     created the CT with only `nesting=1,keyctl=1` — fuse was silently dropped. Since
+    //     the shape is the source of truth, reconcile features here rather than trusting the
+    //     create path. Merges with (never strips) features we didn't declare.
+    //
+    // Both need a CT restart to take effect, so they're applied together, then rebooted once.
+    // Returns (message, failedReason).
+    internal static async Task<(string? Msg, string? Failed)> EnsureHostConfigAsync(
+        Shape s, ConvergeContext ctx, string node, string ctid)
+    {
+        var changed = new List<string>();
+
+        // 1. features — merge desired over live, only writing when something is missing.
+        var cfg = await ctx.Exec.OnNodeAsync(node, $"pct config {ctid}");
+        if (!cfg.Ok) return (null, $"pct config {ctid} failed: {cfg.Stderr}");
+
+        var live = ParseFeatures(cfg.Stdout);
+        var desired = new Dictionary<string, string>(live, StringComparer.Ordinal);
+        // Rootless podman needs all three: nesting for its own userns, keyctl for the
+        // containers keyring, fuse for the fuse-overlayfs fallback storage driver.
+        if (s.Spec.Features?.Nesting ?? true) desired["nesting"] = "1";
+        if (s.Spec.Features?.Keyctl ?? true) desired["keyctl"] = "1";
+        if (s.Spec.Features?.Fuse ?? true) desired["fuse"] = "1";
+
+        if (desired.Count != live.Count || desired.Any(kv => live.GetValueOrDefault(kv.Key) != kv.Value))
+        {
+            var joined = string.Join(",", desired.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key}={kv.Value}"));
+            var set = await ctx.Exec.OnNodeAsync(node, $"pct set {ctid} --features {joined}");
+            if (!set.Ok) return (null, $"pct set --features failed: {set.Stderr}");
+            changed.Add($"features →{joined}");
+        }
+
+        // 2. /dev/net/tun bind-mount. Written straight to the CT conf — `pct set` has no
+        //    option for raw lxc.* keys. Bind the /dev/net DIRECTORY (create=dir) rather than
+        //    the tun file: binding the file alone fails when the container has no /dev/net
+        //    parent to mount onto. Idempotent by grep; append-only, so nothing else in the
+        //    conf is touched.
+        var conf = $"/etc/pve/lxc/{ctid}.conf";
+        var has = await ctx.Exec.OnNodeAsync(node, $"grep -q 'dev/net' {conf} && echo yes || echo no");
+        if (has.Stdout.Trim() != "yes")
+        {
+            var append =
+                $"printf '%s\\n%s\\n' 'lxc.cgroup2.devices.allow: c 10:200 rwm' " +
+                $"'lxc.mount.entry: /dev/net dev/net none bind,create=dir' >> {conf}";
+            var add = await ctx.Exec.OnNodeAsync(node, append);
+            if (!add.Ok) return (null, $"adding /dev/net bind-mount to {conf} failed: {add.Stderr}");
+            changed.Add("/dev/net/tun bind-mount (rootless pasta networking)");
+        }
+
+        if (changed.Count == 0) return (null, null);
+
+        // Both changes are boot-time, so the CT has to be restarted before the in-CT phase.
+        //
+        // Explicit stop→start, NOT `pct reboot`, and the readiness probe checks systemd rather
+        // than `pct status`. Learned the hard way on CT 9900: `pct status` reports "running"
+        // the instant a reboot is requested — before shutdown has even begun — so a
+        // status-based wait returns immediately, the next `pct exec` attaches to a container
+        // that is mid-shutdown, and it blocks FOREVER (which in turn wedges the reboot, so the
+        // CT never actually restarts). Stop-then-start gives an unambiguous "stopped" state to
+        // wait on, and `systemctl is-system-running` proves the init system is actually up.
+        // Every probe is `timeout`-wrapped so a wedged lxc-attach can never hang converge.
+        var restart = await ctx.Exec.OnNodeAsync(node, string.Join("\n", new[]
+        {
+            $"pct stop {ctid} || true",
+            $"for i in $(seq 1 60); do pct status {ctid} | grep -q stopped && break; sleep 2; done",
+            $"pct status {ctid} | grep -q stopped || {{ echo 'CT {ctid} would not stop' >&2; exit 1; }}",
+            $"pct start {ctid}",
+            // running|degraded both mean init finished; a unit failing elsewhere is not our gate.
+            $"for i in $(seq 1 90); do",
+            $"  s=$(timeout 5 pct exec {ctid} -- systemctl is-system-running 2>/dev/null || true)",
+            $"  case \"$s\" in running|degraded) exit 0;; esac",
+            "  sleep 2",
+            "done",
+            $"echo 'CT {ctid} systemd did not come up after restart' >&2; exit 1",
+        }));
+        if (!restart.Ok) return (null, $"restarting CT {ctid} failed: {restart.Stderr}");
+
+        return ($"host config: {string.Join(", ", changed)} (CT restarted)", null);
+    }
+
+    // `pct config` prints features as one line: "features: nesting=1,keyctl=1".
+    internal static Dictionary<string, string> ParseFeatures(string pctConfig)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var raw in pctConfig.Split('\n'))
+        {
+            var line = raw.Trim();
+            if (!line.StartsWith("features:", StringComparison.Ordinal)) continue;
+            foreach (var pair in line["features:".Length..].Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var kv = pair.Trim().Split('=', 2);
+                if (kv.Length == 2 && kv[0].Length > 0) map[kv[0]] = kv[1];
+            }
+        }
+        return map;
     }
 
     // ── the deploy script ───────────────────────────────────────────────────────────
@@ -149,6 +271,12 @@ public sealed class PodmanProvisioner : IAppProvisioner
         var (start, count) = SubidRange(s);
         var sb = new StringBuilder();
         sb.Append("set -e\n");
+        // cwd matters: `pct exec` lands in /root, which the rootless user cannot read, and
+        // `runuser` keeps the caller's cwd. Every podman call would then die with
+        // "cannot chdir to /root: Permission denied" (found live on CT 9900 — it made
+        // `podman secret create` fail while `systemctl --user` appeared fine, since systemd
+        // sets its own working directory). Move somewhere world-readable first.
+        sb.Append("cd /\n");
 
         // 1. Kill the rootful default. podman-install.sh enabled a root podman.socket; mask it
         //    so nothing (and no future install run) brings it back. `|| true` — a CT created
@@ -184,6 +312,47 @@ public sealed class PodmanProvisioner : IAppProvisioner
         }
         // podman must re-read the mapping after it changes; migrate is a no-op on a fresh host.
         sb.Append($"runuser -u {user} -- podman system migrate 2>/dev/null || true\n");
+
+        // 4b. Make network-online.target actually REACHABLE — without this, quadlets don't
+        //     start at boot until a 90-second timeout expires.
+        //
+        //     Podman injects `Wants=/After=podman-user-wait-network-online.service` into every
+        //     generated container unit (containers/podman#22197). That helper is literally
+        //     `until systemctl is-active network-online.target; do sleep 0.5; done`. A stock
+        //     community-scripts Debian LXC uses ifupdown (`networking.service`) and ships only
+        //     systemd-networkd wait-online units, which aren't in play — so
+        //     network-online.target is NEVER reached, the helper spins until it times out and
+        //     fails, and only then does the container start. Observed live on CT 9900: the CT
+        //     booted at 18:12:04 and hello.service came up at 18:13:36 — a 92s delay, every
+        //     boot. It "survives a reboot" but only by waiting out a failure.
+        //
+        //     Fix the cause: a tiny oneshot ordered after ifupdown has finished bringing
+        //     interfaces up (ifup blocks on DHCP, so its completion is a real readiness
+        //     signal), which pulls network-online.target in and lets it activate. Masking the
+        //     podman helper would also remove the delay but would throw away the
+        //     network-readiness guarantee the quadlets legitimately want.
+        var netUnit = string.Join("\n", new[]
+        {
+            "[Unit]",
+            "Description=Reach network-online.target under ifupdown (LXC; no wait-online unit)",
+            "Documentation=https://github.com/containers/podman/issues/22197",
+            "After=networking.service",
+            "Wants=network-online.target",
+            "Before=network-online.target",
+            "",
+            "[Service]",
+            "Type=oneshot",
+            "ExecStart=/bin/true",
+            "RemainAfterExit=yes",
+            "",
+            "[Install]",
+            "WantedBy=multi-user.target",
+            "",
+        });
+        sb.Append($"echo {Convert.ToBase64String(Encoding.UTF8.GetBytes(netUnit))} | base64 -d " +
+                  "> /etc/systemd/system/homelab-network-online.service\n");
+        sb.Append("systemctl daemon-reload\n");
+        sb.Append("systemctl enable --now homelab-network-online.service\n");
 
         // 5. Linger, so user units start at boot with nobody logged in. This also creates
         //    /run/user/$UID, which every subsequent `systemctl --user` needs.
