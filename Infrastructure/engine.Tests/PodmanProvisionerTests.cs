@@ -266,6 +266,124 @@ public sealed class PodmanProvisionerTests : IDisposable
         Assert.DoesNotContain("mask podman-user-wait-network-online", script);
     }
 
+    // ---- assets (#303) ----------------------------------------------------
+
+    // Adds an assets tree to a shape's stack dir and points config.assets at it.
+    private Shape WithAssets(Shape s, params (string Rel, string Content)[] files)
+    {
+        var root = Path.Combine(s.SourceDir!, "podman-host", "assets");
+        foreach (var (rel, content) in files)
+        {
+            var full = Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+            File.WriteAllText(full, content);
+        }
+        s.Spec.Config["assets"] = "podman-host/assets";
+        return s;
+    }
+
+    [Fact]
+    public void Assets_AreDiscoveredRecursively_WithStablePaths()
+    {
+        var shape = WithAssets(PodmanShape(),
+            ("config/prometheus.yml", "scrape_configs: []\n"),
+            ("grafana/provisioning/datasources/datasources.yml", "apiVersion: 1\n"),
+            ("grafana/dashboards/node.json", "{}\n"));
+
+        Assert.Equal(
+            new[] { "config/prometheus.yml", "grafana/dashboards/node.json", "grafana/provisioning/datasources/datasources.yml" },
+            PodmanProvisioner.AssetFiles(shape));
+    }
+
+    [Fact]
+    public void Assets_DefaultTarget_IsUnderTheRootlessUsersHome()
+    {
+        Assert.Equal("/home/podman/assets", PodmanProvisioner.AssetsTarget(PodmanShape()));
+        var custom = PodmanShape();
+        custom.Spec.Config["assetsTarget"] = "/home/podman/monitoring";
+        Assert.Equal("/home/podman/monitoring", PodmanProvisioner.AssetsTarget(custom));
+    }
+
+    [Fact]
+    public void Deploy_RendersAssets_CreatingNestedDirsAndChowning()
+    {
+        var shape = WithAssets(PodmanShape(("mate.container", "[Container]\nImage=x:1\n")),
+            ("config/prometheus.yml", "scrape_configs: []\n"),
+            ("grafana/dashboards/node.json", "{}\n"));
+        shape.Spec.Config["assetsTarget"] = "/home/podman/monitoring";
+        var script = Build(shape);
+
+        // Nested paths need their parent created — podman/base64 won't do it for us.
+        Assert.Contains("install -d -o podman -g podman -m 755 /home/podman/monitoring/grafana/dashboards", script);
+        Assert.Contains("> /home/podman/monitoring/config/prometheus.yml", script);
+        Assert.Contains("chown -R podman:podman /home/podman/monitoring", script);
+    }
+
+    [Fact]
+    public void Deploy_RendersAssetsBeforeStartingUnits()
+    {
+        var shape = WithAssets(PodmanShape(("mate.container", "[Container]\nImage=x:1\n")),
+            ("config/prometheus.yml", "scrape_configs: []\n"));
+        var script = Build(shape);
+
+        // A unit that bind-mounts a config must not start before that config exists.
+        var asset = script.IndexOf("/assets/config/prometheus.yml", StringComparison.Ordinal);
+        var start = script.IndexOf("systemctl --user restart", StringComparison.Ordinal);
+        Assert.True(asset >= 0 && start >= 0);
+        Assert.True(asset < start, "assets must be rendered before units are started");
+    }
+
+    [Fact]
+    public void Deploy_MakesShellScriptsExecutable_ButNotConfigFiles()
+    {
+        var shape = WithAssets(PodmanShape(),
+            ("health.sh", "#!/bin/sh\nexit 0\n"),
+            ("config/app.yml", "k: v\n"));
+        var script = Build(shape);
+
+        // A rendered script is the only workable way to have a healthcheck that needs quoting
+        // (gotcha #10), so it has to land executable.
+        Assert.Contains("chmod 0755 /home/podman/assets/health.sh", script);
+        Assert.Contains("chmod 0644 /home/podman/assets/config/app.yml", script);
+    }
+
+    [Fact]
+    public void Marker_ChangesWhenAnAssetChanges()
+    {
+        var a = WithAssets(PodmanShape(), ("config/prometheus.yml", "scrape_interval: 15s\n"));
+        var b = WithAssets(PodmanShape(), ("config/prometheus.yml", "scrape_interval: 30s\n"));
+
+        // Editing a config must re-converge (and restart the units consuming it).
+        Assert.NotEqual(PodmanProvisioner.DesiredMarker(a), PodmanProvisioner.DesiredMarker(b));
+    }
+
+    [Fact]
+    public void Marker_IsDeterministic_WithAssetsPresent()
+    {
+        var a = WithAssets(PodmanShape(), ("config/a.yml", "x\n"), ("d/b.json", "{}\n"));
+        var b = WithAssets(PodmanShape(), ("config/a.yml", "x\n"), ("d/b.json", "{}\n"));
+
+        // Regression guard: rendering per-file rather than as a tarball is what keeps this
+        // stable — a tar embeds mtimes and would churn the marker on every run.
+        Assert.Equal(PodmanProvisioner.DesiredMarker(a), PodmanProvisioner.DesiredMarker(b));
+    }
+
+    [Fact]
+    public void Assets_TooLarge_FailLoudlyRatherThanOverflowTheCommandLine()
+    {
+        var shape = WithAssets(PodmanShape(), ("big.bin", new string('x', PodmanProvisioner.MaxAssetBytes + 1)));
+
+        var ex = Assert.Throws<InvalidOperationException>(() => PodmanProvisioner.ReadAssets(shape));
+        Assert.Contains("single pct exec command line", ex.Message);
+    }
+
+    [Fact]
+    public void NoAssets_DeclaredMeansNothingRendered()
+    {
+        var script = Build(PodmanShape(("mate.container", "[Container]\nImage=x:1\n")));
+        Assert.DoesNotContain("/assets", script);
+    }
+
     // ---- host-side prerequisites ------------------------------------------
 
     // pct config output for a CT with the given features line.

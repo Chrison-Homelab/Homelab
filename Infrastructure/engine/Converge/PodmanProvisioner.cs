@@ -73,6 +73,10 @@ public sealed class PodmanProvisioner : IAppProvisioner
         else
             yield return $"render {files.Count} quadlet(s) → ~{user}/{QuadletDir}/: {string.Join(", ", files.Select(f => Path.GetFileName(f)))}";
 
+        var assets = AssetFiles(s);
+        if (assets.Count > 0)
+            yield return $"render {assets.Count} asset file(s) → {AssetsTarget(s)}/ (config trees, dashboards, scripts)";
+
         var secrets = SecretNames(s);
         if (secrets.Count > 0)
             yield return $"seed podman secret(s) from secrets.env (add-only, never re-written): {string.Join(", ", secrets.Keys)}";
@@ -99,6 +103,15 @@ public sealed class PodmanProvisioner : IAppProvisioner
         };
         foreach (var f in QuadletFiles(s))
             parts.Add($"{Path.GetFileName(f)}:{Sha(SafeRead(f))}");
+
+        // Assets are managed inputs too: editing a rendered config file must re-converge
+        // (which also restarts the units consuming it).
+        if (AssetsSourceDir(s) is { } adir)
+        {
+            parts.Add($"assetsTarget={AssetsTarget(s)}");
+            foreach (var rel in AssetFiles(s))
+                parts.Add($"asset:{rel}:{Sha(SafeRead(Path.Combine(adir, rel)))}");
+        }
 
         // Hash the generated script too, so a change to the deploy RECIPE — not just to its
         // inputs — also re-converges. Without this, fixing a bug in BuildDeploy silently
@@ -269,6 +282,8 @@ public sealed class PodmanProvisioner : IAppProvisioner
         IReadOnlyList<string> files, IReadOnlyDictionary<string, string> secrets)
     {
         var (start, count) = SubidRange(s);
+        var assetsTarget = AssetsTarget(s);
+        var assets = ReadAssets(s);
         var sb = new StringBuilder();
         sb.Append("set -e\n");
         // cwd matters: `pct exec` lands in /root, which the rootless user cannot read, and
@@ -361,6 +376,24 @@ public sealed class PodmanProvisioner : IAppProvisioner
         // user@.service has finished starting, and a `systemctl --user` that races it fails
         // with "Failed to connect to bus". Bounded so a genuinely broken host still errors.
         sb.Append($"for i in $(seq 1 30); do [ -S /run/user/$UID_N/bus ] && break; sleep 1; done\n");
+
+        // 5b. Assets → the host, before anything that mounts them. Per-file base64 keeps the
+        //     script deterministic (a tarball's mtimes would churn the marker every run), and
+        //     nested directories are created as needed. Rendered as the ROOT user then chowned,
+        //     because the target may sit outside the rootless user's home.
+        if (assets.Count > 0)
+        {
+            sb.Append($"install -d -o {user} -g {user} -m 755 {assetsTarget}\n");
+            foreach (var (rel, b64, exec) in assets)
+            {
+                var dirPart = Path.GetDirectoryName(rel)?.Replace('\\', '/');
+                if (!string.IsNullOrEmpty(dirPart))
+                    sb.Append($"install -d -o {user} -g {user} -m 755 {assetsTarget}/{dirPart}\n");
+                sb.Append($"echo {b64} | base64 -d > {assetsTarget}/{rel}\n");
+                sb.Append($"chmod {(exec ? "0755" : "0644")} {assetsTarget}/{rel}\n");
+            }
+            sb.Append($"chown -R {user}:{user} {assetsTarget}\n");
+        }
 
         // 6. Quadlet files → the user's systemd generator dir. base64 so arbitrary content
         //    (quotes, $, backticks in Exec= lines) survives the shell round-trip intact.
@@ -466,6 +499,47 @@ public sealed class PodmanProvisioner : IAppProvisioner
             .ToList();
     }
 
+    // ── assets (#303) ───────────────────────────────────────────────────────────────
+    // An arbitrary file tree rendered onto the host for quadlets to bind-mount: config
+    // files, Grafana provisioning/dashboards, a quote-free healthcheck script, and so on.
+    //
+    // WHY this exists: quadlets alone can't carry a stack's configuration. Before this, a
+    // stack needing config files had to ship them by a SECOND mechanism running alongside
+    // converge (the monitoring stack's own install.sh tars the tree into the CT), which
+    // means two deploy paths and no single source of truth. It also unblocks the only
+    // workable form of a healthcheck when the command needs quotes (gotcha #10): point
+    // HealthCmd at a rendered script instead.
+    //
+    // Rendered per-file (not as a tarball) so the emitted script — and therefore the
+    // managed marker — stays deterministic; tar embeds mtimes and would make the marker
+    // change on every run.
+    internal const string DefaultAssetsTargetSuffix = "assets";
+
+    // Everything is delivered inside ONE `pct exec` command line, so a large tree would
+    // blow past the shell's argument limit with a baffling error. Fail early and clearly.
+    internal const int MaxAssetBytes = 1024 * 1024;
+
+    internal static string? AssetsSourceDir(Shape s)
+    {
+        if (s.Spec.Config.Str("assets") is not { Length: > 0 } rel) return null;
+        if (Path.IsPathRooted(rel)) return rel;
+        return s.SourceDir is { Length: > 0 } dir ? Path.Combine(dir, rel) : null;
+    }
+
+    internal static string AssetsTarget(Shape s) =>
+        s.Spec.Config.Str("assetsTarget") ?? $"/home/{User(s)}/{DefaultAssetsTargetSuffix}";
+
+    // Relative paths under the assets dir, ordinal-sorted for a stable marker.
+    internal static IReadOnlyList<string> AssetFiles(Shape s)
+    {
+        var dir = AssetsSourceDir(s);
+        if (dir is null || !Directory.Exists(dir)) return Array.Empty<string>();
+        return Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
+            .Select(f => Path.GetRelativePath(dir, f).Replace('\\', '/'))
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .ToList();
+    }
+
     // <name>.container → <name>.service (podman's quadlet generator naming). .volume/.network
     // units are pulled in as dependencies by the containers that reference them, so only
     // .container files are started directly.
@@ -473,6 +547,30 @@ public sealed class PodmanProvisioner : IAppProvisioner
         files.Where(f => f.EndsWith(".container", StringComparison.Ordinal))
              .Select(f => Path.GetFileNameWithoutExtension(f) + ".service")
              .ToList();
+
+    // (relativePath, base64Content, isExecutable) for every asset file. `.sh` is rendered
+    // executable; everything else 0644. Throws with a clear message if the tree is too big to
+    // ship in one `pct exec` command line.
+    internal static IReadOnlyList<(string Rel, string B64, bool Exec)> ReadAssets(Shape s)
+    {
+        var dir = AssetsSourceDir(s);
+        if (dir is null || !Directory.Exists(dir)) return Array.Empty<(string, string, bool)>();
+
+        var result = new List<(string, string, bool)>();
+        long total = 0;
+        foreach (var rel in AssetFiles(s))
+        {
+            var bytes = File.ReadAllBytes(Path.Combine(dir, rel));
+            total += bytes.Length;
+            if (total > MaxAssetBytes)
+                throw new InvalidOperationException(
+                    $"assets under '{dir}' exceed {MaxAssetBytes / 1024} KiB — they are delivered in a single " +
+                    "pct exec command line and would overflow the shell's argument limit. Trim the tree, or " +
+                    "fetch large artifacts on the host instead of rendering them.");
+            result.Add((rel, Convert.ToBase64String(bytes), rel.EndsWith(".sh", StringComparison.Ordinal)));
+        }
+        return result;
+    }
 
     private static string SafeRead(string path) => File.Exists(path) ? File.ReadAllText(path) : "";
 
