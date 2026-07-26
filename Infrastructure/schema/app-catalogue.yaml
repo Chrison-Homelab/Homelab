@@ -37,6 +37,15 @@ apps:
   docker:
     script: docker
 
+  # Rootless Podman + quadlet host (ADR-0009 / #284). ct/podman.sh installs Podman
+  # (rootful, with a root podman.socket + Portainer prompts we decline), then the
+  # `podman` provisioner converts it to the rootless quadlet-native model: masks the
+  # socket, adds the non-root user with an in-map subuid range + linger, renders the
+  # stack's quadlet files and drives `systemctl --user`.
+  podman:
+    script: podman
+    provisioner: podman
+
   # Forgejo (Git forge) — has a post-create provisioner that sets ROOT_URL.
   forgejo:
     script: forgejo

@@ -21,11 +21,16 @@ public sealed class CommunityScriptsCreator
     //               to the stack's FlareSolverr later via /etc/shelfmark/.env).
     //   docker    → "n": DECLINE every add-on prompt (Portainer UI, Portainer Agent, expose
     //               Docker TCP socket). docker-ce still includes the compose plugin.
+    //   podman    → "n": DECLINE both Portainer prompts (Portainer UI, Portainer Agent) in
+    //               install/podman-install.sh. ADR-0009's control plane is systemd + git, so a
+    //               GUI that manages containers over a socket is exactly what we don't want.
+    //               (PodmanProvisioner then masks the root podman.socket the install enables.)
     // Each app's prompts must all take the SAME answer for `yes` to be correct (true here).
     private static readonly Dictionary<string, string> InstallStdin = new(StringComparer.Ordinal)
     {
         ["shelfmark"] = "1",
         ["docker"] = "n",
+        ["podman"] = "n",
     };
 
     public async Task<bool> ExistsAsync(string node, string ctid, CancellationToken ct) =>

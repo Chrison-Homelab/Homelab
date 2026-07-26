@@ -37,6 +37,9 @@ public sealed class ShapeLoader
             var shape = Yaml.Deserialize<Shape>(File.ReadAllText(file));
             if (!string.Equals(shape.Kind, "LXC", StringComparison.Ordinal)) continue;
             if (stack?.Spec.Defaults is { } d) Merge(d, shape.Spec);
+            // Remember where the shape came from, so provisioners can read sibling assets
+            // (e.g. the podman path's quadlet files) rather than requiring them inline.
+            shape.SourceDir = stackDir;
             members.Add(shape);
         }
 

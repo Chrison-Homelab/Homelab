@@ -55,6 +55,7 @@ public sealed class ProvisionerRegistry
         new GithubRunnerProvisioner(),
         new CloudflaredProvisioner(),
         new PangolinProvisioner(),
+        new PodmanProvisioner(),
         new QbittorrentProvisioner(),
         new ProwlarrProvisioner(),
         new SonarrProvisioner(),
