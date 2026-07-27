@@ -13,7 +13,11 @@ Wants=network-online.target
 Image=docker.io/prom/prometheus
 ContainerName=prometheus
 Network=monitoring.network
-PublishPort=9090:9090
+# Published on 9091, NOT 9090 — Cockpit owns 9090 on the podman hosts as the management UI
+# (ADR-0009 phase 3). Only the HOST-side port moves: the container still listens on 9090, so
+# Grafana's datasource (http://prometheus:9090, over the quadlet network) is unaffected and
+# needs no change. Browse Prometheus at monitoring.homelab.chrison.internal:9091.
+PublishPort=9091:9090
 # Runs as nobody (uid 65534) — verified on the live container, not assumed. That is outside the
 # subuid window the LXC's 65536-uid map allows, so without keep-id crun refuses to start it.
 # There is no data volume here (Prometheus's TSDB is ephemeral in this stack, as it was under

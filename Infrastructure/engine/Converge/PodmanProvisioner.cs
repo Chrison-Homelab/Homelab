@@ -91,6 +91,9 @@ public sealed class PodmanProvisioner : IAppProvisioner
 
         if (UserSocket(s))
             yield return "enable the ROOTLESS podman.socket (--user) — opt-in, for a metrics exporter; the ROOT socket stays masked";
+
+        if (Cockpit(s))
+            yield return "install cockpit + cockpit-podman on :9090, set the `podman` user's password (PODMAN_USER_PASSWORD) so it can log in";
     }
 
     // Stable marker over every managed input. Quadlet CONTENT is included (not just names),
@@ -105,6 +108,7 @@ public sealed class PodmanProvisioner : IAppProvisioner
             count.ToString(),
             AutoUpdate(s) ? "au=1" : "au=0",
             UserSocket(s) ? "usock=1" : "usock=0",
+            Cockpit(s) ? "cockpit=1" : "cockpit=0",
             string.Join(",", SecretNames(s).Select(kv => $"{kv.Key}={kv.Value}")),
         };
         foreach (var f in QuadletFiles(s))
@@ -165,8 +169,20 @@ public sealed class PodmanProvisioner : IAppProvisioner
         var (assetMsg, assetFailed) = await PushAssetsAsync(s, ctx, node, ctid, user);
         if (assetFailed is not null) return ApplyResult.Failed(assetFailed);
 
+        // Cockpit needs a PAM password for the rootless user; without it the UI installs but
+        // nobody can log in, which is worse than not installing it.
+        string? cockpitPassword = null;
+        if (Cockpit(s))
+        {
+            if (ctx.Secrets.Get("PODMAN_USER_PASSWORD") is not { Length: > 0 } pw)
+                return ApplyResult.Failed(
+                    "cockpit: true needs PODMAN_USER_PASSWORD in secrets.env — Cockpit authenticates the " +
+                    "rootless user via PAM, and it ships password-locked");
+            cockpitPassword = pw;
+        }
+
         var files = QuadletFiles(s);
-        var script = BuildDeploy(s, user, marker, markerPath, files, secretValues);
+        var script = BuildDeploy(s, user, marker, markerPath, files, secretValues, cockpitPassword);
 
         var res = await ctx.Exec.InContainerAsync(node, ctid, script);
         if (!res.Ok) return ApplyResult.Failed($"podman host setup failed: {res.Stderr}");
@@ -354,7 +370,8 @@ public sealed class PodmanProvisioner : IAppProvisioner
     // user is usable, linger before any `systemctl --user`, and the marker is stamped last.
     internal static string BuildDeploy(
         Shape s, string user, string marker, string markerPath,
-        IReadOnlyList<string> files, IReadOnlyDictionary<string, string> secrets)
+        IReadOnlyList<string> files, IReadOnlyDictionary<string, string> secrets,
+        string? cockpitPassword = null)
     {
         var (start, count) = SubidRange(s);
         var sb = new StringBuilder();
@@ -530,6 +547,29 @@ public sealed class PodmanProvisioner : IAppProvisioner
         if (UserSocket(s))
             sb.Append($"{UserCmd(user, "systemctl --user enable --now podman.socket")}\n");
 
+        // 7d. Cockpit — the management UI half of ADR-0009 phase 3.
+        //
+        //     Deliberately logs in as the `podman` USER, not root: rootless containers exist
+        //     only inside that user's session, so a root Cockpit session shows an empty
+        //     container list. That means the user needs a real PAM password — both `podman`
+        //     and `root` ship password-LOCKED on a community-scripts CT, so Cockpit login is
+        //     impossible until one is set. cockpit-podman then reads the same rootless socket
+        //     the exporter uses, which is why this requires userSocket.
+        //
+        //     Cockpit takes :9090, its default — which is why Prometheus publishes on 9091.
+        //     The package + password land HERE (before app units, so they exist even if a unit
+        //     later fails), but the SOCKET is enabled further down, after units have restarted.
+        //     Enabling it here fails with `Result: resources`: the app unit still holds :9090
+        //     on its old published port until it restarts. Hit on CT 4001.
+        if (Cockpit(s))
+        {
+            sb.Append("export DEBIAN_FRONTEND=noninteractive\n");
+            sb.Append("if ! dpkg -s cockpit >/dev/null 2>&1; then apt-get update -qq && " +
+                      "apt-get install -y -qq cockpit cockpit-podman; fi\n");
+            if (cockpitPassword is { Length: > 0 })
+                sb.Append($"printf '%s' '{user}:{cockpitPassword}' | chpasswd\n");
+        }
+
         // 8. Reload + start. daemon-reload runs the quadlet generator; each *.container
         //    becomes <name>.service. `restart` (not `start`) so a changed quadlet actually
         //    takes effect on an already-running unit.
@@ -543,6 +583,11 @@ public sealed class PodmanProvisioner : IAppProvisioner
         // 9. podman auto-update replaces Watchtower (and its docker.sock mount) natively.
         if (AutoUpdate(s))
             sb.Append($"{UserCmd(user, "systemctl --user enable --now podman-auto-update.timer")}\n");
+
+        // 9c. Cockpit's socket, LAST — after app units have rebound to their new ports.
+        //     See 7d: binding :9090 before Prometheus moves to 9091 fails outright.
+        if (Cockpit(s))
+            sb.Append("systemctl enable --now cockpit.socket\n");
 
         // 10. Mark-on-SUCCESS — only reached if every step above exited 0 under `set -e`.
         sb.Append($"printf '%s' '{marker}' > {markerPath}\n");
@@ -565,6 +610,12 @@ public sealed class PodmanProvisioner : IAppProvisioner
     // ── config accessors ───────────────────────────────────────────────────────────
 
     internal static string User(Shape s) => s.Spec.Config.Str("user") ?? DefaultUser;
+
+    // Opt-in Cockpit management UI (ADR-0009 phase 3). Requires userSocket, since
+    // cockpit-podman reads the same rootless API socket to list containers.
+    internal static bool Cockpit(Shape s) =>
+        s.Spec.Config.TryGetValue("cockpit", out var v) && v is not null
+        && v.ToString() is not ("false" or "False" or "0");
 
     // Opt-in rootless API socket. Only hosts that run a metrics exporter need it.
     internal static bool UserSocket(Shape s) =>

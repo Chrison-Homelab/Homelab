@@ -70,6 +70,11 @@ spec:
     # `podman` user and reachable only by it.
     userSocket: true
 
+    # Cockpit management UI on :9090 (ADR-0009 phase 3, #283). Logs in as the `podman` user
+    # so cockpit-podman can see the rootless containers — needs PODMAN_USER_PASSWORD and
+    # userSocket above.
+    cockpit: true
+
     # Config tree rendered onto the host (#305). Quadlets bind-mount from here read-only.
     assets: podman-host/assets
     assetsTarget: /home/podman/monitoring
