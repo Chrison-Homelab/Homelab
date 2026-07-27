@@ -62,6 +62,11 @@ spec:
     user: podman
     quadlets: podman-host/quadlets
 
+    # Opt in to the ROOTLESS podman API socket — required by podman-exporter (ADR-0009
+    # phase 3, #283). The ROOT socket stays masked; this one is owned by the unprivileged
+    # `podman` user and reachable only by it.
+    userSocket: true
+
     # podman secrets seeded from secrets.env, add-only. Namespaced per service, because this
     # host will grow more of them (the SM/template keys are YOUTARR_*, the podman secret names
     # are lower-case).

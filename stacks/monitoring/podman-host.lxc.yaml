@@ -65,6 +65,11 @@ spec:
     user: podman
     quadlets: podman-host/quadlets
 
+    # Opt in to the ROOTLESS podman API socket — required by podman-exporter (ADR-0009
+    # phase 3, #283). The ROOT socket stays masked; this one is owned by the unprivileged
+    # `podman` user and reachable only by it.
+    userSocket: true
+
     # Config tree rendered onto the host (#305). Quadlets bind-mount from here read-only.
     assets: podman-host/assets
     assetsTarget: /home/podman/monitoring

@@ -86,6 +86,11 @@ public sealed class PodmanProvisioner : IAppProvisioner
 
         if (AutoUpdate(s))
             yield return "enable podman-auto-update.timer (--user) — replaces Watchtower, no docker.sock";
+
+        yield return "install + enable podman-system-prune.timer (weekly, images/containers/networks — never volumes)";
+
+        if (UserSocket(s))
+            yield return "enable the ROOTLESS podman.socket (--user) — opt-in, for a metrics exporter; the ROOT socket stays masked";
     }
 
     // Stable marker over every managed input. Quadlet CONTENT is included (not just names),
@@ -99,6 +104,7 @@ public sealed class PodmanProvisioner : IAppProvisioner
             start.ToString(),
             count.ToString(),
             AutoUpdate(s) ? "au=1" : "au=0",
+            UserSocket(s) ? "usock=1" : "usock=0",
             string.Join(",", SecretNames(s).Select(kv => $"{kv.Key}={kv.Value}")),
         };
         foreach (var f in QuadletFiles(s))
@@ -491,6 +497,39 @@ public sealed class PodmanProvisioner : IAppProvisioner
             sb.Append($"echo {b64} | base64 -d | {UserCmd(user, $"podman secret create {name} -")}\n");
         }
 
+        // 7b. Weekly prune timer — BEFORE starting app units, deliberately. Platform
+        //     housekeeping must not be hostage to an application unit: when podman-exporter
+        //     failed to start on CT 4001/5114 (#283 phase 3), `set -e` aborted the script and
+        //     the timer + socket steps never ran at all.
+        //     Weekly prune timer — the other half of "podman-native replaces the Watchtower +
+        //     prune sidecars" (ADR-0009). Written as USER units so it prunes the rootless
+        //     store, not root's.
+        //
+        //     Deliberately NOT `--volumes`: an unattached volume may still hold real data (a
+        //     stopped service's database), and losing it to a housekeeping timer would be
+        //     unrecoverable. Images/containers/networks only, and only things older than a week.
+        sb.Append($"install -d -o {user} -g {user} -m 755 /home/{user}/.config/systemd/user\n");
+        sb.Append($"printf '%s\\n' '[Unit]' 'Description=Prune unused podman images, containers and networks' " +
+                  "'Documentation=ADR-0009 phase 3' '' '[Service]' 'Type=oneshot' " +
+                  "'ExecStart=/usr/bin/podman system prune -af --filter until=168h' " +
+                  $"> /home/{user}/.config/systemd/user/podman-system-prune.service\n");
+        sb.Append($"printf '%s\\n' '[Unit]' 'Description=Weekly podman prune' '' '[Timer]' " +
+                  "'OnCalendar=weekly' 'Persistent=true' 'RandomizedDelaySec=1h' '' '[Install]' " +
+                  $"'WantedBy=timers.target' > /home/{user}/.config/systemd/user/podman-system-prune.timer\n");
+        sb.Append($"chown -R {user}:{user} /home/{user}/.config/systemd\n");
+        sb.Append($"{UserCmd(user, "systemctl --user daemon-reload")}\n");
+        sb.Append($"{UserCmd(user, "systemctl --user enable --now podman-system-prune.timer")}\n");
+
+        // 7c. The ROOTLESS user API socket — opt-in via `config.userSocket: true`.
+        //
+        //     ADR-0009 masks the ROOT podman.socket, and that stays masked. This is a
+        //     categorically smaller thing: a socket owned by the unprivileged `podman` user,
+        //     inside its own userns, reachable only by that user. It exists because a metrics
+        //     exporter has no other way to enumerate containers (ADR-0009 phase 3, "observe").
+        //     Off by default, so a host that doesn't export metrics still has no API surface.
+        if (UserSocket(s))
+            sb.Append($"{UserCmd(user, "systemctl --user enable --now podman.socket")}\n");
+
         // 8. Reload + start. daemon-reload runs the quadlet generator; each *.container
         //    becomes <name>.service. `restart` (not `start`) so a changed quadlet actually
         //    takes effect on an already-running unit.
@@ -526,6 +565,11 @@ public sealed class PodmanProvisioner : IAppProvisioner
     // ── config accessors ───────────────────────────────────────────────────────────
 
     internal static string User(Shape s) => s.Spec.Config.Str("user") ?? DefaultUser;
+
+    // Opt-in rootless API socket. Only hosts that run a metrics exporter need it.
+    internal static bool UserSocket(Shape s) =>
+        s.Spec.Config.TryGetValue("userSocket", out var v) && v is not null
+        && v.ToString() is not ("false" or "False" or "0");
 
     internal static bool AutoUpdate(Shape s) =>
         s.Spec.Config.TryGetValue("autoUpdate", out var v) && v is not null
