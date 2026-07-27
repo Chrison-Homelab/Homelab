@@ -266,6 +266,67 @@ public sealed class PodmanProvisionerTests : IDisposable
         Assert.DoesNotContain("mask podman-user-wait-network-online", script);
     }
 
+    // ---- observe: prune timer + opt-in socket (#283 phase 3) --------------
+
+    [Fact]
+    public void Deploy_InstallsAWeeklyPruneTimer_ThatNeverTouchesVolumes()
+    {
+        var script = Build(PodmanShape(("mate.container", "[Container]\nImage=x:1\n")));
+
+        Assert.Contains("podman-system-prune.timer", script);
+        Assert.Contains("OnCalendar=weekly", script);
+        Assert.Contains("podman system prune -af --filter until=168h", script);
+        // NOT --volumes: an unattached volume may hold a stopped service's database, and
+        // losing it to a housekeeping timer would be unrecoverable.
+        Assert.DoesNotContain("--volumes", script);
+        // User units, so it prunes the rootless store rather than root's.
+        Assert.Contains("/home/podman/.config/systemd/user/podman-system-prune.timer", script);
+    }
+
+    [Fact]
+    public void Deploy_LeavesTheApiSocketOff_UnlessExplicitlyRequested()
+    {
+        var off = Build(PodmanShape(("mate.container", "[Container]\nImage=x:1\n")));
+        // The ROOT socket is masked either way; the point here is that no USER socket appears
+        // unless a host actually needs one, so the default posture has no API surface at all.
+        Assert.DoesNotContain("enable --now podman.socket", off);
+        Assert.Contains("mask podman.socket", off);
+
+        var shape = PodmanShape(("mate.container", "[Container]\nImage=x:1\n"));
+        shape.Spec.Config["userSocket"] = "true";
+        var on = Build(shape);
+        Assert.Contains("systemctl --user enable --now podman.socket", on);
+        Assert.Contains("mask podman.socket", on);   // root socket STILL masked
+    }
+
+    [Fact]
+    public void Marker_ChangesWhenTheUserSocketIsToggled()
+    {
+        var shape = PodmanShape(("mate.container", "[Container]\nImage=x:1\n"));
+        var before = PodmanProvisioner.DesiredMarker(shape);
+        shape.Spec.Config["userSocket"] = "true";
+        Assert.NotEqual(before, PodmanProvisioner.DesiredMarker(shape));
+    }
+
+    [Fact]
+    public void Deploy_SetsUpPlatformHousekeeping_BeforeStartingAppUnits()
+    {
+        var shape = PodmanShape(("mate.container", "[Container]\nImage=x:1\n"));
+        shape.Spec.Config["userSocket"] = "true";
+        var script = Build(shape);
+
+        // Regression guard: when podman-exporter failed to start on CT 4001/5114, `set -e`
+        // aborted the script and the prune timer + socket steps never ran at all. Platform
+        // housekeeping must not be hostage to an application unit — and a unit that
+        // Requires=podman.socket needs the socket enabled before it starts, too.
+        var timer = script.IndexOf("podman-system-prune.timer", StringComparison.Ordinal);
+        var sock  = script.IndexOf("enable --now podman.socket", StringComparison.Ordinal);
+        var start = script.IndexOf("systemctl --user restart", StringComparison.Ordinal);
+        Assert.True(timer >= 0 && sock >= 0 && start >= 0);
+        Assert.True(timer < start, "prune timer must be installed before app units start");
+        Assert.True(sock  < start, "the API socket must be enabled before a unit that Requires= it");
+    }
+
     // ---- assets (#303) ----------------------------------------------------
 
     // Adds an assets tree to a shape's stack dir and points config.assets at it.
