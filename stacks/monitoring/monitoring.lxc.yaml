@@ -19,13 +19,17 @@
 # reached over VLAN 1010 only; expose Grafana later via Pangolin if desired.
 # Validate against ../../Infrastructure/schema/shape.schema.json.
 
+# ⚠️ RETIRED — superseded by CT 4001 (rootless podman host) (#303). The guest is STOPPED and tagged
+# `retired` in Proxmox, awaiting a manual delete decision. The tag is declared below so a
+# converge does not strip it (CtConfigReconciler reconciles tags and would treat it as drift).
+# DELETE THIS SHAPE once the guest is destroyed.
 apiVersion: homelab/v1
 kind: LXC
 
 metadata:
   name: monitoring
   stack: Monitoring
-  tags: [monitoring, observability, docker, otel]
+  tags: [monitoring, observability, docker, otel, retired]   # RETIRED — replaced by CT 4001 (rootless podman host), #303
 
 spec:
   app: docker            # community-scripts slug → ct/docker.sh (Docker Engine host)

@@ -32,13 +32,17 @@
 # Access — note plain-HTTP Youtarr is LAN/VPN-only by design.
 # Validate against ../../Infrastructure/schema/shape.schema.json.
 
+# ⚠️ RETIRED — superseded by CT 5114 (Media podman host) (#302). The guest is STOPPED and tagged
+# `retired` in Proxmox, awaiting a manual delete decision. The tag is declared below so a
+# converge does not strip it (CtConfigReconciler reconciles tags and would treat it as drift).
+# DELETE THIS SHAPE once the guest is destroyed.
 apiVersion: homelab/v1
 kind: LXC
 
 metadata:
   name: youtarr
   stack: Media
-  tags: [youtube, plex, docker]
+  tags: [youtube, plex, docker, retired]   # RETIRED — replaced by CT 5114 (Media podman host), #302
 
 spec:
   app: docker            # community-scripts slug → ct/docker.sh (Docker Engine host)
