@@ -82,9 +82,17 @@ ssh root@hpe-01 'pct exec 4001 -- bash -lc "cd /; U=\$(id -u podman);
     systemctl --user stop grafana tempo loki pulse prometheus otel-collector \
       snmp_exporter exportarr-radarr exportarr-sonarr exportarr-prowlarr"'
 
-# 4. copy 3.9 GB of state — streamed node-locally, no temp file
+# 4. WIPE the new data dirs first. By the time you cut over, CT 4001 has been running and
+#    has generated its OWN state — a plain `tar -x` would merge the old over the new and
+#    leave stale files behind (e.g. a fresh grafana.db alongside migrated WAL segments).
+ssh root@hpe-01 'pct exec 4001 -- rm -rf /home/podman/monitoring/data'
+
+#    then copy 3.9 GB — streamed node-locally, no temp file (both CTs are on hpe-01)
 ssh root@hpe-01 'pct exec 4000 -- tar -C /opt/monitoring -cf - data \
   | pct exec 4001 -- tar -C /home/podman/monitoring -xf -'
+
+#    every container either uses keep-id (mapping its uid to `podman`) or runs as root
+#    (which the default mapping sends to `podman`), so ONE uniform chown is correct.
 ssh root@hpe-01 'pct exec 4001 -- chown -R podman:podman /home/podman/monitoring'
 
 # 5. start the units, then verify (see below)

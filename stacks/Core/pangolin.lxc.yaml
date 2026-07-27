@@ -133,7 +133,7 @@ spec:
         subdomain: pulse
         zone: lab
         sso: true
-        target: { ip: 10.10.0.40, port: 7655, method: http }
+        target: { ip: monitoring.homelab.chrison.internal, port: 7655, method: http }   # Pulse on CT 4001; a NAME, not an address (#303) — verified resolvable from CT 2013
       # ── arr admin UIs (Phase 5 cutover). Origins PINNED to the new 5100-block CT IPs on
       #    VLAN 1010 (validated live per-port 2026-07-14). DEPENDS ON DHCP reservations for
       #    these IPs (#13) — until reserved, a new lease silently breaks the target (same
