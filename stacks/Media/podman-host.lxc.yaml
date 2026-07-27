@@ -67,6 +67,11 @@ spec:
     # `podman` user and reachable only by it.
     userSocket: true
 
+    # Cockpit management UI on :9090 (ADR-0009 phase 3, #283). Logs in as the `podman` user
+    # so cockpit-podman can see the rootless containers — needs PODMAN_USER_PASSWORD and
+    # userSocket above.
+    cockpit: true
+
     # podman secrets seeded from secrets.env, add-only. Namespaced per service, because this
     # host will grow more of them (the SM/template keys are YOUTARR_*, the podman secret names
     # are lower-case).

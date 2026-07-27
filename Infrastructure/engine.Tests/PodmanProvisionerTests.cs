@@ -327,6 +327,52 @@ public sealed class PodmanProvisionerTests : IDisposable
         Assert.True(sock  < start, "the API socket must be enabled before a unit that Requires= it");
     }
 
+    [Fact]
+    public void Deploy_InstallsCockpit_AndUnlocksTheRootlessUserSoItCanLogIn()
+    {
+        var shape = PodmanShape(("mate.container", "[Container]\nImage=x:1\n"));
+        shape.Spec.Config["cockpit"] = "true";
+        var script = PodmanProvisioner.BuildDeploy(
+            shape, "podman", "m", "/home/podman/.homelab-managed",
+            PodmanProvisioner.QuadletFiles(shape), new Dictionary<string, string>(), "s3kret");
+
+        Assert.Contains("cockpit cockpit-podman", script);
+        // The SOCKET must be enabled AFTER app units restart: binding :9090 while Prometheus
+        // still holds its old published port fails with `Result: resources` (hit on CT 4001).
+        var install = script.IndexOf("cockpit cockpit-podman", StringComparison.Ordinal);
+        var restart = script.IndexOf("systemctl --user restart", StringComparison.Ordinal);
+        var sock    = script.IndexOf("enable --now cockpit.socket", StringComparison.Ordinal);
+        Assert.True(install < restart, "install the package before units, so it exists even if one fails");
+        Assert.True(restart < sock, "enable cockpit.socket only after units have rebound their ports");
+        // The point: rootless containers live only in the `podman` user's session, and both
+        // podman and root ship password-LOCKED on a community-scripts CT — so without this
+        // Cockpit installs but nobody can log in.
+        Assert.Contains("'podman:s3kret' | chpasswd", script);
+    }
+
+    [Fact]
+    public void Deploy_OmitsCockpit_WhenNotRequested()
+    {
+        var script = Build(PodmanShape(("mate.container", "[Container]\nImage=x:1\n")));
+        Assert.DoesNotContain("cockpit", script);
+        Assert.DoesNotContain("chpasswd", script);
+    }
+
+    [Fact]
+    public async Task Fails_WhenCockpitIsRequestedWithoutAPassword()
+    {
+        var shape = PodmanShape(("mate.container", "[Container]\nImage=x:1\n"));
+        shape.Spec.Config["cockpit"] = "true";
+        Environment.SetEnvironmentVariable("PODMAN_USER_PASSWORD", null);
+
+        var exec = new FakeNodeExec(_ => new ExecResult(0, "", ""));
+        var result = await new PodmanProvisioner().ApplyAsync(shape, Ctx(exec));
+
+        // Installing a login UI nobody can log into is worse than not installing it.
+        Assert.Equal(ApplyOutcome.Failed, result.Outcome);
+        Assert.Contains("PODMAN_USER_PASSWORD", result.Message);
+    }
+
     // ---- assets (#303) ----------------------------------------------------
 
     // Adds an assets tree to a shape's stack dir and points config.assets at it.
