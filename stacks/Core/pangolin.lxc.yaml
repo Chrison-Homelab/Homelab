@@ -97,7 +97,11 @@ spec:
       enableIntegrationApi: true     # integration API on :3003 — declarative resource mgmt
 
     # Declarative resources (#136): the provisioner upserts these via the integration API
-    # (add-only, idempotent by fullDomain) using PANGOLIN_API_KEY. A `zone` (lab|arr) makes
+    # using PANGOLIN_API_KEY, RECONCILING each one (#309): found by fullDomain, then the target
+    # (ip/port/method/enabled) and the ssl/sso gates are compared against live and corrected, so
+    # editing an entry here actually moves the live route. A resource with MORE THAN ONE target is
+    # left alone — we only ever declare one, and rewriting the first of several would destroy
+    # hand-built load balancing. A `zone` (lab|arr) makes
     # fullDomain = <subdomain>.<zone>.chrison.dev, served on :443 with the wildcard cert and
     # gated by Pangolin auth (badger). In public-wildcard mode ssl is ON (Traefik terminates).
     # sso defaults ON (the auth gate); set `sso: false` only for native clients that can't do

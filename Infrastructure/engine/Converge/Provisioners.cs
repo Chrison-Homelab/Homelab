@@ -702,11 +702,22 @@ public sealed class PangolinProvisioner : IAppProvisioner
     }
 
     // Reconcile declared Pangolin resources (admin UIs) via the integration API on the
-    // CT (:3003, Bearer org key). Add-only: find-or-create by fullDomain, set the target
-    // (via a local-type site). A resource may carry a wildcard `zone` (lab|arr) →
-    // fullDomain = <subdomain>.<zone>.<baseDomain>. ssl follows the edge mode:
-    // public-wildcard → Traefik terminates TLS (true); cloudflared → CF does (false).
-    // sso defaults ON (Pangolin auth gates the UI); a resource opts out with sso: false.
+    // CT (:3003, Bearer org key). Find-or-create by fullDomain, then RECONCILE — a
+    // resource may carry a wildcard `zone` (lab|arr) → fullDomain =
+    // <subdomain>.<zone>.<baseDomain>. ssl follows the edge mode: public-wildcard →
+    // Traefik terminates TLS (true); cloudflared → CF does (false). sso defaults ON
+    // (Pangolin auth gates the UI); a resource opts out with sso: false.
+    //
+    // WAS ADD-ONLY, AND THAT BROKE PUBLIC ROUTES SILENTLY (#309). Editing a declared
+    // resource's target updated desired state and never reached Pangolin: existence was
+    // checked by fullDomain and an existing resource was skipped entirely. During the
+    // monitoring migration (#303) the Pulse UI moved from CT 4000 to CT 4001 and the
+    // shape was updated, but converge reported "0 to create, 0 drifted, 3 up-to-date" —
+    // a completely clean plan — while the live target still pointed at 10.10.0.40, a
+    // container that had just been stopped. pulse.lab.chrison.dev was down and converge
+    // said everything was fine. Now the target (ip/port/method/enabled) and the
+    // ssl/sso gates are all compared and corrected.
+    //
     // Returns (msg, changed, failedReason).
     private static async Task<(string? msg, bool changed, string? failed)> ReconcileResourcesAsync(
         Shape s, ConvergeContext ctx, string node, string ctid)
@@ -747,14 +758,25 @@ public sealed class PangolinProvisioner : IAppProvisioner
             siteId = nsi.GetInt32();
         }
 
-        // existing resources, by fullDomain (add-only idempotency)
-        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Existing resources by fullDomain. One GET carries resourceId, ssl, sso AND the
+        // embedded targets, so the common no-drift case costs a single call.
+        var existing = new Dictionary<string, LiveResource>(StringComparer.OrdinalIgnoreCase);
         var (eok, eroot) = await pg.CallAsync("GET", $"/org/{org}/resources", null, ct);
-        if (eok)
-            foreach (var r in DataArray(eroot, "resources"))
-                if (r.TryGetProperty("fullDomain", out var fd) && fd.GetString() is { } f) existing.Add(f);
+        if (!eok) return (null, false, "pangolin: GET resources failed — cannot reconcile safely");
+        foreach (var r in DataArray(eroot, "resources"))
+        {
+            if (!r.TryGetProperty("fullDomain", out var fd) || fd.GetString() is not { } f) continue;
+            if (!r.TryGetProperty("resourceId", out var ri)) continue;
+            existing[f] = new LiveResource(
+                ri.GetInt32(),
+                Truthy(r, "ssl"),
+                Truthy(r, "sso"),
+                r.TryGetProperty("targets", out var tarr) && tarr.ValueKind == JsonValueKind.Array
+                    ? tarr.EnumerateArray().Count() : 0);
+        }
 
-        int total = 0, created = 0;
+        int total = 0, created = 0, retargeted = 0, regated = 0;
+        var notes = new List<string>();
         foreach (var it in items)
         {
             if (it is not System.Collections.IDictionary rd) continue;
@@ -765,7 +787,6 @@ public sealed class PangolinProvisioner : IAppProvisioner
             var zone = rd["zone"]?.ToString();
             var pgSub = string.IsNullOrEmpty(zone) ? sub : $"{sub}.{zone}";
             var fqdn = $"{pgSub}.{baseDomain}";
-            if (existing.Contains(fqdn)) continue;
             var name = rd["name"]?.ToString() ?? sub;
             var tgt = rd["target"] as System.Collections.IDictionary;
             var tip = tgt?["ip"]?.ToString() ?? "localhost";
@@ -777,6 +798,30 @@ public sealed class PangolinProvisioner : IAppProvisioner
             // for native clients that can't render the SSO interstitial (e.g. Plex, abs).
             var sso = ResourceSsoEnabled(rd);
 
+            if (existing.TryGetValue(fqdn, out var live))
+            {
+                // ── EXISTS: reconcile rather than skip (#309) ──────────────────────────
+                var (tmsg, tchanged, tfail) = await ReconcileTargetAsync(
+                    pg, live, siteId.Value, tip, tmethod, tport, fqdn, ct);
+                if (tfail is not null) return (null, false, tfail);
+                if (tmsg is not null) notes.Add(tmsg);
+                if (tchanged) retargeted++;
+
+                // ssl/sso are cheap to compare (already fetched) and drift the same way.
+                // sso especially: a resource created before the default-ON decision (#238),
+                // or flipped off by hand in the UI, would otherwise stay open forever.
+                if (live.Ssl != publicWildcard || live.Sso != sso)
+                {
+                    var (gok, _) = await pg.CallAsync("POST", $"/resource/{live.Id}",
+                        JsonSerializer.Serialize(new { ssl = publicWildcard, sso }), ct);
+                    if (!gok) return (null, false, $"pangolin: failed to update ssl/sso on {fqdn}");
+                    notes.Add($"{fqdn}: ssl {live.Ssl}→{publicWildcard}, sso {live.Sso}→{sso}");
+                    regated++;
+                }
+                continue;
+            }
+
+            // ── ABSENT: create ────────────────────────────────────────────────────────
             var (rok, rroot) = await pg.CallAsync("PUT", $"/org/{org}/resource",
                 JsonSerializer.Serialize(new { name, subdomain = pgSub, http = true, protocol = "tcp", domainId }), ct);
             if (!rok || !Data(rroot).TryGetProperty("resourceId", out var rid))
@@ -789,8 +834,80 @@ public sealed class PangolinProvisioner : IAppProvisioner
             await pg.CallAsync("POST", $"/resource/{resourceId}", JsonSerializer.Serialize(new { ssl = publicWildcard, sso }), ct);
             created++;
         }
-        return ($"{total} resource(s) declared, {created} created", created > 0, null);
+
+        var summary = $"{total} resource(s) declared, {created} created, {retargeted} retargeted, {regated} re-gated";
+        if (notes.Count > 0) summary += "\n      " + string.Join("\n      ", notes);
+        return (summary, created + retargeted + regated > 0, null);
     }
+
+    // What a live Pangolin resource looks like, as far as reconciliation cares.
+    // TargetCount comes from the embedded list on GET /org/{org}/resources; the per-target
+    // detail needs its own call because that embedded form omits `method`.
+    private readonly record struct LiveResource(int Id, bool Ssl, bool Sso, int TargetCount);
+
+    // Bring one resource's target in line with the shape.
+    //
+    // The embedded target list on GET resources carries ip/port/enabled but NOT `method`,
+    // so detail comes from GET /resource/{id}/targets — one extra call per DECLARED and
+    // already-existing resource. Comparing only the embedded fields would have left
+    // method drift undetectable, i.e. it would reproduce the exact silent-no-op class of
+    // bug this issue is about, just narrower.
+    //
+    // MULTI-TARGET RESOURCES ARE LEFT ALONE. Pangolin supports several targets per
+    // resource for load balancing; our shapes only ever declare one. Rewriting the first
+    // of several would silently destroy a hand-built config, which the add-only guardrail
+    // in CLAUDE.md exists to prevent — so that case reports and skips instead.
+    private static async Task<(string? msg, bool changed, string? failed)> ReconcileTargetAsync(
+        PangolinClient pg, LiveResource live, int siteId,
+        string ip, string method, int port, string fqdn, CancellationToken ct)
+    {
+        if (live.TargetCount > 1)
+            return ($"{fqdn}: {live.TargetCount} targets live (load-balanced?) — left alone, reconcile by hand", false, null);
+
+        if (live.TargetCount == 0)
+        {
+            var (aok, _) = await pg.CallAsync("PUT", $"/resource/{live.Id}/target",
+                JsonSerializer.Serialize(new { siteId, ip, method, port, enabled = true }), ct);
+            return aok
+                ? ($"{fqdn}: target added → {method}://{ip}:{port}", true, null)
+                : (null, false, $"pangolin: failed to add target for {fqdn}");
+        }
+
+        var (tok, troot) = await pg.CallAsync("GET", $"/resource/{live.Id}/targets", null, ct);
+        if (!tok) return (null, false, $"pangolin: GET targets failed for {fqdn}");
+        var t = DataArray(troot, "targets").FirstOrDefault();
+        if (t.ValueKind != JsonValueKind.Object || !t.TryGetProperty("targetId", out var tid))
+            return (null, false, $"pangolin: no usable target on {fqdn}");
+
+        var liveIp = t.TryGetProperty("ip", out var ipv) ? ipv.GetString() ?? "" : "";
+        var livePort = t.TryGetProperty("port", out var pv) && pv.TryGetInt32(out var pi) ? pi : -1;
+        var liveMethod = t.TryGetProperty("method", out var mv) ? mv.GetString() ?? "" : "";
+        var liveEnabled = Truthy(t, "enabled");
+
+        if (string.Equals(liveIp, ip, StringComparison.OrdinalIgnoreCase) && livePort == port
+            && string.Equals(liveMethod, method, StringComparison.OrdinalIgnoreCase) && liveEnabled)
+            return (null, false, null);
+
+        // siteId is REQUIRED on this call even when unchanged — omitting it 400s with
+        // 'expected number, received undefined at "siteId"'.
+        var (uok, _) = await pg.CallAsync("POST", $"/target/{tid.GetInt32()}",
+            JsonSerializer.Serialize(new { siteId, ip, method, port, enabled = true }), ct);
+        if (!uok) return (null, false, $"pangolin: failed to update target for {fqdn}");
+        return ($"{fqdn}: target {liveMethod}://{liveIp}:{livePort} → {method}://{ip}:{port}", true, null);
+    }
+
+    // Pangolin returns SQLite-backed booleans as either true/false or 1/0 depending on
+    // the endpoint — `ssl` arrives as a JSON bool while `sso` arrives as an integer. A
+    // plain GetBoolean() throws on the latter, so read both shapes.
+    private static bool Truthy(JsonElement o, string prop) =>
+        o.TryGetProperty(prop, out var v) && v.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Number => v.TryGetInt32(out var i) && i != 0,
+            JsonValueKind.String => bool.TryParse(v.GetString(), out var b) && b,
+            _ => false,
+        };
 
     // Whether a declared resource is gated by Pangolin auth. Default ON: the integration-API
     // create leaves sso null (OPEN), so a resource is only gated if we set it — this decision

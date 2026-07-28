@@ -234,8 +234,13 @@ deploy shape and the behind-cloudflared model. Findings:
 
 1. **Per-hostname map lives in the DSL (renamable IaC).** The hostname → backend map is declared in
    the Pangolin stack DSL (`spec.config.resources[]` in `stacks/Core/pangolin.lxc.yaml`) and
-   provisioned via the :3003 integration API (add-only, idempotent by `fullDomain`) — so a DNS name is
-   changed by editing the DSL and re-converging, never hand-set in the UI. The DSL must gain a
+   provisioned via the :3003 integration API (**reconciled** — found by `fullDomain`, then target
+   `ip`/`port`/`method`/`enabled` and the `ssl`/`sso` gates are compared and corrected; #309) — so a
+   DNS name is changed by editing the DSL and re-converging, never hand-set in the UI. This was
+   *add-only* until #309, which meant editing a target changed desired state and never reached
+   Pangolin: converge reported a clean plan while the live route pointed at a stopped container.
+   A resource carrying **more than one** target is left alone, since our shapes only ever declare
+   one and rewriting the first of several would destroy hand-built load balancing. The DSL must gain a
    **wildcard-zone** dimension per resource (`lab` / `arr`) → `fullDomain = <subdomain>.<zone>.chrison.dev`
    (today it assumes one-level `<subdomain>.chrison.dev`). Zones are set (`*.lab` = general lab admin
    UIs; `*.arr` = arr stack admin UIs); the exact `subdomain.zone` per service is an operational pass
