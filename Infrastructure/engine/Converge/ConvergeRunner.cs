@@ -86,7 +86,7 @@ public sealed class ConvergeRunner
             Console.WriteLine($"(diffing against live cluster state — {state.Count} container(s) discovered)\n");
 
         var blocked = 0;
-        int toCreate = 0, drifted = 0, upToDate = 0;
+        int toCreate = 0, drifted = 0, upToDate = 0, describeOnly = 0;
         foreach (var s in ordered)
         {
             var sp = s.Spec;
@@ -97,6 +97,18 @@ public sealed class ConvergeRunner
 
             if (sp.Config.Count > 0)
                 Console.WriteLine($"    config:    {string.Join(", ", sp.Config.Keys)}");
+
+            // describe-only: the shape documents an adopted guest, so a mismatch is
+            // EXPECTED, not drift. Reporting it as drift is what made every plan noisy and
+            // every apply want to write to it (#325). Still listed — describing it is the
+            // point — but it must not inflate the drift count or imply pending work.
+            if (s.IsDescribeOnly())
+            {
+                describeOnly++;
+                Console.WriteLine("    state:     DESCRIBE-ONLY (adopted; documented, never written)");
+                Console.WriteLine();
+                continue;
+            }
 
             // State line — only when we have live state.
             if (state is not null)
@@ -139,7 +151,8 @@ public sealed class ConvergeRunner
         }
 
         if (state is not null)
-            Console.WriteLine($"State summary — {toCreate} to create, {drifted} drifted, {upToDate} up-to-date.");
+            Console.WriteLine($"State summary — {toCreate} to create, {drifted} drifted, {upToDate} up-to-date"
+                              + (describeOnly > 0 ? $", {describeOnly} describe-only." : "."));
 
         // kind: VM members — planned via ProxmoxSharp (read-only).
         if (vmMembers.Count > 0)
@@ -152,6 +165,14 @@ public sealed class ConvergeRunner
                 var writer = QemuWriter.Create(_pveOptions);
                 foreach (var vm in vmMembers)
                 {
+                    // VM 2000 is the member that motivated #325: its plan was a SetConfig
+                    // against an adopted HAOS install. Don't even ask the writer.
+                    if (vm.IsDescribeOnly())
+                    {
+                        Console.WriteLine($"▸ {vm.Metadata.Name}  (vmid {vm.Spec.Vmid}, node {vm.Spec.Node}) — DESCRIBE-ONLY (adopted; documented, never written)");
+                        Console.WriteLine();
+                        continue;
+                    }
                     try
                     {
                         var plan = await VmConverger.PlanAsync(writer, vm, ct);
@@ -219,6 +240,16 @@ public sealed class ConvergeRunner
         {
             var sp = s.Spec;
             Console.WriteLine($"▸ {s.Metadata.Name}  (ctid {sp.Ctid}, app '{sp.App}', node {sp.Node})");
+
+            // describe-only members are never written — not by a full apply, and not by an
+            // apply that names them in --only either. Making --only able to override this
+            // would put the guarantee back in the operator's hands, which is the thing #325
+            // set out to stop.
+            if (s.IsDescribeOnly())
+            {
+                Console.WriteLine("    SKIPPED: describe-only (adopted member — converge documents it, never writes it)");
+                skipped++; Console.WriteLine(); continue;
+            }
 
             var unmet = sp.DependsOn.Where(missingDeps.Contains).ToList();
             if (unmet.Count > 0)
@@ -330,6 +361,11 @@ public sealed class ConvergeRunner
                 foreach (var vm in vmMembers)
                 {
                     Console.WriteLine($"▸ {vm.Metadata.Name}  (vmid {vm.Spec.Vmid}, node {vm.Spec.Node})");
+                    if (vm.IsDescribeOnly())
+                    {
+                        Console.WriteLine("    SKIPPED: describe-only (adopted member — converge documents it, never writes it)");
+                        skipped++; Console.WriteLine(); continue;
+                    }
                     try
                     {
                         var res = await VmConverger.ApplyAsync(writer, vm);
@@ -380,10 +416,21 @@ public sealed class ConvergeRunner
         Console.WriteLine("Note: external resources (Cloudflare tunnels/DNS, runner registrations) are\n" +
                           "shared + ADD-ONLY — destroy does NOT remove them. CT teardown only.\n");
 
-        int destroyed = 0, absent = 0, failed = 0, planned = 0;
+        int destroyed = 0, absent = 0, failed = 0, planned = 0, refused = 0;
         foreach (var s in teardown)
         {
             var sp = s.Spec;
+
+            // Refused outright, plan or apply. "Adopted" generally means older and less
+            // replaceable than the stack describing it, so destroy is the one verb where
+            // getting this wrong is unrecoverable (#325).
+            if (s.IsDescribeOnly())
+            {
+                Console.WriteLine($"▸ {s.Metadata.Name}  (ctid {sp.Ctid}): REFUSED — describe-only (adopted; destroy would remove a guest converge never created)");
+                refused++;
+                continue;
+            }
+
             if (sp.Node is not { } node || sp.Ctid is not { } ctid)
             {
                 Console.WriteLine($"▸ {s.Metadata.Name}: SKIP (no node/ctid)");
@@ -411,9 +458,10 @@ public sealed class ConvergeRunner
         }
 
         Console.WriteLine();
+        var refusedNote = refused > 0 ? $", {refused} refused (describe-only)" : "";
         Console.WriteLine(confirmed
-            ? $"Destroy summary — {destroyed} destroyed, {absent} absent, {failed} failed."
-            : $"Destroy plan — {planned} to destroy, {absent} absent. (Re-run with --yes to apply.)");
+            ? $"Destroy summary — {destroyed} destroyed, {absent} absent, {failed} failed{refusedNote}."
+            : $"Destroy plan — {planned} to destroy, {absent} absent{refusedNote}. (Re-run with --yes to apply.)");
         return failed == 0 ? 0 : 1;
     }
 
