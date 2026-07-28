@@ -15,16 +15,49 @@ public sealed class ConvergeRunner
     private readonly IClusterStateProvider? _stateProvider;
     private readonly INodeExec _exec;
     private readonly ProxmoxClientOptions? _pveOptions;
+    private readonly IReadOnlyList<string>? _only;
 
     public ConvergeRunner(string stackDir, SecretsEnv env,
         IClusterStateProvider? stateProvider = null, INodeExec? exec = null,
-        ProxmoxClientOptions? pveOptions = null)
+        ProxmoxClientOptions? pveOptions = null,
+        IReadOnlyList<string>? only = null)
     {
         _stackDir = stackDir;
         _env = env;
         _stateProvider = stateProvider;
         _exec = exec ?? new NodeExec();
         _pveOptions = pveOptions;
+        _only = only;
+    }
+
+    // Loads + orders the stack, then narrows to `--only` (#306).
+    //
+    // Order matters: LoadStack merges stack defaults and TopologicalSorter runs over
+    // ALL members, so a selected member keeps its defaults and its relative position
+    // in the full dependency order. `AllOrdered` is returned alongside because
+    // dependency lookups — service-derived secrets, forgejo create-vars — must still
+    // see the whole stack even when only one member is being acted on.
+    private (ShapeLoader.LoadedStack Loaded, IReadOnlyList<Shape> AllOrdered,
+             IReadOnlyList<Shape> Members, IReadOnlyList<VmShape> VmMembers) LoadSelected()
+    {
+        var loaded = ShapeLoader.LoadStack(_stackDir);
+        var allOrdered = TopologicalSorter.Order(loaded.Members);
+        var (members, vms) = MemberSelection.Resolve(allOrdered, loaded.VmMembers, _only);
+        return (loaded, allOrdered, members, vms);
+    }
+
+    // Header line naming what the selection excluded, so a scoped run can never be
+    // mistaken in a log for a full-stack one.
+    private void ReportSelection(IReadOnlyList<Shape> allOrdered, IReadOnlyList<Shape> members,
+        IReadOnlyList<VmShape> allVms, IReadOnlyList<VmShape> vms)
+    {
+        if (_only is null) return;
+        var skipped = (allOrdered.Count - members.Count) + (allVms.Count - vms.Count);
+        Console.WriteLine($"--only {string.Join(",", _only)} — {members.Count + vms.Count} member(s) selected, {skipped} skipped.");
+        var deps = MemberSelection.UnselectedDependencies(members);
+        if (deps.Count > 0)
+            Console.WriteLine($"  dependsOn outside the selection: {string.Join(", ", deps)} (must already be converged)");
+        Console.WriteLine();
     }
 
     // State-diff PLAN (issue #45). For each desired shape, report the per-member
@@ -34,13 +67,13 @@ public sealed class ConvergeRunner
     // Always READ-ONLY.
     public async Task<int> PlanAsync(CancellationToken ct = default)
     {
-        var loaded = ShapeLoader.LoadStack(_stackDir);
-        var ordered = TopologicalSorter.Order(loaded.Members);
+        var (loaded, allOrdered, ordered, vmMembers) = LoadSelected();
         var resolver = new SecretResolver(_env);
         var registry = ProvisionerRegistry.Default();
 
         var stackName = loaded.Stack?.Metadata.Name ?? Path.GetFileName(_stackDir);
         Console.WriteLine($"Converge plan — stack '{stackName}'  ({ordered.Count} member(s), dependency order)\n");
+        ReportSelection(allOrdered, ordered, loaded.VmMembers, vmMembers);
 
         // Best-effort live cluster state. Null → degrade to intent-only.
         ClusterState? state = _stateProvider is null ? null : await _stateProvider.TryGetAsync(ct);
@@ -109,15 +142,15 @@ public sealed class ConvergeRunner
             Console.WriteLine($"State summary — {toCreate} to create, {drifted} drifted, {upToDate} up-to-date.");
 
         // kind: VM members — planned via ProxmoxSharp (read-only).
-        if (loaded.VmMembers.Count > 0)
+        if (vmMembers.Count > 0)
         {
-            Console.WriteLine($"\nVM members ({loaded.VmMembers.Count}) — via ProxmoxSharp:\n");
+            Console.WriteLine($"\nVM members ({vmMembers.Count}) — via ProxmoxSharp:\n");
             if (_pveOptions is null)
                 Console.WriteLine("  (VM plan skipped — no PVE credentials configured)\n");
             else
             {
                 var writer = QemuWriter.Create(_pveOptions);
-                foreach (var vm in loaded.VmMembers)
+                foreach (var vm in vmMembers)
                 {
                     try
                     {
@@ -149,12 +182,14 @@ public sealed class ConvergeRunner
     // be present. Provisioners that aren't idempotent-safe yet report Skipped.
     public async Task<int> ApplyAsync()
     {
-        var loaded = ShapeLoader.LoadStack(_stackDir);
-        var ordered = TopologicalSorter.Order(loaded.Members);
+        var (loaded, allOrdered, ordered, vmMembers) = LoadSelected();
         var resolver = new SecretResolver(_env);
         var registry = ProvisionerRegistry.Default();
         var exec = _exec;
-        var byName = ordered.ToDictionary(s => s.Metadata.Name, StringComparer.Ordinal);
+        // byName spans the WHOLE stack, never just the selection: service-derived
+        // secrets and forgejo create-vars resolve dependencies by name, and a scoped
+        // apply must still be able to reach a dependency it isn't itself converging.
+        var byName = allOrdered.ToDictionary(s => s.Metadata.Name, StringComparer.Ordinal);
         var deriver = new SecretDeriver(_env, exec, byName);
         var ctx = new ConvergeContext(exec, _env, byName, deriver);
         var creator = new CommunityScriptsCreator(exec);
@@ -164,12 +199,34 @@ public sealed class ConvergeRunner
 
         var stackName = loaded.Stack?.Metadata.Name ?? Path.GetFileName(_stackDir);
         Console.WriteLine($"Converge APPLY — stack '{stackName}'  ({ordered.Count} member(s), dependency order)\n");
+        ReportSelection(allOrdered, ordered, loaded.VmMembers, vmMembers);
+
+        // Guard for `--only` (#306): a dependency left out of the selection is being
+        // ASSUMED already converged. Verify that rather than trusting it — applying a
+        // member whose dependency doesn't exist yet fails in confusing, half-applied
+        // ways deep inside a provisioner.
+        var unselectedDeps = MemberSelection.UnselectedDependencies(ordered);
+        var missingDeps = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var dep in unselectedDeps)
+        {
+            if (!byName.TryGetValue(dep, out var d) || d.Spec.Node is not { } dn || d.Spec.Ctid is not { } dc)
+                continue; // not correlatable to a live CT — nothing to assert
+            if (!await creator.ExistsAsync(dn, dc, ct)) missingDeps.Add(dep);
+        }
 
         int failed = 0, applied = 0, nochange = 0, skipped = 0;
         foreach (var s in ordered)
         {
             var sp = s.Spec;
             Console.WriteLine($"▸ {s.Metadata.Name}  (ctid {sp.Ctid}, app '{sp.App}', node {sp.Node})");
+
+            var unmet = sp.DependsOn.Where(missingDeps.Contains).ToList();
+            if (unmet.Count > 0)
+            {
+                Console.WriteLine($"    FAILED: dependsOn {string.Join(", ", unmet)} — outside --only and NOT converged. " +
+                                  "Converge the dependency first, or include it in --only.");
+                failed++; Console.WriteLine(); continue;
+            }
 
             // Lifecycle: ensure the CT exists (create via community-scripts if absent).
             if (sp.Node is { } node && sp.Ctid is { } ctid)
@@ -263,14 +320,14 @@ public sealed class ConvergeRunner
         }
 
         // kind: VM members — applied via ProxmoxSharp (create if absent, else set changed keys).
-        if (loaded.VmMembers.Count > 0)
+        if (vmMembers.Count > 0)
         {
             if (_pveOptions is null)
                 Console.WriteLine("VM members: SKIPPED (no PVE credentials configured)\n");
             else
             {
                 var writer = QemuWriter.Create(_pveOptions);
-                foreach (var vm in loaded.VmMembers)
+                foreach (var vm in vmMembers)
                 {
                     Console.WriteLine($"▸ {vm.Metadata.Name}  (vmid {vm.Spec.Vmid}, node {vm.Spec.Node})");
                     try
@@ -306,13 +363,18 @@ public sealed class ConvergeRunner
     // hand if ever needed.
     public async Task<int> DestroyAsync(bool confirmed, CancellationToken ct = default)
     {
-        var loaded = ShapeLoader.LoadStack(_stackDir);
-        var ordered = TopologicalSorter.Order(loaded.Members);
+        var (loaded, allOrdered, ordered, vmMembers) = LoadSelected();
         var teardown = Enumerable.Reverse(ordered).ToList(); // dependents first
         var creator = new CommunityScriptsCreator(_exec);
 
         var stackName = loaded.Stack?.Metadata.Name ?? Path.GetFileName(_stackDir);
         Console.WriteLine($"Converge DESTROY — stack '{stackName}'  ({teardown.Count} member(s), reverse dependency order)\n");
+        ReportSelection(allOrdered, ordered, loaded.VmMembers, vmMembers);
+        // `--only` narrows destroy too. Scoping matters MORE here than on apply: the
+        // unscoped form takes out every CT in the stack, so being able to name one is
+        // the difference between retiring a member and flattening the stack. Note the
+        // reverse-order guarantee only holds WITHIN the selection — a dependency left
+        // out of it is not torn down, which is the intent.
         if (!confirmed)
             Console.WriteLine("(dry-run destroy plan — re-run with --yes to actually stop + destroy)\n");
         Console.WriteLine("Note: external resources (Cloudflare tunnels/DNS, runner registrations) are\n" +
