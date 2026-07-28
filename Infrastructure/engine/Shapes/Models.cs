@@ -55,6 +55,13 @@ public sealed class LxcSpec
     public bool? Unprivileged { get; set; }
     public bool? Protection { get; set; }
     public bool? Onboot { get; set; }
+
+    // Lifecycle stance (#325). "describe-only" marks a guest ADOPTED IN PLACE: the shape
+    // documents it, converge reads it and resolves dependsOn against it, but never writes
+    // to it. An adopted guest's live config can never fully match the shape, so without
+    // this it reports as drift on every single run and every apply wants to "fix" it.
+    // Prose in CLAUDE.md plus remembering --only is not a guarantee; this is.
+    public string? Manage { get; set; }
     public StartupSpec? Startup { get; set; }
     public string? Storage { get; set; }
     public string? TemplateStorage { get; set; }
@@ -278,6 +285,13 @@ public sealed class VmSpec
     public bool? Onboot { get; set; }
     public bool? Protection { get; set; }
     public StartupSpec? Startup { get; set; }
+
+    // Lifecycle stance (#325). "describe-only" marks a guest ADOPTED IN PLACE: the shape
+    // documents it, converge reads it and resolves dependsOn against it, but never writes
+    // to it. An adopted guest's live config can never fully match the shape, so without
+    // this it reports as drift on every single run and every apply wants to "fix" it.
+    // Prose in CLAUDE.md plus remembering --only is not a guarantee; this is.
+    public string? Manage { get; set; }
 
     public string? Scsihw { get; set; }
     public string? Vga { get; set; }

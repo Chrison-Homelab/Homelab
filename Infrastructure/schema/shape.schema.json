@@ -439,6 +439,12 @@
         "agent": { "type": "boolean", "description": "Enable the QEMU guest agent (agent=1)." },
         "onboot": { "type": "boolean", "description": "Start automatically on host boot. Default false for GPU VMs (single GPU → start on demand)." },
         "protection": { "type": "boolean", "description": "Protect against destroy/remove operations." },
+        "manage": {
+          "enum": ["managed", "describe-only"],
+          "default": "managed",
+          "description": "Lifecycle stance. 'managed' (default) means converge may create, reconcile and destroy this member. 'describe-only' means the shape DOCUMENTS an adopted guest that predates it: converge reads it and resolves dependsOn against it, but NEVER writes to it — plan shows it as describe-only instead of perpetual drift, apply skips it, and destroy refuses it. Naming it in --only does not override this. Use for guests adopted in place, where the shape can never fully match reality and that difference is intentional.",
+          "$comment": "#325 — adopted members were previously protected only by prose in CLAUDE.md plus the operator remembering --only."
+        },
         "startup": { "$ref": "#/$defs/startup" },
         "scsihw": { "type": "string", "description": "SCSI controller model (e.g. 'virtio-scsi-single' — needed for per-disk iothread)." },
         "vga": { "type": "string", "description": "Display adapter (Proxmox 'vga'), e.g. 'none' when a passed-through GPU drives the display, or 'std'/'virtio'." },
@@ -504,6 +510,12 @@
         "osVersion": { "type": ["string", "integer"], "description": "OS version (e.g. 13) (→ var_version)." },
         "unprivileged": { "type": "boolean", "default": true, "description": "Unprivileged container (→ var_unprivileged). Note: NFS/CIFS mounts inside an unprivileged CT need extra capabilities — prefer host-level." },
         "protection": { "type": "boolean", "description": "Protect against destroy/remove operations." },
+        "manage": {
+          "enum": ["managed", "describe-only"],
+          "default": "managed",
+          "description": "Lifecycle stance. 'managed' (default) means converge may create, reconcile and destroy this member. 'describe-only' means the shape DOCUMENTS an adopted guest that predates it: converge reads it and resolves dependsOn against it, but NEVER writes to it — plan shows it as describe-only instead of perpetual drift, apply skips it, and destroy refuses it. Naming it in --only does not override this. Use for guests adopted in place, where the shape can never fully match reality and that difference is intentional.",
+          "$comment": "#325 — adopted members were previously protected only by prose in CLAUDE.md plus the operator remembering --only."
+        },
         "onboot": { "type": "boolean", "description": "Start automatically on host boot." },
         "startup": { "$ref": "#/$defs/startup" },
 
