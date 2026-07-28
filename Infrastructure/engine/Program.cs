@@ -20,6 +20,11 @@ using Homelab.Infrastructure.Unifi;
 //   homelab-infra converge <stack-dir> --apply    # create + reconcile config + provision
 //   homelab-infra converge <stack-dir> --destroy           # destroy plan (read-only)
 //   homelab-infra converge <stack-dir> --destroy --yes     # stop + destroy the stack's CTs
+//   homelab-infra converge <stack-dir> --only a[,b] [...]  # scope any of the above to
+//                                         #   named members — the rest are untouched.
+//                                         #   Stack defaults + dependency order still
+//                                         #   apply; an unnamed dependency must already
+//                                         #   be converged or the member fails (#306).
 //   homelab-infra validate <path>        # validate a shape file / stack dir / nodes dir
 //                                         #   against shape.schema.json (CI plan gate)
 //
@@ -103,13 +108,18 @@ static async Task<int> RunConverge(string[] args)
 {
     if (args.Length < 2)
     {
-        Console.Error.WriteLine("usage: homelab-infra converge <stack-dir> [--apply | --destroy [--yes]]");
+        Console.Error.WriteLine("usage: homelab-infra converge <stack-dir> [--apply | --destroy [--yes]] [--only <member>[,<member>...]]");
         return 2;
     }
     var stackDir = Path.GetFullPath(args[1]);
     var apply = args.Contains("--apply");
     var destroy = args.Contains("--destroy");
     var confirmed = args.Contains("--yes");
+
+    // --only <member>[,<member>...] scopes every mode to named members (#306).
+    IReadOnlyList<string>? only;
+    try { only = MemberSelection.Parse(args); }
+    catch (InvalidOperationException ex) { Console.Error.WriteLine(ex.Message); return 2; }
 
     var secretsPath = FindUp("secrets.env", Directory.GetCurrentDirectory());
     var env = SecretsEnv.Load(secretsPath);
@@ -119,15 +129,25 @@ static async Task<int> RunConverge(string[] args)
     // LXC; "VM plan/apply skipped").
     var pve = LoadOptions();
 
-    if (destroy)
-        return await new ConvergeRunner(stackDir, env, pveOptions: pve).DestroyAsync(confirmed);
-    if (apply)
-        return await new ConvergeRunner(stackDir, env, pveOptions: pve).ApplyAsync();
+    // An unknown --only name is fatal, and must exit non-zero BEFORE anything is
+    // touched: converging nothing would otherwise report success on a typo.
+    try
+    {
+        if (destroy)
+            return await new ConvergeRunner(stackDir, env, pveOptions: pve, only: only).DestroyAsync(confirmed);
+        if (apply)
+            return await new ConvergeRunner(stackDir, env, pveOptions: pve, only: only).ApplyAsync();
 
-    // Plan diffs against live cluster state (best-effort; degrades to intent-only
-    // if PVE creds are missing or the cluster is unreachable).
-    var stateProvider = new ProxmoxClusterStateProvider(LoadOptions);
-    return await new ConvergeRunner(stackDir, env, stateProvider, pveOptions: pve).PlanAsync();
+        // Plan diffs against live cluster state (best-effort; degrades to intent-only
+        // if PVE creds are missing or the cluster is unreachable).
+        var stateProvider = new ProxmoxClusterStateProvider(LoadOptions);
+        return await new ConvergeRunner(stackDir, env, stateProvider, pveOptions: pve, only: only).PlanAsync();
+    }
+    catch (InvalidOperationException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 2;
+    }
 }
 
 // Walk up from start looking for a file; returns null if not found.
