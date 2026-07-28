@@ -75,4 +75,29 @@ spec:
       ro: true                       # Plex reads the library; Youtarr writes it
       acl: true                      # honor the export's setgid + default group ACLs
       backup: false                  # data lives on the NAS; keep out of vzdump
+    # ── LEGACY volume-3 library (#329) ──────────────────────────────────────────────
+    # 3.5 TB — 81% of what Plex serves. This was NOT declared here until #329: it reached
+    # the container through a hand-written `/etc/fstab` line INSIDE CT 5008, so converge
+    # could not see it, MountReconciler could not reconcile it and `validate` could not
+    # catch it. Recreating this CT would have come up healthy and served 821 GB of 4.3 TB
+    # — no error, just mostly-empty libraries.
+    #
+    # Not optional, and not merely "the old fleet's storage": EVERY Plex library depends
+    # on it. Movies = /mnt/media/Movies + /data/media/movies, TV Shows likewise, and
+    # **Animes (/mnt/media/Anime) exists ONLY here** with no volume-4 counterpart.
+    #
+    # `target` MUST stay exactly /mnt/media — Plex stores absolute section paths, so
+    # changing it silently empties three libraries. MUST also stay LAST: mounts render
+    # positionally (data/media=mp0, youtube=mp1, this=mp2) and inserting above would
+    # renumber the live ones.
+    #
+    # Retiring volume-3 is a separate, much larger decision (#199): 3.2 TB of torrents
+    # and 470 seeding entries on CT 5007 live there too.
+    - type: nfs
+      storage: ds1813-nfs-volume-3   # legacy 6 TB volume, 74% full
+      source: data/media             # /volume3/Volume-3/data/media
+      target: /mnt/media             # load-bearing — see above
+      ro: true                       # Plex reads it; the OLD arr fleet still writes it
+      acl: true                      # honor the export's setgid + default group ACLs
+      backup: false                  # data lives on the NAS; keep out of vzdump
   hookscript: local:snippets/ensure-data-mount.sh   # pre-start guard: volume4 mounted or refuse to start
