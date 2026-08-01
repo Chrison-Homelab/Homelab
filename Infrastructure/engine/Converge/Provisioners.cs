@@ -64,6 +64,7 @@ public sealed class ProvisionerRegistry
         new CrossSeedProvisioner(),
         new ShelfmarkProvisioner(),
         new SeerrProvisioner(),
+        new PlexProvisioner(),
     });
 }
 

@@ -92,6 +92,13 @@ apps:
   cross-seed:
     script: cross-seed           # net-new (#178)
     provisioner: cross-seed      # render config.js (torznab ← prowlarr, inject → qbittorrent) + restart daemon
+  plex:
+    script: plex                 # ADOPTED CT 5008 — the create path never runs for it (the shape is an
+                                 # update-only adoption; see stacks/Media/plex.lxc.yaml). Listed because the
+                                 # slug is authored in a shape and now has a provisioner.
+    provisioner: plex            # reconcile server settings via the /:/prefs API, add/update only (#332).
+                                 # Pins the deliberate non-default TranscoderCanOnlyRemuxVideo=1, which a
+                                 # rebuild would otherwise silently reset to Plex's default.
   tracearr:
     script: tracearr             # net-new; Plex/Jellyfin/Emby session monitoring (Tautulli replacement). No
                                  # provisioner — all-in-one install self-generates secrets; Plex link is a UI step.
