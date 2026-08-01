@@ -53,8 +53,41 @@ metadata:
 spec:
   app: plex
   ctid: 5008             # ADOPTED legacy CT (5000-block) — see header; not a new 51xx member.
-  # cores/memory intentionally omitted → CtConfigReconciler leaves Plex's live
-  # resources (2 cores / 2 GB) untouched. This shape only adds the media mount.
+
+  # Resources (#332). `cores` is now DECLARED, so CtConfigReconciler owns it; `memory`
+  # stays omitted deliberately — see below.
+  cores: 4               # was 2. hpe-01 has 4 physical cores and this is a cgroup CEILING,
+                         # not a reservation, so an idle Plex costs nothing while a scan or
+                         # an audio transcode can use the whole box instead of half of it.
+  # memory: NOT declared — measured, not assumed. cgroup counters show peak 1.09 GB against
+  # the 2 GB limit and `oom_kill 0` (never once), with Plex RSS ~54 MB idle. There is no
+  # evidence 2 GB is short, so raising it would be cargo-cult. Revisit if oom_kill moves.
+  disk: 16               # GB — grown 8→16 on 2026-08-01 (`pct resize 5008 rootfs 16G`, online).
+                         # It was at 80% (1.6 GB free) with Metadata 1.1 GB and Cache 1.6 GB
+                         # still growing; a full rootfs corrupts the Plex database. Now 40%.
+                         # NOTE: `disk` is a CREATE-time var — nothing reconciles it, so this
+                         # records intent for a rebuild. Growing is a manual, one-way op.
+
+  # ── Server settings, now IaC (#332) ────────────────────────────────────────────────
+  # These lived ONLY inside the container in Preferences.xml. A rebuild would have come
+  # back with Plex defaults, silently changing playback behaviour. The `plex` provisioner
+  # reconciles them through the /:/prefs API — add/update only, so any setting NOT listed
+  # here is left exactly as Plex has it. Nothing is ever reset to default or removed.
+  config:
+    prefs:
+      # THE IMPORTANT ONE. Label: "Disable video stream transcoding". Plex's default is
+      # false; this box deliberately runs it true, so the server refuses video transcodes
+      # and clients get direct play / remux / audio-only transcode instead. That is the
+      # right call for a 4-core i5-6500T — and it is exactly what a rebuild would have
+      # thrown away, letting a weak server start accepting 4K transcodes it cannot serve.
+      TranscoderCanOnlyRemuxVideo: true
+      # Matches Plex's default (on), pinned because it is load-bearing here: the iGPU is
+      # passed into this CT specifically for it (dev0 /dev/dri/renderD128, dev1 card1).
+      # Caveat worth knowing — the iGPU is Skylake HD 530, which only does HYBRID HEVC
+      # 10-bit decode (full fixed-function arrived with Kaby Lake), and 228 of 264 4K
+      # streams in this library are HEVC 10-bit. So this helps the h264 8-bit content and
+      # the encode path; it is not a blanket 4K win.
+      HardwareAcceleratedCodecs: true
 
   mounts:
     - type: nfs
