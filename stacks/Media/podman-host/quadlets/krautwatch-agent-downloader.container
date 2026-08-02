@@ -1,0 +1,68 @@
+# The only Krautwatch container that writes files. It polls the job table and pulls each stream
+# to disk — a byte copy for progressive MP4, an ffmpeg remux (-c copy) for HLS.
+#
+# THE PATH IS THE POINT. It writes to /data/usenet/tv, and sonarr (5101) sees that same absolute
+# path on the same export, so imports hardlink instead of copying. That is the whole reason this
+# runs on the Media host rather than anywhere else, and it is why podman-host.lxc.yaml gained the
+# /data mount. If the two paths ever diverge, Sonarr falls back to copy+delete and the shared
+# export stops earning its keep.
+#
+# NFS RULES, same as youtarr next door and for the same reasons (see ../README.md):
+#   * NO `:U` on /data. It chowns RECURSIVELY across the whole shared export — every *arr app's
+#     library, not just ours.
+#   * NO UserNS=. The app runs as container-root, which the default rootless mapping already
+#     sends to the `podman` user. The NAS export squashes incoming uids to 1024:100 regardless,
+#     which is what makes the files readable by sonarr and plex.
+#
+# ffmpeg is a hard dependency of the HLS path and is bundled in this image only — the other five
+# services do not carry it.
+
+[Unit]
+Description=Krautwatch downloader agent
+Documentation=https://github.com/Chrison-dev/Krautwatch
+After=network-online.target krautwatch-db.service krautwatch-migrator.service
+Wants=network-online.target
+Requires=krautwatch-db.service krautwatch-migrator.service
+
+[Container]
+Image=ghcr.io/chrison-dev/krautwatch-agent-downloader:0.1.1
+ContainerName=krautwatch-agent-downloader
+Network=krautwatch.network
+
+Secret=krautwatch_db_connectionstring,type=env,target=ConnectionStrings__krautwatch
+Environment=HTTP_PORTS=8080
+Environment=TZ=Pacific/Auckland
+Environment=Download__Directory=/data/usenet/tv
+# Fail loudly rather than silently skipping HLS titles if the image ever loses ffmpeg.
+Environment=Download__RequireFfmpeg=true
+
+# The shared export. No :U, no UserNS — see the header.
+Volume=/data:/data
+
+# Now that the images ship curl (Krautwatch v0.1.1), the /health endpoint the service already
+# exposes can actually be called from inside the container — which is the only place a healthcheck
+# runs. This matters more here than anywhere else in the stack: a wedged ffmpeg remux keeps the
+# process alive, so Restart=always never fires and downloads stop silently.
+#
+# HealthOnFailure=kill is the load-bearing line. Without it podman records the unhealthy status
+# and does nothing, so the check would be decorative. Killing makes the container exit, and
+# Restart=always brings it back.
+#
+# StartPeriod is longer than the other services': this one may be mid-download at startup.
+HealthCmd=curl --fail --silent --show-error --output /dev/null http://localhost:8080/health
+HealthInterval=30s
+HealthTimeout=10s
+HealthRetries=3
+HealthStartPeriod=60s
+HealthOnFailure=kill
+
+[Service]
+# Podman does not create missing bind-mount source dirs, and the app expects its download
+# directory to exist. Created on the CT side, inside the mounted export.
+ExecStartPre=/usr/bin/mkdir -p /data/usenet/tv
+Restart=always
+RestartSec=10
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

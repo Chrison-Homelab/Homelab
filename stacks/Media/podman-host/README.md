@@ -16,6 +16,26 @@ The stack's **container host**, not a per-app box. Services arrive as extra quad
 | `youtarr.network` | shared network | **Required** — gives `youtarr` DNS resolution of `youtarr-db` |
 | `youtarr-db.container` | MariaDB 10.3 | fixed uid 999 on local disk → `keep-id` |
 | `youtarr.container` | Youtarr | writes video to the NFS share → **no** `:U`, **no** `UserNS=` |
+| `krautwatch.network` | shared network | **Required** — gives the Krautwatch services DNS resolution of `krautwatch-db` |
+| `krautwatch-db.container` | Postgres 18.3 | fixed uid 999 on local disk → `keep-id`, same case as `youtarr-db` |
+| `krautwatch-migrator.container` | schema owner | run-to-completion → `Type=oneshot` + `RemainAfterExit`; every service `Requires=` it |
+| `krautwatch-newznab.container` | indexer + download client | the only one Sonarr/Prowlarr talk to, on `:5055`. Sonarr needs `urlBase=/sabnzbd` |
+| `krautwatch-web.container` | web UI | internal-only on `:5099`, own sign-in, `/setup?token=…` logged on first run |
+| `krautwatch-agent-ard.container` | ARD/KiKA crawler | no ports, no volumes |
+| `krautwatch-agent-zdf.container` | ZDF crawler | no ports, no volumes |
+| `krautwatch-agent-downloader.container` | downloader | writes `/data/usenet/tv` → **no** `:U`, **no** `UserNS=`; bundles ffmpeg |
+
+Krautwatch is why this CT also mounts the shared `/data` export. Its downloader writes to
+`/data/usenet/tv` and sonarr (5101) imports from that same absolute path, so imports hardlink
+rather than copy.
+
+Every Krautwatch service carries a `HealthCmd` against the `/health` endpoint it already exposes,
+which is possible because [v0.1.1](https://github.com/Chrison-dev/Krautwatch/releases/tag/v0.1.1)
+ships `curl` in the images — a healthcheck runs *inside* the container, and the .NET runtime images
+had no HTTP client before that. `HealthOnFailure=kill` is what makes the check act rather than just
+record: podman marks the container unhealthy and does nothing otherwise. `krautwatch-db` is the
+exception and has no `HealthOnFailure` on purpose — an unhealthy app should be restarted, a database
+should be looked at.
 
 ## The three things that make this migration different from Phase 1
 

@@ -1,0 +1,39 @@
+# Krautwatch's schema owner. Runs to completion and exits — it is not a service.
+#
+# Upstream models this as an Aspire run-to-completion resource that every other service
+# WaitForCompletion()s, so migration ownership sits in one place rather than inside an app host.
+# The systemd equivalent is Type=oneshot + RemainAfterExit, which leaves the unit "active
+# (exited)" after success — so the services below can Requires= it and start only once the
+# schema is current.
+#
+# Quadlet defaults a .container to Type=notify. That never becomes ready for a container that
+# exits, so the override in [Service] is load-bearing, not cosmetic.
+
+[Unit]
+Description=Krautwatch database migrations
+Documentation=https://github.com/Chrison-dev/Krautwatch
+After=network-online.target krautwatch-db.service
+Wants=network-online.target
+Requires=krautwatch-db.service
+
+[Container]
+Image=ghcr.io/chrison-dev/krautwatch-migrator:0.1.1
+ContainerName=krautwatch-migrator
+Network=krautwatch.network
+
+# The whole connection string is one secret rather than a password interpolated into an
+# Environment= line: a quadlet cannot expand a secret inside another variable's value.
+Secret=krautwatch_db_connectionstring,type=env,target=ConnectionStrings__krautwatch
+Environment=TZ=Pacific/Auckland
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# It races Postgres accepting connections. The image retries internally, but a failed migration
+# must not leave the stack half-started, so retry the unit too.
+Restart=on-failure
+RestartSec=15
+TimeoutStartSec=600
+
+[Install]
+WantedBy=default.target

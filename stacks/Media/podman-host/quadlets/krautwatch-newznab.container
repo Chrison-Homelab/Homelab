@@ -1,0 +1,54 @@
+# The *arr-facing surface: Newznab indexer + SABnzbd-compatible download client, one host.
+#
+# This is the only Krautwatch container Sonarr and Prowlarr talk to. Published on the CT so
+# sonarr (5101) and prowlarr (5100) can reach it at http://<podman-host>:5055.
+#
+# Sonarr's download-client settings need urlBase=/sabnzbd — the SABnzbd surface lives at
+# /sabnzbd/api, while /api is the Newznab one. Left empty, Sonarr hits the indexer route and
+# fails with a bare 400 that names nothing.
+
+[Unit]
+Description=Krautwatch Newznab indexer and SABnzbd download client
+Documentation=https://github.com/Chrison-dev/Krautwatch
+After=network-online.target krautwatch-db.service krautwatch-migrator.service
+Wants=network-online.target
+Requires=krautwatch-db.service krautwatch-migrator.service
+
+[Container]
+Image=ghcr.io/chrison-dev/krautwatch-newznab:0.1.1
+ContainerName=krautwatch-newznab
+Network=krautwatch.network
+PublishPort=5055:8080
+
+Secret=krautwatch_db_connectionstring,type=env,target=ConnectionStrings__krautwatch
+# The one credential the *arr apps authenticate with. Unset would leave the surface fully open;
+# Sonarr also refuses to configure a SABnzbd client without a key.
+Secret=krautwatch_apikey,type=env,target=Krautwatch__ApiKey
+# Optional. Absent degrades matching to titles rather than failing.
+Secret=krautwatch_tvdb_apikey,type=env,target=TvdbConfiguration__ApiKey
+Environment=HTTP_PORTS=8080
+Environment=ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
+Environment=TZ=Pacific/Auckland
+
+
+# Now that the images ship curl (Krautwatch v0.1.1), the /health endpoint the service already
+# exposes can actually be called from inside the container — which is the only place a healthcheck
+# runs. Restart=always alone catches a dead process; this also catches a wedged one.
+#
+# HealthOnFailure=kill is the load-bearing line. Without it podman records the unhealthy status
+# and does nothing, so the check would be decorative. Killing makes the container exit, and
+# Restart=always brings it back.
+HealthCmd=curl --fail --silent --show-error --output /dev/null http://localhost:8080/health
+HealthInterval=30s
+HealthTimeout=10s
+HealthRetries=3
+HealthStartPeriod=40s
+HealthOnFailure=kill
+
+[Service]
+Restart=always
+RestartSec=10
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

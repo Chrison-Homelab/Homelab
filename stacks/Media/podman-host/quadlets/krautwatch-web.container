@@ -1,0 +1,47 @@
+# The standalone web UI — search, manual download, monitoring, and Krautwatch's own settings.
+# Not required for the Sonarr integration; it is the human-facing side.
+#
+# Internal-only for now: no CF Access app and no <svc>.chrison.dev hostname, so reachable on
+# the LAN at http://<podman-host>:5099. It carries its own sign-in (Auth:Provider=local) and
+# logs a /setup?token=… link on first run, which the journal will show.
+
+[Unit]
+Description=Krautwatch web UI
+Documentation=https://github.com/Chrison-dev/Krautwatch
+After=network-online.target krautwatch-db.service krautwatch-migrator.service
+Wants=network-online.target
+Requires=krautwatch-db.service krautwatch-migrator.service
+
+[Container]
+Image=ghcr.io/chrison-dev/krautwatch-web:0.1.1
+ContainerName=krautwatch-web
+Network=krautwatch.network
+PublishPort=5099:8080
+
+Secret=krautwatch_db_connectionstring,type=env,target=ConnectionStrings__krautwatch
+Secret=krautwatch_tvdb_apikey,type=env,target=TvdbConfiguration__ApiKey
+Environment=HTTP_PORTS=8080
+Environment=ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
+Environment=TZ=Pacific/Auckland
+
+# Now that the images ship curl (Krautwatch v0.1.1), the /health endpoint the service already
+# exposes can actually be called from inside the container — which is the only place a healthcheck
+# runs. Restart=always alone catches a dead process; this also catches a wedged one.
+#
+# HealthOnFailure=kill is the load-bearing line. Without it podman records the unhealthy status
+# and does nothing, so the check would be decorative. Killing makes the container exit, and
+# Restart=always brings it back.
+HealthCmd=curl --fail --silent --show-error --output /dev/null http://localhost:8080/health
+HealthInterval=30s
+HealthTimeout=10s
+HealthRetries=3
+HealthStartPeriod=40s
+HealthOnFailure=kill
+
+[Service]
+Restart=always
+RestartSec=10
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

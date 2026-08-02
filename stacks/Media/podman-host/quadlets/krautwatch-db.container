@@ -1,0 +1,51 @@
+# Krautwatch's Postgres. Same version the upstream compose file uses.
+#
+# FIXED-UID CASE, exactly like youtarr-db next door: the postgres image runs as uid 999, its
+# data dir lives on local disk, so `UserNS=keep-id:uid=999,gid=999` makes the host `podman`
+# user appear as 999 inside. The data dir must therefore be owned by `podman` on the host —
+# the ExecStartPre mkdir creates it as that user.
+#
+# No `:U` on the volume. It chowns recursively on every start, which grows with the database.
+
+[Unit]
+Description=Krautwatch Postgres
+Documentation=https://github.com/Chrison-dev/Krautwatch
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/library/postgres:18.3
+ContainerName=krautwatch-db
+Network=krautwatch.network
+
+Secret=krautwatch_db_password,type=env,target=POSTGRES_PASSWORD
+Environment=POSTGRES_USER=postgres
+# The stock image only creates the database named here. Without it the server comes up healthy
+# with no `krautwatch` database at all, and the migrator fails against a server that looks fine.
+Environment=POSTGRES_DB=krautwatch
+Environment=TZ=Pacific/Auckland
+
+Volume=/home/podman/krautwatch/database:/var/lib/postgresql/data
+UserNS=keep-id:uid=999,gid=999
+
+# A healthcheck IS expressible here, unlike youtarr-db's: pg_isready needs no password and no
+# quoting, so neither of that unit's two objections applies.
+#
+# Deliberately NO HealthOnFailure. An unhealthy app should be killed and restarted; a database
+# should be looked at. Automatically bouncing Postgres on a transient blip risks more than it
+# fixes, and the dependent services already retry.
+HealthCmd=pg_isready -U postgres -d krautwatch
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=5
+HealthStartPeriod=30s
+
+[Service]
+# Podman does not create missing bind-mount source dirs.
+ExecStartPre=/usr/bin/mkdir -p /home/podman/krautwatch/database
+Restart=always
+RestartSec=10
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target
