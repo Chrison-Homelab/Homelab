@@ -10,7 +10,15 @@ public sealed record ConvergeContext(
     INodeExec Exec,
     SecretsEnv Secrets,
     IReadOnlyDictionary<string, Shape> ByName,
-    SecretDeriver Deriver);
+    SecretDeriver Deriver,
+    // Optional progress sink for provisioners whose apply takes minutes. Without it a long
+    // apply is indistinguishable from a hung one from the outside — which is how a working
+    // converge came to be cancelled at sixteen minutes (#369). Optional and last, so every
+    // existing construction keeps compiling.
+    Action<string>? Progress = null)
+{
+    public void Report(string message) => Progress?.Invoke(message);
+}
 
 public enum ApplyOutcome { NoChange, Applied, Skipped, Failed }
 

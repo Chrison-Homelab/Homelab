@@ -212,7 +212,8 @@ public sealed class ConvergeRunner
         // apply must still be able to reach a dependency it isn't itself converging.
         var byName = allOrdered.ToDictionary(s => s.Metadata.Name, StringComparer.Ordinal);
         var deriver = new SecretDeriver(_env, exec, byName);
-        var ctx = new ConvergeContext(exec, _env, byName, deriver);
+        var ctx = new ConvergeContext(exec, _env, byName, deriver,
+            Progress: m => Console.WriteLine($"    {m}"));
         var creator = new CommunityScriptsCreator(exec);
         var reconciler = new CtConfigReconciler(exec);
         var mountReconciler = new MountReconciler(exec);
