@@ -29,11 +29,19 @@ Environment=TZ=Pacific/Auckland
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-# It races Postgres accepting connections. The image retries internally, but a failed migration
-# must not leave the stack half-started, so retry the unit too.
-Restart=on-failure
-RestartSec=15
-TimeoutStartSec=600
+
+# NO Restart= — it is wrong on a Type=oneshot unit here, and it hung the first converge.
+#
+# The converge finishes with `systemctl --user start` over pct exec, which blocks until each unit
+# is active. A oneshot only goes active once the container exits cleanly, so a migrator that cannot
+# finish held that call for the full 600s timeout and then started over, with every service queued
+# behind it via Requires=. The deploy hung instead of failing, which is the worst way to fail.
+#
+# Failing fast is better in every case. The image already retries the database internally
+# (WaitForDatabaseAsync), so 120s is generous for the only race that matters — Postgres not yet
+# accepting connections. If the migration genuinely cannot run, the dependent units fail
+# immediately via Requires= and the converge reports it in seconds rather than tens of minutes.
+TimeoutStartSec=120
 
 [Install]
 WantedBy=default.target
