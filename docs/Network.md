@@ -12,12 +12,19 @@ BL-009). **Last updated:** 2026-05-29. Device hardware is in [Devices.md](Device
 | **Homelab** | 1010 | 10.10.0.1/16 | homelab.chrison.internal | 10.10.0.46 – 10.10.255.254 |
 | **Consumer** | 1020 | 10.20.0.1/16 | — | 10.20.0.46 – 10.20.255.254 |
 | **IOT** | 1040 | 10.40.0.1/16 | iot.chrison.internal | 10.40.0.46 – 10.40.255.254 |
-| **Old Network** (legacy) | untagged | 192.168.178.1/23 | localdomain | 192.168.178.11 – 192.168.179.254 |
+| **Old Network** (legacy, retiring) | untagged | 192.168.178.1/23 | localdomain | 192.168.178.11 – 192.168.179.254 |
 | **One-Click VPN** | — | 192.168.9.1/24 | — | 192.168.9.6 – 192.168.9.254 |
 
 ### Network Devices — `10.0.0.0/16` (VLAN 1000)
-Infrastructure: switches, APs, NAS. *(Network.md previously omitted the VLAN ID —
-it is **1000**.)*
+Infrastructure and storage: switches, APs, **the NAS** (`10.0.0.10`) and **all three
+Proxmox nodes** (`10.0.0.11` nuc-01 · `10.0.0.12` desktop-01 · `10.0.0.13` hpe-01),
+migrated 2026-08-02 (#37).
+
+Nodes and NAS share this VLAN deliberately: every NFS mount then stays inside one
+firewall zone, so the management plane can be isolated later without breaking
+storage. Nodes carry the address on a **tagged `vmbr0.1000`** sub-interface — `vmbr0`
+itself is `inet manual`, which is what lets guests on the port's untagged native VLAN
+keep reaching the Old Network while it is drained.
 
 ### Homelab — `10.10.0.0/16` (VLAN 1010)
 Exclusively for the homelab (Proxmox guests). Per-node sub-segmentation is not yet
