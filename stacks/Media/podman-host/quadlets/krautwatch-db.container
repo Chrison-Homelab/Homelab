@@ -25,7 +25,21 @@ Environment=POSTGRES_USER=postgres
 Environment=POSTGRES_DB=krautwatch
 Environment=TZ=Pacific/Auckland
 
-Volume=/home/podman/krautwatch/database:/var/lib/postgresql/data
+# /var/lib/postgresql, NOT /var/lib/postgresql/data.
+#
+# postgres:18 moved PGDATA to a major-version-specific directory
+# (PGDATA=/var/lib/postgresql/18/docker) and declares /var/lib/postgresql as its volume. A mount
+# at the old .../data path is not merely ignored — the entrypoint REFUSES to start:
+#
+#   Counter to that, there appears to be PostgreSQL data in:
+#     /var/lib/postgresql/data (unused mount/volume)
+#
+# which presents as a container that exits immediately and, with Restart=always, an endless
+# auto-restart loop that blocks the migrator and every service behind it.
+#
+# The project's own generated compose file had this right; this quadlet was written from the
+# pre-18 convention instead of copied from it.
+Volume=/home/podman/krautwatch/database:/var/lib/postgresql
 UserNS=keep-id:uid=999,gid=999
 
 # A healthcheck IS expressible here, unlike youtarr-db's: pg_isready needs no password and no
