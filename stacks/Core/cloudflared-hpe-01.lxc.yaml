@@ -38,12 +38,12 @@ spec:
       # (Old native CT 2012 stays alive as rollback until retired.)
       - hostname: pangolin.chrison.dev
         service: "http://10.10.0.13:80"         # CT 2013 (Docker EE) static IP (Homelab VLAN)
-      # Traefik dashboard — first admin UI migrated as a Pangolin RESOURCE (#136).
-      # Same Traefik origin as pangolin.chrison.dev; Pangolin host-routes traefik.chrison.dev
-      # → its own dashboard (:8080) and badger enforces Pangolin SSO. NO CF Access app here:
-      # for Pangolin-fronted resources, Pangolin IS the gate (unlike the break-glass below).
-      - hostname: traefik.chrison.dev
-        service: "http://10.10.0.12:80"         # → Pangolin Traefik; resource defined in Pangolin
+      # REMOVED 2026-08-02 (#321): traefik.chrison.dev pointed at 10.10.0.12, the OLD native
+      # Pangolin CT 2012. That origin no longer exists, so the hostname served a public 502.
+      # Superseded by traefik.lab.chrison.dev, which Pangolin serves on its own :443 (302 at
+      # the SSO gate). Dropping the entry here also prunes the DNS record: the CNAME carries
+      # our managed comment and points at this tunnel, so CnamesToPrune removes it once the
+      # hostname leaves the shape (#195) — no hand-deletion on the shared zone.
       # ── Break-glass admin behind Cloudflare Access (ADR-0005, live 2026-06-14) ──
       # Two admin front doors, each a CF Access self-hosted app gated by One-Time PIN
       # (policy: allow csimon@chrison.dev). The per-node `pve-*` hostname idea is dropped.
@@ -57,10 +57,16 @@ spec:
       # this stays a node. Cut over from the monolith CT 2001 on 2026-06-14. Its Access
       # app has a SECOND, non-identity policy accepting a service token, so the public
       # /api2/json endpoint still works non-interactively (creds in secrets.env:
-      # CF_ACCESS_PROXMOX_CLIENT_ID / _SECRET). Monolith ingress left as rollback,
-      # retired LAST. Currently targets nuc-01; both Core replicas can reach it.
+      # CF_ACCESS_PROXMOX_CLIENT_ID / _SECRET). Targets nuc-01; both Core replicas can
+      # reach it.
+      #
+      # ⚠ 10.0.0.11 is nuc-01's VLAN 1000 address (#341). This shape still said
+      # 192.168.179.1 — the pre-migration one — long after the nodes moved. Someone had
+      # corrected it LIVE, and the first converge after that silently pushed the dead
+      # address back, because the shape is the source of truth and the shape was stale.
+      # Fixing live state without fixing the shape buys you exactly one converge.
       - hostname: proxmox.chrison.dev
-        service: "https://192.168.179.1:8006"
+        service: "https://10.0.0.11:8006"
         originRequest: { noTLSVerify: true }
   secrets:
     - name: tunnelToken
