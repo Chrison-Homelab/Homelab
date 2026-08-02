@@ -214,6 +214,79 @@ recovery works. Note pmxcfs is read-only without quorum, so keep a copy of the o
 
 ---
 
+## Interlude — move the NAS ([#340](https://github.com/Chrison-Homelab/Homelab/issues/340)) ✅ done 2026-08-02
+
+Do this **between Phase 3 and Phase 4**, while the nodes are still dual-homed. That ordering is
+deliberate: the nodes can reach the NAS on either subnet throughout, so a NAS that lands somewhere
+unexpected is recoverable.
+
+Executed as `192.168.179.11 → 10.0.0.10`. What actually happened, in the order it mattered:
+
+### 1. Sweep every container for in-container NFS mounts — **before** shutting anything down
+
+This found **six**, not the one that was known about:
+
+```
+CT 5003 sonarr          /mnt/data          CT 5007 qbittorrent  /mnt/data
+CT 5004 radarr          /mnt/data          CT 5014 audiobookshelf /mnt/media (ro)
+CT 5006 bazarr          /mnt/data          CT 5015 shelfmark    /mnt/data
+CT 5008 plex            — already commented out by #329, inert
+```
+
+```bash
+for c in $(pct list | awk 'NR>1 && $2=="running"{print $1}'); do
+  pct exec $c -- grep -hE '^[^#]*192\.168\.179\.11' /etc/fstab 2>/dev/null | sed "s|^|CT $c: |"
+done
+```
+
+Repoint them all to `nas.homelab.chrison.internal`, and **verify each can resolve it** — a container
+that can't will fail its boot-time mount silently. Without this sweep most of the old fleet would
+have come back with dead storage.
+
+### 2. Capture the restore list, then shut everything down
+
+`pct list`/`qm list` the **running** guests to a file first. Several guests are deliberately
+stopped, and "start everything" is the wrong recovery. Diff before/after at the end.
+
+Shut down guests, then **unmount NFS on every node** (`pvesm set <s> --disable 1`, then `umount`).
+A stale NFS mount can hang the subsequent reboot with processes stuck in D-state.
+
+### 3. Move the switch port, then the reservation
+
+The NAS is a **4-port 802.3ad LAG** — ports 17–20, with **port 17 as master**. Only port 17's
+`native_networkconf_id` needs changing; 18–20 inherit.
+
+Then update the DHCP reservation (`fixed_ip` + `network_id`). Because the DNS record is attached to
+the reservation as `local_dns_record`, **the name follows automatically — no DNS edit at all.**
+That pairing is the single best decision in this migration; keep doing it.
+
+### ⚠ 4. The LAG will NOT bounce, and the NAS will strand
+
+Changing the native VLAN does **not** produce a link event on a bonded interface. DSM therefore
+never re-runs DHCP: the NAS ends up on the new VLAN still holding its old address, unreachable on
+both, and you cannot SSH in to fix it.
+
+Worse, **you cannot force it remotely**: setting `disabled` on an aggregate port via the UniFi API
+returns `rc: ok` and is then silently ignored — it reads back as `None` and all four ports stay up.
+
+**A physical power-cycle of the NAS is required.** Plan for someone to be next to it. This is safe
+at that point precisely because step 2 left nothing holding NAS I/O.
+
+After it boots it takes the reserved address and the DNS name resolves to it immediately.
+
+### 5. Re-enable the storages and re-check
+
+`pvesm set <storage> --disable 0` on every node, wait ~30s for `pvestatd`, then confirm 4/4 active
+*and* that `findmnt` shows the **name** as the source.
+
+### 6. Hunt the hard-coded address outside the storage layer
+
+One thing broke, and it was not storage: the Prometheus **`synology` SNMP job** still had
+`targets: ['192.168.179.11']`. It fails silently — a dead SNMP target just stops producing metrics.
+Fixed to the DNS name. Grep the repo for the old address before declaring victory.
+
+---
+
 ## Phase 4 — move the default route, one node at a time
 
 Now the addressing actually changes. **This is the step that can lock you out**, so do it per
@@ -291,3 +364,26 @@ Recovery differs by node, and this is why console access is a precondition:
   `for c in $(pct list | awk 'NR>1{print $1}'); do …check tags+onboot…; done`
 - **DNS is now a boot dependency** for storage, with no `/etc/hosts` fallback by choice. The
   resolver is the UniFi gateway — independent of the nodes, but not of the network.
+- **A bonded interface does not see a link event when its VLAN changes**, so the device never
+  re-runs DHCP and strands itself. Anything on a LAG needs a physical power-cycle, and UniFi will
+  not let you force it — `disabled` on an aggregate port returns `rc: ok` and does nothing.
+- **A fstab entry proves nothing about a working mount.** CT 5015 carried an NFS line that had
+  *never* mounted — no `nfs-common`, so no `/sbin/mount.nfs`, so `mount program didn't pass remote
+  address` on every boot including the ones before this work. Check `findmnt`, not `/etc/fstab`,
+  and check whether the mountpoint has any content.
+- **Grep for the old address beyond the storage layer.** Storage was fine; the thing that broke was
+  a Prometheus SNMP target, and it broke *silently*.
+
+## What this migration actually cost, for estimating the next one
+
+| | |
+|---|---|
+| Guests stopped / restored | **43** — exact match on the diff, nothing missing or uninvited |
+| Node reboots | 3 (plus 3 earlier for the `storage.cfg` hostname switch) |
+| Physical intervention | **1** — the NAS power-cycle, unavoidable |
+| Things that broke | **1** — the Prometheus SNMP target |
+| Things pre-existing but surfaced | 2 — CT 5015's phantom mount, desktop-01's invalid `wol.conf` |
+| Hidden hard-coded IPs found | **8** — 6 in-container fstabs, nuc-01's duplicate mounts (#345), the SNMP target |
+
+The pattern worth carrying forward: **almost everything that hurt was a hard-coded address that no
+shape described.** The sweeps found them; nothing else would have.
