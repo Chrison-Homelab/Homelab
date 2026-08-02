@@ -122,10 +122,22 @@ tagged VLAN 1000 to that port — fix that first.
 
 ---
 
-## Phase 2 — reserve, and add the new names to `/etc/hosts`
+## Phase 2 — repoint `/etc/hosts` at the new addresses
 
-Add the new addresses to every node's `/etc/hosts` **as additional lines**, leaving the old
-ones in place. Both resolve; nothing has switched yet.
+**Switch** each node entry to its new address on every node — do **not** add a second line per
+host. Two lines for one hostname makes `getent` return whichever comes first, which is
+ambiguous rather than redundant:
+
+```
+10.0.0.11 nuc-01.pve.chrison.internal nuc-01
+10.0.0.12 desktop-01.pve.chrison.internal desktop-01
+10.0.0.13 hpe-01.pve.chrison.internal hpe-01
+```
+
+This is safe *because* Phase 1 left both addresses live — the name now resolves to an address
+that already works. Corosync is unaffected: `ring0_addr` holds literal IPs, not names.
+
+Verify on every node: `for t in nuc-01 desktop-01 hpe-01; do getent hosts $t; done`
 
 ---
 
