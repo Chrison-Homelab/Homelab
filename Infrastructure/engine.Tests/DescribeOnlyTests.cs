@@ -8,6 +8,7 @@ namespace Homelab.Infrastructure.Tests;
 // fully match the shape describing it, so converge reported it as drift on every run and
 // every apply wanted to write to it. #306's `--only` made that avoidable; this makes it
 // impossible — the constraint lives in the shape, not in the operator's memory.
+[Collection(ConsoleCaptureCollection.Name)]
 public sealed class DescribeOnlyTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "hl325-" + Guid.NewGuid().ToString("n")[..12]);

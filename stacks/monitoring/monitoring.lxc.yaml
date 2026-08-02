@@ -32,6 +32,11 @@ metadata:
   tags: [monitoring, observability, docker, otel, retired]   # RETIRED — replaced by CT 4001 (rootless podman host), #303
 
 spec:
+  # RETIRED — superseded by CT 4001 (rootless podman host), #303. CT 4000 is already gone,
+  # which is exactly the dangerous state: absent looked identical to never-created, so the
+  # next full converge of this stack would have rebuilt it. That is what happened to Media's
+  # CT 5113 (#362). Converge now refuses to create or write it.
+  manage: retired
   app: docker            # community-scripts slug → ct/docker.sh (Docker Engine host)
   ctid: 4000
   cores: 2

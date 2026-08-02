@@ -45,6 +45,13 @@ metadata:
   tags: [youtube, plex, docker, retired]   # RETIRED — replaced by CT 5114 (Media podman host), #302
 
 spec:
+  # RETIRED — superseded by CT 5114 (Media podman host), #302. Enforced, not just written
+  # down: this shape carried a `retired` TAG and a comment, the engine read neither, and a
+  # Media deploy duly rebuilt CT 5113 months later — a fresh Docker host running nothing,
+  # with the youtube NFS share mounted into it (#362). Converge now refuses to create or
+  # write it, and `--only` cannot override that. Kept rather than deleted because it is the
+  # rollback record for the Podman migration (ADR-0009).
+  manage: retired
   app: docker            # community-scripts slug → ct/docker.sh (Docker Engine host)
   ctid: 5113
   cores: 2

@@ -27,18 +27,20 @@ CTID block **5100–5199** (declared in [`stack.yaml`](stack.yaml); members inhe
 | 5110 | [romm](romm.lxc.yaml) | *(internal-only)* | — | `roms`‡ | ✅ |
 | 5111 | [shelfmark](shelfmark.lxc.yaml) | *(internal-only)* | — | `books`‡ | ✅ |
 | 5112 | [audiobookshelf](audiobookshelf.lxc.yaml) | `audiobookshelf` | direct (own auth) | `audiobooks`‡ | ✅ |
-| 5113 | [youtarr](youtarr.lxc.yaml) | *(internal-only)* | — | `youtube`‡ | ✅ |
+| ~~5113~~ | ~~[youtarr](youtarr.lxc.yaml)~~ | — | — | — | **retired**¶ |
 | 5008 | [plex](plex.lxc.yaml) | `plex` (direct) | direct (own auth) | `data/media` + `youtube` (ro)§ | adopted |
 
 † Auth is **deferred to stage 2** (CF Access OTP vs Pangolin/ADR-0007 — decided later); the shapes/tunnel ship first.
 Post-#192 the tunnel routes **only** `seerr` + `audiobookshelf`; the *arr admin UIs are internal-only.
 ‡ Binds a **non-`/data`** volume4 subpath (e.g. `roms`/`books`/`audiobooks`/`youtube`) at its own library path, not the shared `/data` export.
-§ **plex (5008) is ADOPTED, not rebuilt** — the pre-existing legacy CT (5000-block, outside the 5100 range on purpose). Its shape is **update-only**: converge no-ops creation and only adds **read-only** binds of the `data/media` subtree (`/data/media`, the shared *arr library) and the `youtube` subpath (`/data/youtube`, Youtarr's downloads from CT 5113) so Plex serves both. See [`plex.lxc.yaml`](plex.lxc.yaml).
+§ **plex (5008) is ADOPTED, not rebuilt** — the pre-existing legacy CT (5000-block, outside the 5100 range on purpose). Its shape is **update-only**: converge no-ops creation and only adds **read-only** binds of the `data/media` subtree (`/data/media`, the shared *arr library) and the `youtube` subpath (`/data/youtube`, Youtarr's downloads, now produced on CT 5114) so Plex serves both. See [`plex.lxc.yaml`](plex.lxc.yaml).
 
-> **5113 (youtarr) is the stack's first Docker-based member** — no `ct/youtarr.sh`
-> exists, so it's a thin Docker host (`app: docker` → `ct/docker.sh`) with a
-> self-contained compose layered on. See [`youtarr/README.md`](youtarr/README.md).
-> Every other member is a native community-scripts install.
+¶ **5113 (youtarr) is RETIRED** — Youtarr runs on **CT 5114**, the Media podman host, as a quadlet
+(#302). Its shape stays as the rollback record for the Podman migration (ADR-0009) and carries
+`manage: retired`, so converge refuses to re-create it. That marker is load-bearing: the shape
+previously carried only a `retired` **tag** plus a comment, neither of which the engine reads, so a
+Media deploy rebuilt CT 5113 months after retirement — an empty Docker host with the youtube NFS
+share mounted into it (#362).
 
 `seerr.chrison.dev` is the **admin** view; the family keeps the untouched
 `seerr.tao-simon.family`. **Plex** stays as-is (not rebuilt); if published it gets a

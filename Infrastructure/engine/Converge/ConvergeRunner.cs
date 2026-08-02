@@ -86,7 +86,7 @@ public sealed class ConvergeRunner
             Console.WriteLine($"(diffing against live cluster state — {state.Count} container(s) discovered)\n");
 
         var blocked = 0;
-        int toCreate = 0, drifted = 0, upToDate = 0, describeOnly = 0;
+        int toCreate = 0, drifted = 0, upToDate = 0, describeOnly = 0, retired = 0;
         foreach (var s in ordered)
         {
             var sp = s.Spec;
@@ -106,6 +106,20 @@ public sealed class ConvergeRunner
             {
                 describeOnly++;
                 Console.WriteLine("    state:     DESCRIBE-ONLY (adopted; documented, never written)");
+                Console.WriteLine();
+                continue;
+            }
+
+            // retired: the member is gone on purpose. Absent is the CORRECT state, so it must
+            // never be counted as "to create" — that count is what an operator reads as
+            // pending work, and acting on it is exactly how CT 5113 came back (#362).
+            if (s.IsRetired())
+            {
+                retired++;
+                var live = state is not null && StateDiffer.Diff(s, state).Status != ShapeDiffStatus.Create;
+                Console.WriteLine(live
+                    ? "    state:     RETIRED — but the guest still EXISTS. It should not; destroy it."
+                    : "    state:     RETIRED (superseded; absent by design, never created)");
                 Console.WriteLine();
                 continue;
             }
@@ -152,7 +166,9 @@ public sealed class ConvergeRunner
 
         if (state is not null)
             Console.WriteLine($"State summary — {toCreate} to create, {drifted} drifted, {upToDate} up-to-date"
-                              + (describeOnly > 0 ? $", {describeOnly} describe-only." : "."));
+                              + (describeOnly > 0 ? $", {describeOnly} describe-only" : "")
+                              + (retired > 0 ? $", {retired} retired" : "")
+                              + ".");
 
         // kind: VM members — planned via ProxmoxSharp (read-only).
         if (vmMembers.Count > 0)
@@ -170,6 +186,12 @@ public sealed class ConvergeRunner
                     if (vm.IsDescribeOnly())
                     {
                         Console.WriteLine($"▸ {vm.Metadata.Name}  (vmid {vm.Spec.Vmid}, node {vm.Spec.Node}) — DESCRIBE-ONLY (adopted; documented, never written)");
+                        Console.WriteLine();
+                        continue;
+                    }
+                    if (vm.IsRetired())
+                    {
+                        Console.WriteLine($"▸ {vm.Metadata.Name}  (vmid {vm.Spec.Vmid}, node {vm.Spec.Node}) — RETIRED (superseded; absent by design, never created)");
                         Console.WriteLine();
                         continue;
                     }
@@ -248,6 +270,14 @@ public sealed class ConvergeRunner
             if (s.IsDescribeOnly())
             {
                 Console.WriteLine("    SKIPPED: describe-only (adopted member — converge documents it, never writes it)");
+                skipped++; Console.WriteLine(); continue;
+            }
+
+            // Same refusal for retired, and for the same reason: --only must not be able to
+            // resurrect it either. `converge destroy` is the verb for a retired member.
+            if (s.IsRetired())
+            {
+                Console.WriteLine("    SKIPPED: retired (superseded member — converge never re-creates it)");
                 skipped++; Console.WriteLine(); continue;
             }
 
@@ -364,6 +394,11 @@ public sealed class ConvergeRunner
                     if (vm.IsDescribeOnly())
                     {
                         Console.WriteLine("    SKIPPED: describe-only (adopted member — converge documents it, never writes it)");
+                        skipped++; Console.WriteLine(); continue;
+                    }
+                    if (vm.IsRetired())
+                    {
+                        Console.WriteLine("    SKIPPED: retired (superseded member — converge never re-creates it)");
                         skipped++; Console.WriteLine(); continue;
                     }
                     try
