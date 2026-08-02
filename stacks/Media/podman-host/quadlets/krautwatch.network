@@ -1,0 +1,9 @@
+# Shared network for the Krautwatch containers, so each service can resolve `krautwatch-db`
+# by name. Same reason youtarr.network exists: quadlets give no shared default network with
+# service-name DNS, and rootless podman runs aardvark-dns on a user-defined network.
+#
+# Separate from youtarr.network on purpose. The two apps share a host, not a trust boundary,
+# and nothing in either needs to resolve the other.
+
+[Network]
+NetworkName=krautwatch

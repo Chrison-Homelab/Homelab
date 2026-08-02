@@ -32,9 +32,10 @@ metadata:
 spec:
   app: podman            # community-scripts ct/podman.sh + the `podman` provisioner
   ctid: 5114             # in-block (5100–5199); highest in use was 5113 (the CT this replaces)
-  cores: 2               # matches CT 5113 — node app + MariaDB + yt-dlp work
-  memory: 2048           # MB — podman + youtarr + MariaDB
-  disk: 15               # GB — image layers + MariaDB store (~130 MB) + jobs/config; videos are on NFS
+  cores: 4               # was 2 (youtarr + MariaDB); Krautwatch adds Postgres + six .NET services
+  memory: 6144           # MB — was 2048; ffmpeg remux is the memory-hungry part of Krautwatch
+  disk: 30               # GB — was 15; six more image layers (~250 MB each) + the Postgres store.
+                         # Media still lives on NFS, so this does not grow with the library.
 
   features:
     nesting: true        # rootless podman needs nesting for its own nested userns
@@ -51,6 +52,17 @@ spec:
       source: youtube                    # volume4 subpath only (self-provisioned by MountReconciler)
       target: /mnt/youtube               # same path as CT 5113, so YOUTUBE_OUTPUT_DIR is unchanged
       acl: true
+      backup: false
+
+    # The shared /data export, at the SAME path every *arr CT uses. Krautwatch's downloader
+    # writes to /data/usenet/tv and sonarr (5101) imports from that identical absolute path, so
+    # imports hardlink instead of copying. Mounting it anywhere else, or at a different target,
+    # silently turns every import into a copy+delete.
+    - type: nfs
+      storage: ds1813-nfs-volume-4
+      source: data                       # same subpath sonarr/radarr/qbittorrent path-bind
+      target: /data
+      acl: true                          # honor the export's setgid + default group ACLs
       backup: false
 
   # Pre-start guard, carried over from CT 5113 unchanged: refuse to start unless volume4 is
@@ -79,3 +91,12 @@ spec:
       youtarr_db_root_password: YOUTARR_DB_ROOT_PASSWORD
       youtarr_auth_username: YOUTARR_AUTH_USERNAME
       youtarr_auth_password: YOUTARR_AUTH_PASSWORD
+
+      # Krautwatch. The connection string is stored whole, rather than as a password spliced
+      # into an Environment= line, because a quadlet cannot expand a secret inside another
+      # variable's value. The password therefore appears twice — once for Postgres itself and
+      # once inside the connection string — and the two must agree.
+      krautwatch_db_password: KRAUTWATCH_DB_PASSWORD
+      krautwatch_db_connectionstring: KRAUTWATCH_DB_CONNECTIONSTRING
+      krautwatch_apikey: KRAUTWATCH_APIKEY
+      krautwatch_tvdb_apikey: KRAUTWATCH_TVDB_APIKEY

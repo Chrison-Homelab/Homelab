@@ -1,0 +1,26 @@
+# ARD crawler agent. Walks its configured shows and writes episodes into the catalog.
+# No published port and no volumes — it talks to Postgres and to ARD's public API only.
+
+[Unit]
+Description=Krautwatch ARD crawler agent
+Documentation=https://github.com/Chrison-dev/Krautwatch
+After=network-online.target krautwatch-db.service krautwatch-migrator.service
+Wants=network-online.target
+Requires=krautwatch-db.service krautwatch-migrator.service
+
+[Container]
+Image=ghcr.io/chrison-dev/krautwatch-agent-ard:0.1.0
+ContainerName=krautwatch-agent-ard
+Network=krautwatch.network
+
+Secret=krautwatch_db_connectionstring,type=env,target=ConnectionStrings__krautwatch
+Environment=HTTP_PORTS=8080
+Environment=TZ=Pacific/Auckland
+
+[Service]
+Restart=always
+RestartSec=10
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target
