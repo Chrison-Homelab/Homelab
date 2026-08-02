@@ -774,4 +774,20 @@ public sealed class PodmanProvisionerTests : IDisposable
 
         Assert.Equal(new[] { "ghcr.io/o/z:2" }, images);
     }
+
+    // Locks the coupling that broke the first pull-phase deploy: UserCmd interpolates $UID_N and
+    // assumes a readable cwd, both of which only BuildDeploy's preamble provides.
+    [Fact]
+    public void StandaloneUserCmd_carries_everything_UserCmd_depends_on()
+    {
+        var cmd = PodmanProvisioner.StandaloneUserCmd("podman", "podman pull ghcr.io/o/i:1");
+
+        Assert.Contains("UID_N=$(id -u podman)", cmd);   // else XDG_RUNTIME_DIR=/run/user/
+        Assert.Contains("cd /", cmd);                    // else runuser inherits /root
+        Assert.Contains("id -u podman >/dev/null 2>&1 || useradd", cmd);
+        Assert.Contains("podman pull ghcr.io/o/i:1", cmd);
+        // The UID_N assignment must precede the command that reads it.
+        Assert.True(cmd.IndexOf("UID_N=", StringComparison.Ordinal)
+                    < cmd.IndexOf("XDG_RUNTIME_DIR", StringComparison.Ordinal));
+    }
 }
