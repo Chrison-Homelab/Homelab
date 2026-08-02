@@ -28,9 +28,17 @@ Environment=TZ=Pacific/Auckland
 Volume=/home/podman/krautwatch/database:/var/lib/postgresql/data
 UserNS=keep-id:uid=999,gid=999
 
-# NO HEALTHCHECK — same reasoning as youtarr-db. Readiness is covered by the dependent units
-# retrying: the migrator and every service use Restart=always, so starting before Postgres
-# accepts connections costs a restart, not a failure.
+# A healthcheck IS expressible here, unlike youtarr-db's: pg_isready needs no password and no
+# quoting, so neither of that unit's two objections applies.
+#
+# Deliberately NO HealthOnFailure. An unhealthy app should be killed and restarted; a database
+# should be looked at. Automatically bouncing Postgres on a transient blip risks more than it
+# fixes, and the dependent services already retry.
+HealthCmd=pg_isready -U postgres -d krautwatch
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=5
+HealthStartPeriod=30s
 
 [Service]
 # Podman does not create missing bind-mount source dirs.

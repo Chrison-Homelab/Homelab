@@ -27,8 +27,15 @@ The stack's **container host**, not a per-app box. Services arrive as extra quad
 
 Krautwatch is why this CT also mounts the shared `/data` export. Its downloader writes to
 `/data/usenet/tv` and sonarr (5101) imports from that same absolute path, so imports hardlink
-rather than copy. None of the six .NET images ship `curl` or `wget`, so none of them can carry a
-`HealthCmd` — they get `Restart=always` only, which catches a crashed process but not a hung one.
+rather than copy.
+
+Every Krautwatch service carries a `HealthCmd` against the `/health` endpoint it already exposes,
+which is possible because [v0.1.1](https://github.com/Chrison-dev/Krautwatch/releases/tag/v0.1.1)
+ships `curl` in the images — a healthcheck runs *inside* the container, and the .NET runtime images
+had no HTTP client before that. `HealthOnFailure=kill` is what makes the check act rather than just
+record: podman marks the container unhealthy and does nothing otherwise. `krautwatch-db` is the
+exception and has no `HealthOnFailure` on purpose — an unhealthy app should be restarted, a database
+should be looked at.
 
 ## The three things that make this migration different from Phase 1
 

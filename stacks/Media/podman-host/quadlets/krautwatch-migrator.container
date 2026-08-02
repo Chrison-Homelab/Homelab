@@ -17,7 +17,7 @@ Wants=network-online.target
 Requires=krautwatch-db.service
 
 [Container]
-Image=ghcr.io/chrison-dev/krautwatch-migrator:0.1.0
+Image=ghcr.io/chrison-dev/krautwatch-migrator:0.1.1
 ContainerName=krautwatch-migrator
 Network=krautwatch.network
 

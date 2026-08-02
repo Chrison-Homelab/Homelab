@@ -25,7 +25,7 @@ Wants=network-online.target
 Requires=krautwatch-db.service krautwatch-migrator.service
 
 [Container]
-Image=ghcr.io/chrison-dev/krautwatch-agent-downloader:0.1.0
+Image=ghcr.io/chrison-dev/krautwatch-agent-downloader:0.1.1
 ContainerName=krautwatch-agent-downloader
 Network=krautwatch.network
 
@@ -38,6 +38,23 @@ Environment=Download__RequireFfmpeg=true
 
 # The shared export. No :U, no UserNS — see the header.
 Volume=/data:/data
+
+# Now that the images ship curl (Krautwatch v0.1.1), the /health endpoint the service already
+# exposes can actually be called from inside the container — which is the only place a healthcheck
+# runs. This matters more here than anywhere else in the stack: a wedged ffmpeg remux keeps the
+# process alive, so Restart=always never fires and downloads stop silently.
+#
+# HealthOnFailure=kill is the load-bearing line. Without it podman records the unhealthy status
+# and does nothing, so the check would be decorative. Killing makes the container exit, and
+# Restart=always brings it back.
+#
+# StartPeriod is longer than the other services': this one may be mid-download at startup.
+HealthCmd=curl --fail --silent --show-error --output /dev/null http://localhost:8080/health
+HealthInterval=30s
+HealthTimeout=10s
+HealthRetries=3
+HealthStartPeriod=60s
+HealthOnFailure=kill
 
 [Service]
 # Podman does not create missing bind-mount source dirs, and the app expects its download

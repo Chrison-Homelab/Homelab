@@ -15,7 +15,7 @@ Wants=network-online.target
 Requires=krautwatch-db.service krautwatch-migrator.service
 
 [Container]
-Image=ghcr.io/chrison-dev/krautwatch-newznab:0.1.0
+Image=ghcr.io/chrison-dev/krautwatch-newznab:0.1.1
 ContainerName=krautwatch-newznab
 Network=krautwatch.network
 PublishPort=5055:8080
@@ -30,9 +30,20 @@ Environment=HTTP_PORTS=8080
 Environment=ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
 Environment=TZ=Pacific/Auckland
 
-# NO HEALTHCHECK — the service exposes /health, but mcr.microsoft.com/dotnet/aspnet ships
-# neither curl nor wget, so there is no in-image command to call it with. Restart=always is
-# what we get; it catches a crashed process but not a hung one.
+
+# Now that the images ship curl (Krautwatch v0.1.1), the /health endpoint the service already
+# exposes can actually be called from inside the container — which is the only place a healthcheck
+# runs. Restart=always alone catches a dead process; this also catches a wedged one.
+#
+# HealthOnFailure=kill is the load-bearing line. Without it podman records the unhealthy status
+# and does nothing, so the check would be decorative. Killing makes the container exit, and
+# Restart=always brings it back.
+HealthCmd=curl --fail --silent --show-error --output /dev/null http://localhost:8080/health
+HealthInterval=30s
+HealthTimeout=10s
+HealthRetries=3
+HealthStartPeriod=40s
+HealthOnFailure=kill
 
 [Service]
 Restart=always
