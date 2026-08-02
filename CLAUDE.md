@@ -67,6 +67,28 @@ self-signed cert, hence `PROXMOX_VERIFY_TLS=false`.
 protection (private + free tier), so the rules are enforced **client-side** by a
 **Husky.NET `pre-push` hook** ([`.husky/pre-push`](.husky/pre-push)).
 
+### Read this before opening a PR or filing an issue
+
+**[`docs/agents/issue-and-pr-style.md`](docs/agents/issue-and-pr-style.md)** — the shared
+convention across Homelab, Fallout and Krautwatch (#355). The two rules that get broken
+most:
+
+- **PR titles are imperative sentences.** No `feat(scope):` prefix, no trailing `(#123)`.
+  `Add a Plex provisioner and raise its resource headroom`, not
+  `feat(media): plex provisioner + resource headroom (#332)`. The label carries the type.
+- **Label at creation time**, in the same `gh pr create` call — one category label from
+  [`.github/release.yml`](.github/release.yml) (`enhancement` / `bug` / `security` /
+  `documentation` / `breaking-change` / `dependencies` / `skip-changelog`), plus any
+  repo-specific labels. A PR filed without one falls through to "Other Changes".
+
+```bash
+gh pr create --title "Drop Plex's vestigial legacy NIC" --label bug --label networking --body "..."
+```
+
+Note `dependencies` and `skip-changelog` are **excluded** from generated notes, and
+exclusion beats category — a PR labelled both `security` and `dependencies` vanishes
+entirely. A dependency bump that fixes a CVE gets `security` alone.
+
 **Merge strategy — rebase by default, squash to collapse a noisy branch. Never a merge
 commit.** `main` stays linear either way; the choice is about commit granularity, so a PR
 whose commits each tell part of the story keeps them, and a PR full of WIP/fixup commits
