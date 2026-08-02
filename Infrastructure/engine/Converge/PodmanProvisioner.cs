@@ -197,8 +197,14 @@ public sealed class PodmanProvisioner : IAppProvisioner
         for (var i = 0; i < images.Count; i++)
         {
             ctx.Report($"pulling image {i + 1}/{images.Count}: {images[i]}");
-            var pull = await ctx.Exec.InContainerAsync(node, ctid, UserCmd(user, $"podman pull {images[i]}"));
-            if (!pull.Ok) return ApplyResult.Failed($"podman pull {images[i]} failed: {pull.Stderr}");
+            var pull = await ctx.Exec.InContainerAsync(node, ctid, StandaloneUserCmd(user, $"podman pull {images[i]}"));
+
+            // Best-effort, deliberately. On a host that does not exist yet there is no rootless user
+            // and no /run/user/<uid>, so nothing can be pulled before the deploy script has run —
+            // and the units below pull whatever is missing at start anyway. Failing the converge
+            // here would break first-time creation to buy progress reporting on later runs.
+            if (!pull.Ok)
+                ctx.Report($"  pre-pull skipped ({pull.Stderr.Trim()}) — the unit will pull it at start");
         }
 
         if (files.Count > 0)
@@ -625,6 +631,25 @@ public sealed class PodmanProvisioner : IAppProvisioner
     // works under `pct exec`, which has no login session, no tty and no PAM environment at all.
     // Both variables are required: systemctl --user finds the socket via XDG_RUNTIME_DIR, and
     // podman/systemd talk to the user bus via DBUS_SESSION_BUS_ADDRESS.
+    // UserCmd on its own is NOT a runnable command.
+    //
+    // It interpolates $UID_N, which BuildDeploy defines in its preamble, and it relies on that
+    // preamble's `cd /` because runuser keeps the caller's cwd and `pct exec` lands in /root, which
+    // the rootless user cannot read. Run outside that script it produced XDG_RUNTIME_DIR=/run/user/
+    // and podman failed with "mkdir /run/user/libpod: permission denied".
+    //
+    // So anything invoking UserCmd outside BuildDeploy has to carry the same preamble. The useradd
+    // guard is idempotent and matches BuildDeploy's own.
+    internal static string StandaloneUserCmd(string user, string cmd) =>
+        string.Join("\n", new[]
+        {
+            "set -e",
+            "cd /",
+            $"id -u {user} >/dev/null 2>&1 || useradd -m -s /bin/bash {user}",
+            $"UID_{"N"}=$(id -u {user})",
+            UserCmd(user, cmd),
+        });
+
     internal static string UserCmd(string user, string cmd) =>
         $"runuser -u {user} -- env XDG_RUNTIME_DIR=/run/user/$UID_N " +
         $"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$UID_N/bus {cmd}";
