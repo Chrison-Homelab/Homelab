@@ -48,12 +48,12 @@ Tagged `arr-stack`. Target VLAN: Homelab `10.10.0.0/16`.
 
 | Name | VMID | Type | Node | Status | IP | Net | vCPU | RAM | Purpose |
 |---|---|---|---|---|---|---|---|---|---|
-| prowlarr | 5002 | LXC | hpe-01 | 🟢 Running | 192.168.179.152 | ⚠️ | 1 | 1 GB | Indexer manager |
-| sonarr | 5003 | LXC | hpe-01 | 🟢 Running | 192.168.179.153 | ⚠️ | 1 | 1 GB | TV automation |
-| radarr | 5004 | LXC | hpe-01 | 🟢 Running | 192.168.179.154 | ⚠️ | 1 | 1 GB | Movie automation |
-| bazarr | 5006 | LXC | nuc-01 | 🟢 Running | 192.168.179.156 | ⚠️→✅ | 1 | 1 GB | Subtitles (migrating — new 1010 lease seen) |
-| flaresolverr | 5005 | LXC | nuc-01 | 🟢 Running | — | — | 1 | 2 GB | Captcha bypass for indexers |
-| qbittorrent | 5007 | LXC | hpe-01 | 🔴 Stopped | — | — | 2 | 2 GB | Download client |
+| prowlarr | 5002 | LXC | hpe-01 | 🔴 Stopped | — | ✅ | 1 | 1 GB | **RETIRED 2026-08-02** (#199) — 20 indexers kept for manual carry-over; new 5100 has 13 |
+| sonarr | 5003 | LXC | hpe-01 | 🔴 Stopped | — | ✅ | 1 | 1 GB | **RETIRED 2026-08-02** (#199) — 114 series kept on disk; new 5101 has 6 |
+| radarr | 5004 | LXC | hpe-01 | 🔴 Stopped | — | ✅ | 1 | 1 GB | **RETIRED 2026-08-02** (#199) — 101 movies kept on disk; new 5102 has 50 |
+| bazarr | 5006 | LXC | nuc-01 | 🔴 Stopped | — | ✅ | 1 | 1 GB | **RETIRED 2026-08-02** (#199) — pointless once its sonarr/radarr went; new 5103 |
+| flaresolverr | 5005 | LXC | nuc-01 | 🔴 Stopped | — | ✅ | 1 | 2 GB | **RETIRED 2026-08-02** (#199) — stateless, nothing to migrate; new 5107 |
+| qbittorrent | 5007 | LXC | hpe-01 | 🔴 Stopped | — | ✅ | 2 | 2 GB | **RETIRED 2026-08-02** (#347) — 201 private torrents migrated to 5104; 269 public abandoned |
 | plex | 5008 | LXC | hpe-01 | 🟢 Running | 10.10.200.98 | ✅ | 4 | 2 GB | Media server |
 | tautulli | 5009 | LXC | nuc-01 | 🟢 Running | — | ✅ | 2 | 1 GB | Plex analytics (VLAN 1010) |
 | seerr | 5011 | LXC | hpe-01 | 🟢 Running | 10.10.48.42 | ✅ | 4 | 4 GB | Media request manager |
@@ -63,7 +63,7 @@ Tagged `arr-stack`. Target VLAN: Homelab `10.10.0.0/16`.
 
 | Name | VMID | Type | Node | Status | IP | Net | vCPU | RAM | Purpose |
 |---|---|---|---|---|---|---|---|---|---|
-| audiobookshelf | 5014 | LXC | hpe-01 | 🟢 Running | — | ✅ | 2 | 2 GB | Audiobook / podcast server |
+| audiobookshelf | 5014 | LXC | hpe-01 | 🔴 Stopped | — | ✅ | 2 | 2 GB | **RETIRED 2026-08-02** (#199) — 946 items kept on disk; new 5112 is empty (#356) |
 | shelfmark | 5015 | LXC | hpe-01 | 🟢 Running | 10.10.52.82 | ✅ | 2 | 2 GB | Ebook management |
 | romm | 5012 | LXC | hpe-01 | 🟢 Running | — | — | 2 | 4 GB | ROM / emulation library |
 
@@ -102,8 +102,9 @@ erp-for-factory-games, seerr, shelfmark, cookbook, tautulli, audiobookshelf.
 | ~~Proxmox nodes~~ | **migrated 2026-08-02** → `10.0.0.13 / .11 / .12` (VLAN 1000) | ✅ done |
 | ~~DS1813-01 (NAS)~~ | **migrated 2026-08-02** → `10.0.0.10` (VLAN 1000) | ✅ done |
 | homeassistant | 192.168.179.102 | High |
-| prowlarr / sonarr / radarr | .152 / .153 / .154 | Medium |
-| bazarr | 192.168.179.156 (migrating) | Medium |
+| ~~prowlarr / sonarr / radarr~~ | **retired 2026-08-02** (#199) — left the legacy subnet by being stopped, not re-IP'd | ✅ done |
+| ~~bazarr~~ | **retired 2026-08-02** (#199) — same | ✅ done |
+| ~~qbittorrent (5007)~~ | **retired 2026-08-02** (#347) — the last in-container NFS mount on a hard-coded IP went with it | ✅ done |
 | ~~plex (dual-homed)~~ | **legacy NIC dropped 2026-08-02** (#344) → `10.10.200.98` only | ✅ done |
 | ~~github-runner~~ | **retired 2026-08-02** (#337) — CT 2005 stopped, runner deregistered | ✅ done |
 | obsidian-livesync | (legacy lease) | Low |
