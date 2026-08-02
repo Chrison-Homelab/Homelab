@@ -182,6 +182,28 @@ public sealed class PodmanProvisioner : IAppProvisioner
         }
 
         var files = QuadletFiles(s);
+
+        // Pull BEFORE the deploy script, one command per image.
+        //
+        // The deploy script is a single `pct exec` covering ten phases, and nothing is logged
+        // until it returns — so a first converge with several images to fetch is 15-25 minutes of
+        // total silence, indistinguishable from a wedged unit. That ambiguity got a working
+        // converge cancelled at sixteen minutes (#369).
+        //
+        // Pulling here costs nothing (the units would pull the same layers moments later) and buys
+        // two things: progress per image, and a pull failure that reports as a pull failure rather
+        // than as a unit that would not start.
+        var images = QuadletImages(files);
+        for (var i = 0; i < images.Count; i++)
+        {
+            ctx.Report($"pulling image {i + 1}/{images.Count}: {images[i]}");
+            var pull = await ctx.Exec.InContainerAsync(node, ctid, UserCmd(user, $"podman pull {images[i]}"));
+            if (!pull.Ok) return ApplyResult.Failed($"podman pull {images[i]} failed: {pull.Stderr}");
+        }
+
+        if (files.Count > 0)
+            ctx.Report($"images ready — running host setup and starting {files.Count} unit(s)");
+
         var script = BuildDeploy(s, user, marker, markerPath, files, secretValues, cockpitPassword);
 
         var res = await ctx.Exec.InContainerAsync(node, ctid, script);
@@ -656,6 +678,28 @@ public sealed class PodmanProvisioner : IAppProvisioner
         var rel = s.Spec.Config.Str("quadlets") ?? Path.Combine(s.Metadata.Name, "quadlets");
         if (Path.IsPathRooted(rel)) return rel;
         return s.SourceDir is { Length: > 0 } dir ? Path.Combine(dir, rel) : null;
+    }
+
+    // Every distinct Image= across the quadlets being deployed, in first-seen order.
+    //
+    // Deliberately a plain line scan rather than an ini parse: quadlet files are systemd units,
+    // Image= only ever appears in [Container], and a .network or .volume file simply has none.
+    internal static IReadOnlyList<string> QuadletImages(IEnumerable<string> files)
+    {
+        var seen = new List<string>();
+        foreach (var f in files)
+        {
+            foreach (var raw in File.ReadLines(f))
+            {
+                var line = raw.Trim();
+                if (!line.StartsWith("Image=", StringComparison.Ordinal)) continue;
+                var image = line["Image=".Length..].Trim();
+                // Skip a build-target reference (`Image=foo.build`), which has nothing to pull.
+                if (image.Length == 0 || image.EndsWith(".build", StringComparison.Ordinal)) continue;
+                if (!seen.Contains(image, StringComparer.Ordinal)) seen.Add(image);
+            }
+        }
+        return seen;
     }
 
     internal static IReadOnlyList<string> QuadletFiles(Shape s)

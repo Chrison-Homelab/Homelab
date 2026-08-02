@@ -741,4 +741,37 @@ public sealed class PodmanProvisionerTests : IDisposable
             $"/home/{PodmanProvisioner.User(s)}/.homelab-managed",
             PodmanProvisioner.QuadletFiles(s),
             new Dictionary<string, string>());
+
+    // ── image extraction (#369) ─────────────────────────────────────────────────────
+    // Pulls happen per image, before the deploy script, so this list drives both the progress
+    // output and what gets fetched. Getting it wrong means either a missing pull or a bogus one.
+
+    [Fact]
+    public void QuadletImages_collects_each_distinct_image_once_in_order()
+    {
+        var shape = PodmanShape(
+            ("a.container", "[Container]\nImage=ghcr.io/o/one:1.0\nContainerName=a\n"),
+            ("b.container", "[Container]\nImage=docker.io/library/postgres:18.3\nContainerName=b\n"),
+            // Same image as a.container — must not be pulled twice.
+            ("c.container", "[Container]\nImage=ghcr.io/o/one:1.0\nContainerName=c\n"));
+
+        var images = PodmanProvisioner.QuadletImages(PodmanProvisioner.QuadletFiles(shape));
+
+        Assert.Equal(new[] { "ghcr.io/o/one:1.0", "docker.io/library/postgres:18.3" }, images);
+    }
+
+    [Fact]
+    public void QuadletImages_ignores_files_and_values_with_nothing_to_pull()
+    {
+        var shape = PodmanShape(
+            // A .network file has no Image= at all.
+            ("x.network", "[Network]\nNetworkName=x\n"),
+            // A build-target reference resolves locally; pulling it would fail.
+            ("y.container", "[Container]\nImage=y.build\nContainerName=y\n"),
+            ("z.container", "[Container]\nImage=ghcr.io/o/z:2\nContainerName=z\n"));
+
+        var images = PodmanProvisioner.QuadletImages(PodmanProvisioner.QuadletFiles(shape));
+
+        Assert.Equal(new[] { "ghcr.io/o/z:2" }, images);
+    }
 }
