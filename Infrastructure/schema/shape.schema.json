@@ -440,9 +440,9 @@
         "onboot": { "type": "boolean", "description": "Start automatically on host boot. Default false for GPU VMs (single GPU → start on demand)." },
         "protection": { "type": "boolean", "description": "Protect against destroy/remove operations." },
         "manage": {
-          "enum": ["managed", "describe-only"],
+          "enum": ["managed", "describe-only", "retired"],
           "default": "managed",
-          "description": "Lifecycle stance. 'managed' (default) means converge may create, reconcile and destroy this member. 'describe-only' means the shape DOCUMENTS an adopted guest that predates it: converge reads it and resolves dependsOn against it, but NEVER writes to it — plan shows it as describe-only instead of perpetual drift, apply skips it, and destroy refuses it. Naming it in --only does not override this. Use for guests adopted in place, where the shape can never fully match reality and that difference is intentional.",
+          "description": "Lifecycle stance. 'managed' (default) means converge may create, reconcile and destroy this member. 'describe-only' means the shape DOCUMENTS an adopted guest that predates it: converge reads it and resolves dependsOn against it, but NEVER writes to it — plan shows it as describe-only instead of perpetual drift, apply skips it, and destroy refuses it. Naming it in --only does not override this. Use for guests adopted in place, where the shape can never fully match reality and that difference is intentional. 'retired' means the member has been SUPERSEDED and must not come back: converge never creates or writes it, --only cannot override that, and plan flags it if the guest still exists. A `retired` tag plus a comment does not do this — the engine reads neither, which is how CT 5113 was rebuilt months after retirement (#362). `converge destroy` is still allowed, and is the supported way to clean one up.",
           "$comment": "#325 — adopted members were previously protected only by prose in CLAUDE.md plus the operator remembering --only."
         },
         "startup": { "$ref": "#/$defs/startup" },
@@ -511,9 +511,9 @@
         "unprivileged": { "type": "boolean", "default": true, "description": "Unprivileged container (→ var_unprivileged). Note: NFS/CIFS mounts inside an unprivileged CT need extra capabilities — prefer host-level." },
         "protection": { "type": "boolean", "description": "Protect against destroy/remove operations." },
         "manage": {
-          "enum": ["managed", "describe-only"],
+          "enum": ["managed", "describe-only", "retired"],
           "default": "managed",
-          "description": "Lifecycle stance. 'managed' (default) means converge may create, reconcile and destroy this member. 'describe-only' means the shape DOCUMENTS an adopted guest that predates it: converge reads it and resolves dependsOn against it, but NEVER writes to it — plan shows it as describe-only instead of perpetual drift, apply skips it, and destroy refuses it. Naming it in --only does not override this. Use for guests adopted in place, where the shape can never fully match reality and that difference is intentional.",
+          "description": "Lifecycle stance. 'managed' (default) means converge may create, reconcile and destroy this member. 'describe-only' means the shape DOCUMENTS an adopted guest that predates it: converge reads it and resolves dependsOn against it, but NEVER writes to it — plan shows it as describe-only instead of perpetual drift, apply skips it, and destroy refuses it. Naming it in --only does not override this. Use for guests adopted in place, where the shape can never fully match reality and that difference is intentional. 'retired' means the member has been SUPERSEDED and must not come back: converge never creates or writes it, --only cannot override that, and plan flags it if the guest still exists. A `retired` tag plus a comment does not do this — the engine reads neither, which is how CT 5113 was rebuilt months after retirement (#362). `converge destroy` is still allowed, and is the supported way to clean one up.",
           "$comment": "#325 — adopted members were previously protected only by prose in CLAUDE.md plus the operator remembering --only."
         },
         "onboot": { "type": "boolean", "description": "Start automatically on host boot." },
