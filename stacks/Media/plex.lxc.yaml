@@ -37,9 +37,17 @@
 #
 # NOT MANAGED by this adoption shape (left exactly as-is on the live CT): the iGPU
 #   passthrough for transcoding (dev0 /dev/dri/renderD128, dev1 /dev/dri/card1),
-#   the serial/tty lxc.mount.entry lines, the 2nd NIC (net1, dual-homed mid-migration),
-#   and `features: mount=nfs` (required for the bind). The reconcilers touch only
-#   mpN + hookscript + cores/memory/tags, so none of the above is disturbed.
+#   the serial/tty lxc.mount.entry lines, and `features: mount=nfs` (required for the
+#   bind). The reconcilers touch only mpN + hookscript + cores/memory/tags, so none of
+#   the above is disturbed.
+#
+# SINGLE-HOMED since 2026-08-02 (#344). CT 5008 used to carry a second NIC — `net1`,
+#   untagged, DHCP on the legacy 192.168.178.0/23 — left over from before the VLAN 1010
+#   move. It was vestigial: nothing referenced 192.168.179.62, and it contributed a
+#   *second* default route at the same metric as net0's, so outbound traffic could take
+#   either gateway. Deleting it left the single default via 10.10.0.1 and changed nothing
+#   else. The shape declares no NICs at all, so converge neither added nor removed it —
+#   the deletion was a one-off `pct set 5008 --delete net1`.
 # Validate against ../../Infrastructure/schema/shape.schema.json.
 
 apiVersion: homelab/v1
