@@ -54,7 +54,7 @@ Tagged `arr-stack`. Target VLAN: Homelab `10.10.0.0/16`.
 | bazarr | 5006 | LXC | nuc-01 | 🟢 Running | 192.168.179.156 | ⚠️→✅ | 1 | 1 GB | Subtitles (migrating — new 1010 lease seen) |
 | flaresolverr | 5005 | LXC | nuc-01 | 🟢 Running | — | — | 1 | 2 GB | Captcha bypass for indexers |
 | qbittorrent | 5007 | LXC | hpe-01 | 🔴 Stopped | — | — | 2 | 2 GB | Download client |
-| plex | 5008 | LXC | hpe-01 | 🟢 Running | 192.168.179.62 / 10.10.200.98 | ⚠️ dual | 2 | 2 GB | Media server (dual-homed mid-migration) |
+| plex | 5008 | LXC | hpe-01 | 🟢 Running | 10.10.200.98 | ✅ | 4 | 2 GB | Media server |
 | tautulli | 5009 | LXC | nuc-01 | 🟢 Running | — | ✅ | 2 | 1 GB | Plex analytics (VLAN 1010) |
 | seerr | 5011 | LXC | hpe-01 | 🟢 Running | 10.10.48.42 | ✅ | 4 | 4 GB | Media request manager |
 | tracearr | 5013 | LXC | hpe-01 | 🟢 Running | — | — | 2 | 2 GB | *arr-stack monitoring |
@@ -104,13 +104,15 @@ erp-for-factory-games, seerr, shelfmark, cookbook, tautulli, audiobookshelf.
 | homeassistant | 192.168.179.102 | High |
 | prowlarr / sonarr / radarr | .152 / .153 / .154 | Medium |
 | bazarr | 192.168.179.156 (migrating) | Medium |
-| plex (dual-homed) | 192.168.179.62 + 10.10.200.98 | Medium |
+| ~~plex (dual-homed)~~ | **legacy NIC dropped 2026-08-02** (#344) → `10.10.200.98` only | ✅ done |
 | github-runner | 192.168.178.119 | Low |
 | obsidian-livesync | (legacy lease) | Low |
 | Zigbee GW (`tube-zb-gw…`) | 192.168.179.222 | Low |
 
-> **Main WiFi SSID `Blackbox` still lands clients on the legacy "Old Network"**
-> — a key blocker for finishing BL-002 (see Network.md).
+> **WiFi is done.** `Blackbox` now lands clients on **Consumer (VLAN 1020)** and
+> `Blackbox_IOT` on **IOT (VLAN 1040)** — neither touches the legacy "Old Network"
+> any more. That was the largest single blocker for #37; what remains is the
+> wired guest list above.
 
 ---
 
