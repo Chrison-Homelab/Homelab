@@ -197,8 +197,13 @@ docker compose up -d
 - **Homelab VLAN**: `10.10.0.0/16`
 - **Consumer VLAN**: `10.20.0.0/16`
 - **IoT VLAN**: `10.40.0.0/16`
-- **Network Devices**: `10.0.0.0/16`
-- **Legacy** (being deprecated): `192.168.178.0/23`
+- **Network Devices**: `10.0.0.0/16` (VLAN 1000) — switches, APs, **the three Proxmox
+  nodes** (`10.0.0.11/.12/.13`) and **the NAS** (`10.0.0.10`), so hypervisor↔storage
+  traffic never leaves the zone
+- **Legacy** (being retired, #37): `192.168.178.0/23`. Nodes, NAS and all WiFi clients
+  have left it as of 2026-08-02. What remains is guest-level: the old `50xx` arr fleet,
+  Home Assistant VM 2000, CT 2005, and the Zigbee gateway — each tracked as a sub-issue.
+  **Do not add anything new to it.**
 - Managed via Unifi Cloud Gateway
 
 ### Scripting Conventions
