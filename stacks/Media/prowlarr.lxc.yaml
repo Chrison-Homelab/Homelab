@@ -21,7 +21,19 @@ spec:
   disk: 4                # GB
   dependsOn: [flaresolverr, qbittorrent]   # flaresolverr: some indexers solve CF challenges; qbittorrent: Prowlarr's own download client (+ its `prowlarr` category)
 
-  # arr-wire config migration (#159) — both ADD-ONLY, both idempotent (skip-by-name):
+  # arr-wire config migration (#159) — ADD-ONLY, idempotent (skip-by-name):
   config:
-    migrateIndexersFrom: 5002   # OLD prowlarr CTID (same node) — clean API carry-over of indexers
+    # migrateIndexersFrom: 5002 — REMOVED 2026-08-02 (#199). The old prowlarr CT 5002 is
+    # retired (stopped, tagged `retired`), and this setting made converge READ it on every
+    # single Media deploy: the provisioner opens the old instance's API to copy indexers
+    # across, and returns `could not reach old prowlarr CT 5002` when it cannot. So the
+    # shape had to stop depending on 5002 BEFORE the guest was stopped, or every deploy
+    # would fail.
+    #
+    # The carry-over had also stopped being useful. It ran on every converge and re-attempted
+    # the same failures each time: 13 of the old 20 indexers are on the new instance, and
+    # several of the remaining 7 cannot be re-created at all — `anime-time`, `bitsearch` and
+    # `isohunt2` were removed upstream from indexers.prowlarr.com (404), and private trackers
+    # like AvistaZ / MyAnonamouse fail with `Login Failed` because their credentials did not
+    # come across. Those seven need re-adding by hand, once, if they are still wanted (#363).
     flaresolverr: flaresolverr  # ensure a FlareSolverr proxy → the new flaresolverr sibling (5107)
