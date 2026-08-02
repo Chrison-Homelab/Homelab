@@ -188,12 +188,32 @@ SSIDs: `Blackbox` (both bands), `Blackbox_IOT` (2.4 GHz only), `89D Tao-Simon` (
 ## Other Devices
 
 ### Zigbee Gateway — TubesZB efr32 (MGM210 PoE)
-- **Hostname:** `tube-zb-gw-efr32-c762b0` · **IP:** 192.168.179.222 (legacy)
+- **Hostname:** `tube-zb-gw-efr32-c762b0` · **IP:** 192.168.179.222 (legacy) · **MAC:** `20:43:a8:c7:62:b3`
 - **Role:** Whole-house Zigbee coordinator (feeds Home Assistant)
 - **Status:** 🟢 reachable, web UI returns 401 (credentials in Bitwarden)
 - **Note:** this is an **OEM "Cangji" clone** of the TubesZB `efr32-MGM210-poe`
   design, not a genuine TubesZB unit. Stock firmware is backed up; reflashing to
   **XZG** is tracked in [#259](https://github.com/Chrison-Homelab/Homelab/issues/259).
+
+**It is two chips, and that matters for #259 and #336.** The Zigbee radio is a
+Silicon Labs **EFR32 / MGM210**; the network side is an **ESP32 running ESPHome**
+acting as a serial↔TCP bridge. Confirmed by the open ports and by the entities it
+publishes to Home Assistant (`switch.…_esp_restart`, `sensor.…_esp_uptime`):
+
+| port | what |
+|---|---|
+| 80 | web UI (401 — credentials in Bitwarden) |
+| 6053 | **ESPHome native API** — this is the ESP32 half |
+| 6638 | Zigbee serial-over-TCP — what ZHA actually connects to |
+
+- **Power/switching:** PoE, ~2 W, on **`US 24 PoE 250W` port 21** ("ZigBee Adapter").
+  The port carries an explicit override pinning it to the **Old Network**, so a VLAN
+  move is a switch-port change, not just a DHCP edit. **No DHCP reservation exists.**
+- **Home Assistant attaches TWICE:** the **ESPHome** integration (device entities) and
+  **ZHA**, whose coordinator path is `socket://192.168.179.222:6638`. Both are
+  address-bound today, so both must be updated if the address changes. Zigbee devices
+  themselves do **not** need re-pairing — the network lives in the coordinator's NVRAM,
+  which the move does not touch.
 
 ---
 
