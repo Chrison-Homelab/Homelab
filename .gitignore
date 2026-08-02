@@ -17,6 +17,12 @@ dist/           # packaged release assets (publish-schema.yml)
 # Local secrets (PVE tokens etc.)
 *.env
 !.mcp.env.example
+# `*.env` does NOT catch a BACKUP like secrets.env.pre-dns.bak — the extension is
+# no longer .env. That very file was briefly committed on 2026-08-02 (caught before
+# push, amended out). Match any secrets.env* sidecar, then re-allow the template,
+# which is the one variant that is meant to be tracked.
+secrets.env*
+!secrets.env.template
 
 # Ruflo / claude-flow leftovers (tooling removed from this repo — keep any
 # stray runtime state out of git)
