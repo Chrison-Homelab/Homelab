@@ -73,6 +73,26 @@ spec:
     # the provisioner for rollback.)
     edge: public-wildcard
     wildcardZones: [lab, arr]                    # → *.lab.chrison.dev + *.arr.chrison.dev LE SANs
+
+    # ADDITIONAL BASE DOMAINS (#322) — Pangolin can now front more than one registrable
+    # domain. `baseDomain` above always stays `domain1` (Pangolin keys resources by
+    # domainId, so reordering would re-point every existing resource); each entry here
+    # becomes domain2, domain3… Unlike the zoned base domain, an additional domain is
+    # fronted at its OWN APEX — the cert covers `<domain>` + `*.<domain>`, with no zone
+    # segment — and a resource selects it with `domain: <domain>` instead of `zone:`.
+    #
+    # DELIBERATELY EMPTY. The capability exists; nothing needs it yet. Before enabling one:
+    #   1. The zone MUST be on CF_API_TOKEN's DNS:Edit list — Traefik solves LE DNS-01 via
+    #      Cloudflare with that same token (it is the same value as /opt/pangolin/.env's
+    #      CF_DNS_API_TOKEN), so issuance fails for that domain alone if it is missing.
+    #   2. Converge will declare a grey-cloud A record for `*.<domain>` → publicIp. That
+    #      wildcard catches EVERY unmatched subdomain in the zone and sends it to the home
+    #      edge — check nothing pre-existing depends on NXDOMAIN there first (CLAUDE.md:
+    #      the family zone also carries iCloud Mail records that are NOT ours).
+    # tao-simon.family was the motivating case, but its one live hostname
+    # (seerr.tao-simon.family) rides the Media cloudflared tunnel instead — cheaper, and no
+    # wildcard A record. Enable this only if that zone gains a zoned admin surface.
+    # additionalDomains: [tao-simon.family]
     # Home WAN IP the public :443 port-forward lives behind (#221, ADR-0007). The provisioner
     # declares a grey-cloud (proxied:false) A record per wildcard zone → this IP, so every
     # *.<zone> hostname Traefik mints a cert for actually resolves to the home edge. Add-only +

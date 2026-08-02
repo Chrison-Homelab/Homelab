@@ -545,6 +545,57 @@ public sealed class ConvergeCoreTests
         Assert.Contains("*.lab.chrison.dev", PangolinProvisioner.WildcardFqdns(s));
     }
 
+    // ── Multiple base domains (#322) ───────────────────────────────────────────────
+    // Pangolin has no API to create a domain, so config.yml is the only way in — which is
+    // why fronting a second registrable domain needed engine support rather than a config
+    // edit. baseDomain must stay domain1: Pangolin keys resources by domainId.
+
+    [Fact]
+    public void Pangolin_AdditionalDomains_AreListedAfterBaseDomain()
+    {
+        var s = PangolinWildcardShape();
+        s.Spec.Config["additionalDomains"] = new List<object> { "tao-simon.family", "example.test" };
+        Assert.Equal(new[] { "chrison.dev", "tao-simon.family", "example.test" }, PangolinProvisioner.AllDomains(s));
+        Assert.Equal(new[] { "tao-simon.family", "example.test" }, PangolinProvisioner.AdditionalDomains(s));
+    }
+
+    [Fact]
+    public void Pangolin_AdditionalDomains_IgnoreDuplicatesAndTheBaseDomain()
+    {
+        var s = PangolinWildcardShape();
+        s.Spec.Config["additionalDomains"] = new List<object> { "chrison.dev", "tao-simon.family", "tao-simon.family" };
+        Assert.Equal(new[] { "chrison.dev", "tao-simon.family" }, PangolinProvisioner.AllDomains(s));
+    }
+
+    [Fact]
+    public void Pangolin_AdditionalDomain_GetsApexPlusOneWildcardLevel_NotZoned()
+    {
+        var s = PangolinWildcardShape();
+        s.Spec.Config["additionalDomains"] = new List<object> { "tao-simon.family" };
+
+        // The zoned base-domain SANs are untouched...
+        Assert.Contains("*.arr.chrison.dev", PangolinProvisioner.WildcardFqdns(s));
+        // ...and the extra domain is fronted at its own apex, one wildcard level up.
+        Assert.Contains("*.tao-simon.family", PangolinProvisioner.WildcardFqdns(s));
+        Assert.DoesNotContain("*.arr.tao-simon.family", PangolinProvisioner.WildcardFqdns(s));
+
+        var st = PangolinProvisioner.BuildTraefikStatic(s, "chrison.dev");
+        Assert.Contains("- main: \"tao-simon.family\"", st);
+        Assert.Contains("sans: [\"*.tao-simon.family\"]", st);
+        Assert.Contains("sans: [\"*.arr.chrison.dev\"]", st);   // base domain still covered
+    }
+
+    [Fact]
+    public void Pangolin_Marker_ChangesWhenAnAdditionalDomainIsAdded()
+    {
+        var before = PangolinWildcardShape();
+        var after = PangolinWildcardShape();
+        after.Spec.Config["additionalDomains"] = new List<object> { "tao-simon.family" };
+        // Without this the config.yml + Traefik SANs would change but converge would report
+        // "config current" and never re-render.
+        Assert.NotEqual(PangolinProvisioner.DesiredMarker(before), PangolinProvisioner.DesiredMarker(after));
+    }
+
     [Fact]
     public void Pangolin_WildcardARecords_OnePerZone_ToPublicIp_WhenPublicWildcard()
     {

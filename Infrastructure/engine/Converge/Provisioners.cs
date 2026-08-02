@@ -601,7 +601,10 @@ public sealed class PangolinProvisioner : IAppProvisioner
             c.Str("badgerVersion") ?? DefaultBadgerVersion,
             c.Str("letsEncryptEmail") ?? "",
             CBool(c, "leStaging", false),
-            string.Join(",", WildcardZones(s)));
+            string.Join(",", WildcardZones(s)),
+            // additional base domains change both config.yml's `domains:` block and Traefik's
+            // TLS SAN list, so they must re-render the deploy (#322).
+            string.Join(",", AdditionalDomains(s)));
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..12].ToLowerInvariant();
     }
 
@@ -624,7 +627,37 @@ public sealed class PangolinProvisioner : IAppProvisioner
     internal static List<string> WildcardFqdns(Shape s)
     {
         var b = BaseDomain(s);
-        return WildcardZones(s).Select(z => $"*.{z}.{b}").ToList();
+        var l = WildcardZones(s).Select(z => $"*.{z}.{b}").ToList();
+        // An additional domain is fronted at its own apex, so its wildcard is one level up
+        // (*.tao-simon.family, not *.<zone>.tao-simon.family) — those domains carry a handful
+        // of household hostnames, not a zoned admin surface.
+        l.AddRange(AdditionalDomains(s).Select(d => $"*.{d}"));
+        return l;
+    }
+
+    // Every base domain this Pangolin fronts: config.baseDomain first (it stays `domain1`, so
+    // existing resources keep their domainId), then config.additionalDomains in order.
+    //
+    // Pangolin has no API to create a domain — `GET /org/{id}/domains` is read-only — so the
+    // set is whatever config.yml declares, and config.yml is rendered here. That is why adding
+    // a second domain was an engine change rather than a config edit (#322).
+    internal static List<string> AllDomains(Shape s)
+    {
+        var list = new List<string> { BaseDomain(s) };
+        list.AddRange(AdditionalDomains(s));
+        return list;
+    }
+
+    internal static List<string> AdditionalDomains(Shape s)
+    {
+        var extra = new List<string>();
+        if (s.Spec.Config.TryGetValue("additionalDomains", out var ad) && ad is IEnumerable<object> items)
+            foreach (var d in items)
+                if (d?.ToString() is { Length: > 0 } ds
+                    && !ds.Equals(BaseDomain(s), StringComparison.OrdinalIgnoreCase)
+                    && !extra.Contains(ds, StringComparer.OrdinalIgnoreCase))
+                    extra.Add(ds);
+        return extra;
     }
 
     // The grey-cloud A records public-wildcard mode declares (#221): one per wildcard SAN,
@@ -766,14 +799,19 @@ public sealed class PangolinProvisioner : IAppProvisioner
         var ct = CancellationToken.None;
         var pg = new PangolinClient(ctx.Exec, node, ctid, key);
 
-        // domainId for our baseDomain
+        // domainId per base domain (#322). A resource may name a `domain:` other than the
+        // default baseDomain; the map is built from what Pangolin actually has registered, so
+        // a domain declared in the shape but not yet picked up from config.yml fails loudly
+        // on the resource that needs it rather than silently landing on domain1.
         var (dok, droot) = await pg.CallAsync("GET", $"/org/{org}/domains", null, ct);
         if (!dok) return (null, false, "pangolin: integration API unreachable or key invalid (GET domains failed)");
-        string? domainId = null;
+        var domainIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var d in DataArray(droot, "domains"))
-            if (d.TryGetProperty("baseDomain", out var bd) && bd.GetString() == baseDomain && d.TryGetProperty("domainId", out var di))
-                domainId = di.GetString();
-        if (domainId is null) return (null, false, $"pangolin: domain '{baseDomain}' not found in org '{org}'");
+            if (d.TryGetProperty("baseDomain", out var bd) && bd.GetString() is { Length: > 0 } bds
+                && d.TryGetProperty("domainId", out var di) && di.GetString() is { Length: > 0 } dis)
+                domainIds[bds] = dis;
+        if (!domainIds.ContainsKey(baseDomain))
+            return (null, false, $"pangolin: domain '{baseDomain}' not found in org '{org}'");
 
         // local site (create if missing — targets the Pangolin host's own services, no Newt)
         int? siteId = null;
@@ -817,7 +855,15 @@ public sealed class PangolinProvisioner : IAppProvisioner
             // so fullDomain = <sub>.<zone>.<baseDomain> (covered by the *.<zone> wildcard cert).
             var zone = rd["zone"]?.ToString();
             var pgSub = string.IsNullOrEmpty(zone) ? sub : $"{sub}.{zone}";
-            var fqdn = $"{pgSub}.{baseDomain}";
+            // `domain:` selects which registered base domain this resource hangs off; omitted
+            // means the default baseDomain, so every pre-existing entry is unaffected (#322).
+            var rDomain = rd["domain"]?.ToString() is { Length: > 0 } rdm ? rdm : baseDomain;
+            if (!domainIds.TryGetValue(rDomain, out var domainId))
+            {
+                notes.Add($"{sub}: domain '{rDomain}' is not registered in Pangolin — add it to config.additionalDomains and re-converge");
+                continue;
+            }
+            var fqdn = $"{pgSub}.{rDomain}";
             var name = rd["name"]?.ToString() ?? sub;
             var tgt = rd["target"] as System.Collections.IDictionary;
             var tip = tgt?["ip"]?.ToString() ?? "localhost";
@@ -1041,6 +1087,15 @@ public sealed class PangolinProvisioner : IAppProvisioner
             $"        base_domain: \"{baseDomain}\"",
         };
         if (edge != "cloudflared") cfg.Add("        cert_resolver: \"letsencrypt\"");
+        // Additional domains on the legacy native path too, so a rollback from
+        // public-wildcard doesn't silently drop them from config.yml (#322).
+        var extraN = 2;
+        foreach (var d in AdditionalDomains(s))
+        {
+            cfg.Add($"    domain{extraN++}:");
+            cfg.Add($"        base_domain: \"{d}\"");
+            if (edge != "cloudflared") cfg.Add("        cert_resolver: \"letsencrypt\"");
+        }
         cfg.AddRange(new[]
         {
             "server:",
@@ -1146,7 +1201,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
     {
         var c = s.Spec.Config;
         string B(bool x) => x ? "true" : "false";
-        return new List<string>
+        var lines = new List<string>
         {
             $"# homelab-managed: {marker}",
             "gerbil:",
@@ -1156,9 +1211,14 @@ public sealed class PangolinProvisioner : IAppProvisioner
             $"    dashboard_url: \"{url}\"",
             "    log_level: \"info\"",
             "domains:",
-            "    domain1:",
-            $"        base_domain: \"{baseDomain}\"",
-            "        cert_resolver: \"letsencrypt\"",
+        };
+        // domain1 is ALWAYS baseDomain — Pangolin keys resources by domainId, so reordering
+        // would re-point every existing resource at the wrong domain.
+        lines.AddRange(DomainBlock(1, baseDomain));
+        var n = 2;
+        foreach (var d in AdditionalDomains(s)) lines.AddRange(DomainBlock(n++, d));
+        lines.AddRange(new List<string>
+        {
             "server:",
             "    secret: \"$SECRET\"",
             "flags:",
@@ -1167,8 +1227,19 @@ public sealed class PangolinProvisioner : IAppProvisioner
             $"    disable_user_create_org: {B(Flag(c, "disableUserCreateOrg", false))}",
             $"    allow_raw_resources: {B(Flag(c, "allowRawResources", true))}",
             $"    enable_integration_api: {B(Flag(c, "enableIntegrationApi", true))}",
-        };
+        });
+        return lines;
     }
+
+    // One `domainN:` stanza. Pangolin registers each as a wildcard domain against the
+    // `letsencrypt` resolver; Traefik is what actually mints the cert (DNS-01 via Cloudflare),
+    // so the zone must be on the CF token or issuance fails for that domain only.
+    private static List<string> DomainBlock(int n, string domain) => new()
+    {
+        $"    domain{n}:",
+        $"        base_domain: \"{domain}\"",
+        "        cert_resolver: \"letsencrypt\"",
+    };
 
     // docker-compose.yml. Default: pangolin + traefik (traefik publishes :80/:443
     // directly). includeGerbil=true adds the WireGuard topology (gerbil owns the ports,
@@ -1310,6 +1381,13 @@ public sealed class PangolinProvisioner : IAppProvisioner
         {
             L.Add($"          - main: \"{z}.{baseDomain}\"");
             L.Add($"            sans: [\"*.{z}.{baseDomain}\"]");
+        }
+        // Additional domains are fronted at their own apex, so the cert covers the apex plus
+        // one wildcard level — no zone segment (#322).
+        foreach (var d in AdditionalDomains(s))
+        {
+            L.Add($"          - main: \"{d}\"");
+            L.Add($"            sans: [\"*.{d}\"]");
         }
         L.AddRange(new[] { "serversTransport:", "  insecureSkipVerify: true" });
         return string.Join("\n", L) + "\n";
