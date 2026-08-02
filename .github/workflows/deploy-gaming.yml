@@ -17,10 +17,15 @@ on:
         description: 'Live apply (leave unchecked for Preview only).'
         type: boolean
         default: false
+      only:
+        description: 'Restrict to these stack members (comma-separated, e.g. podman-host). Empty = whole stack.'
+        type: string
+        default: ''
 jobs:
   deploy:
     uses: ./.github/workflows/_deploy-stack.yml
     with:
       stack: Gaming
       apply: ${{ github.event_name == 'workflow_dispatch' && inputs.apply }}
+      only: ${{ github.event_name == 'workflow_dispatch' && inputs.only || '' }}
     secrets: inherit

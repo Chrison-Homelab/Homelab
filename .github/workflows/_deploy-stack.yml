@@ -15,6 +15,11 @@ on:
         required: false
         type: boolean
         default: false
+      only:
+        description: 'Restrict the converge to these stack members (comma-separated). Empty = whole stack.'
+        required: false
+        type: string
+        default: ''
 jobs:
   pipeline:
     runs-on: [self-hosted, homelab]
@@ -96,7 +101,7 @@ jobs:
           git submodule update --init $paths
           git config --global --unset-all url."https://x-access-token:${TOKEN}@github.com/".insteadOf || true
       - name: Preview (dry-run — validate + plan, no mutation)
-        run: ./build.sh Preview --stack ${{ inputs.stack }}
+        run: ./build.sh Preview --stack ${{ inputs.stack }}${{ inputs.only && format(' --only {0}', inputs.only) || '' }}
       - name: Deploy (LIVE apply)
         if: ${{ inputs.apply }}
-        run: ./build.sh Deploy --stack ${{ inputs.stack }}
+        run: ./build.sh Deploy --stack ${{ inputs.stack }}${{ inputs.only && format(' --only {0}', inputs.only) || '' }}
