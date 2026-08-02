@@ -168,16 +168,49 @@ totem {
 **Bumping `config_version` is not optional.** Corosync uses it to decide whether to accept a
 reloaded config; forget it and the edit is silently ignored.
 
-Then, and only then:
+### ⚠ Writing the file is NOT enough — corosync must be RESTARTED
+
+Saving `corosync.conf` triggers a *reload*, and **a reload cannot change a link address.**
+Confirmed live on 2026-08-02:
+
+```
+[TOTEM] new config has different address for link 0
+        (addr changed from 192.168.179.3 to 10.0.0.13). Internal value was NOT changed.
+[CFG  ] Cannot configure new interface definitions: To reconfigure an interface it must be
+        deleted and recreated. A working interface needs to be available to corosync at all times
+```
+
+Quorum stays green and everything *looks* fine — but `corosync-cfgtool -s` still shows the old
+address. The file and the running ring have diverged, and the change only lands on the next
+corosync restart or reboot. **Do not stop here**; a half-applied state is worse than either end.
 
 ```bash
-pvecm status          # expect: Quorate Yes, 3/3, and the new ring addresses
-journalctl -u corosync -n 30 --no-pager
-pvecm updatecerts     # refresh cluster certs/known_hosts for the new addresses
+corosync-cfgtool -s          # shows the RUNNING address — the file will lie to you
+```
+
+Restart corosync on **all three nodes at once**. A rolling restart works too (the cluster always
+retains a quorate partition) but leaves individual nodes briefly quorate-less and the ring
+negotiating across two subnets; simultaneous is cleaner and faster:
+
+```bash
+for n in nuc-01 desktop-01 hpe-01; do
+  ssh $n 'nohup sh -c "sleep 3; systemctl restart corosync" >/dev/null 2>&1 &'
+done
+```
+
+Then verify — and check the *ring*, not just quorum:
+
+```bash
+corosync-cfgtool -s   # addr = the NEW address on every node
+pvecm status          # Quorate Yes, 3/3
+touch /etc/pve/.w && rm /etc/pve/.w   # pmxcfs writable ⇒ quorum genuinely restored
+pvecm updatecerts     # refresh cluster certs/known_hosts
 ```
 
 If quorum does **not** return within ~30s, revert `corosync.conf` to the old addresses with
-`config_version: 7` (higher again) — the old addresses are still live, so recovery works.
+`config_version: 7` (higher again) and restart corosync — the old addresses are still live, so
+recovery works. Note pmxcfs is read-only without quorum, so keep a copy of the old file
+**outside** `/etc/pve` (e.g. `/root/corosync.conf.ROLLBACK`) before you start.
 
 ---
 
@@ -215,6 +248,7 @@ The addresses are hard-coded in more places than the cluster:
 | Where | What |
 |---|---|
 | `secrets.env` / `secrets.env.template` | `PROXMOX_BASE_URL` (`192.168.179.3:8006` is the self-signed fallback) |
+| **Core cloudflared tunnel** | `proxmox.chrison.dev` → `https://192.168.179.1:8006` — **breaks at Phase 4**, not Phase 3. Repoint to `10.0.0.11`, or retire the name in favour of per-node names via Pangolin (`nuc-01.proxmox.…`) |
 | `src/Proxmox/wake-node.sh` | baked-in MAC/address registry |
 | Pangolin resource *Power Orchestrator* | → `192.168.179.1:8080`; repoint in `stacks/Core/pangolin.lxc.yaml`, then `converge stacks/Core --only pangolin --apply` (works since [#309](https://github.com/Chrison-Homelab/Homelab/issues/309)) |
 | `~/.ssh/config` and this repo's tooling | `converge` and `proxmoxsharp` reach nodes by address |
