@@ -188,7 +188,9 @@ SSIDs: `Blackbox` (both bands), `Blackbox_IOT` (2.4 GHz only), `89D Tao-Simon` (
 ## Other Devices
 
 ### Zigbee Gateway — TubesZB efr32 (MGM210 PoE)
-- **Hostname:** `tube-zb-gw-efr32-c762b0` · **IP:** 192.168.179.222 (legacy) · **MAC:** `20:43:a8:c7:62:b3`
+- **Hostname:** `tube-zb-gw-efr32-c762b0` · **IP:** **`10.40.0.21`** (IoT VLAN 1040, DHCP
+  reservation) · **DNS:** `zigbee.homelab.chrison.internal` · **MAC:** `20:43:a8:c7:62:b3`
+- **Migrated off the legacy net 2026-08-02** ([#336](https://github.com/Chrison-Homelab/Homelab/issues/336))
 - **Role:** Whole-house Zigbee coordinator (feeds Home Assistant)
 - **Status:** 🟢 reachable, web UI returns 401 (credentials in Bitwarden)
 - **Note:** this is an **OEM "Cangji" clone** of the TubesZB `efr32-MGM210-poe`
@@ -207,13 +209,26 @@ publishes to Home Assistant (`switch.…_esp_restart`, `sensor.…_esp_uptime`):
 | 6638 | Zigbee serial-over-TCP — what ZHA actually connects to |
 
 - **Power/switching:** PoE, ~2 W, on **`US 24 PoE 250W` port 21** ("ZigBee Adapter").
-  The port carries an explicit override pinning it to the **Old Network**, so a VLAN
-  move is a switch-port change, not just a DHCP edit. **No DHCP reservation exists.**
-- **Home Assistant attaches TWICE:** the **ESPHome** integration (device entities) and
-  **ZHA**, whose coordinator path is `socket://192.168.179.222:6638`. Both are
-  address-bound today, so both must be updated if the address changes. Zigbee devices
-  themselves do **not** need re-pairing — the network lives in the coordinator's NVRAM,
-  which the move does not touch.
+  The port carries an explicit override setting its native network — that is what a VLAN
+  move edits, **not** the DHCP reservation. A port VLAN change does **not** bounce the
+  link, so the device must be PoE-cycled to pick up a new lease.
+- **Home Assistant attaches TWICE**, and both are address-bound: the **ESPHome**
+  integration (device entities) and **ZHA** (`socket://10.40.0.21:6638`). Zigbee devices
+  do **not** need re-pairing on an address change — the network lives in the
+  coordinator's NVRAM, which a move does not touch (verified: PAN `63617`, channel 25
+  survived intact).
+
+> ⚠️ **HAOS cannot resolve `*.homelab.chrison.internal`.** Both integrations had to be
+> pointed at the **IP**, not the DNS name — the ESPHome config flow rejects the hostname
+> with `resolve_error`. HAOS runs its own DNS plugin rather than using the UniFi
+> resolver, so the repo's usual DNS-over-IP rule does not reach anything configured
+> inside Home Assistant. The DHCP reservation is what keeps the address stable.
+
+**Changing the ZHA radio path** is not a "reconfigure" — `ZhaConfigFlowHandler` has no
+such step. It lives in the **options** flow:
+`options/flow` → `intent_reconfigure` → new path → `migration_strategy_recommended`,
+then reload the entry. `intent_migrate` is the wrong branch (that is for swapping to
+different radio hardware).
 
 ---
 
