@@ -29,7 +29,7 @@ using Homelab.Infrastructure.Unifi;
 //                                         #   against shape.schema.json (CI plan gate)
 //
 // PVE config comes from environment variables:
-//   PROXMOX_BASE_URL   e.g. https://192.168.179.3:8006/api2/json
+//   PROXMOX_BASE_URL   e.g. https://hpe-01.homelab.chrison.internal:8006/api2/json
 //   PROXMOX_TOKEN_ID   e.g. root@pam!claude-mcp
 //   PROXMOX_TOKEN_SECRET
 //   PROXMOX_VERIFY_TLS optional, "false" for self-signed nodes

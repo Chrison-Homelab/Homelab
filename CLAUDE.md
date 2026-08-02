@@ -49,8 +49,17 @@ proxmoxsharp nodes       # list nodes
 proxmoxsharp version     # PVE version
 ```
 
-Public endpoint (valid TLS): `https://proxmox.chrison.dev/api2/json`. The legacy
-node IP `192.168.179.3:8006` uses a self-signed cert (`PROXMOX_VERIFY_TLS=false`).
+Public endpoint (valid TLS): `https://proxmox.chrison.dev/api2/json`. On the LAN,
+reach nodes **by name** — `hpe-01.homelab.chrison.internal:8006` (also `nuc-01.`,
+`desktop-01.`), which is what `secrets.env` uses. Those hit the node's own
+self-signed cert, hence `PROXMOX_VERIFY_TLS=false`.
+
+> **The nodes moved to VLAN 1000 (`10.0.0.11/.12/.13`) on 2026-08-02** and the NAS
+> to `10.0.0.10` (#37). Nothing in this repo should hard-code those addresses —
+> the UniFi local-DNS records (`*.homelab.chrison.internal`) exist so a future
+> re-address is a DHCP-reservation edit and nothing more. The one deliberate
+> exception is the UniFi controller itself, which is addressed by IP because it
+> *is* the DNS server.
 
 ## Git workflow & guardrails
 

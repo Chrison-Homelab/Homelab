@@ -55,12 +55,16 @@ jobs:
       HARDCOVER_API_KEY: ${{ secrets.HARDCOVER_API_KEY }}
       # NB: SSH to nodes for the community-scripts create path is provided by the
       # runner host (proven by the BL-013 smoke deploy), not a GH secret.
-      # The runner has no DNS for node short-names, so map each to its LAN IP —
-      # NodeExec reads NODE_ADDR_<NAME> and SSHes straight to the IP (issue #162).
-      # IPs are internal/non-secret (also in docs/Services.md, discovered-state.json).
-      NODE_ADDR_HPE_01: '192.168.179.3'
-      NODE_ADDR_NUC_01: '192.168.179.1'
-      NODE_ADDR_DESKTOP_01: '192.168.179.2'
+      # The runner has no DNS for node SHORT names (those live in each node's
+      # /etc/hosts, not in DNS), so map each to its FQDN — NodeExec reads
+      # NODE_ADDR_<NAME> and SSHes there (issue #162).
+      #
+      # FQDNs, not IPs, since #37: the nodes moved to VLAN 1000 on 2026-08-02 and
+      # these records are UniFi local-DNS entries, so a future re-address needs no
+      # change here. Verified resolvable from the runner (CT 3002). Non-secret.
+      NODE_ADDR_HPE_01: 'hpe-01.homelab.chrison.internal'
+      NODE_ADDR_NUC_01: 'nuc-01.homelab.chrison.internal'
+      NODE_ADDR_DESKTOP_01: 'desktop-01.homelab.chrison.internal'
       # The runner runs jobs with a HOME that isn't the login home, so NodeExec can't
       # find the SSH identity in ~/.ssh — point it at the runner's key explicitly (#162).
       NODE_SSH_KEY: /home/runner/.ssh/id_ed25519

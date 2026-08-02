@@ -13,9 +13,9 @@ Structured for both human reference and AI-assisted optimization. Key fields:
 
 | Node | Hardware | vCPU | RAM | Local disk | Status | Mgmt IP |
 |---|---|---|---|---|---|---|
-| hpe-01 | HP EliteDesk 800 G2 DM (i5-6500T) | 4 | 16 GB | ~343 GB | 🟢 Online | 192.168.179.3 ⚠️ |
-| nuc-01 | Intel NUC D34010WYK (i3-4010U) | 2/4 | 16 GB | ~58 GB | 🟢 Online | 192.168.179.1 ⚠️ |
-| desktop-01 | Gaming PC (Ryzen 5 3600) | 6/12 | 16 GB | ~1.8 TB | 🟢 Online | 192.168.179.2 ⚠️ |
+| hpe-01 | HP EliteDesk 800 G2 DM (i5-6500T) | 4 | 16 GB | ~320 GB | 🟢 Online | `10.0.0.13` ✅ (`hpe-01.homelab.chrison.internal`) |
+| nuc-01 | Intel NUC D34010WYK (i3-4010U) | 2/4 | 16 GB | ~54 GB | 🟢 Online | `10.0.0.11` ✅ (`nuc-01.homelab.chrison.internal`) |
+| desktop-01 | Gaming PC (Ryzen 5 3600) | 6/12 | 16 GB | ~1.71 TB | 🟢 Online | `10.0.0.12` ✅ (`desktop-01.homelab.chrison.internal`) |
 
 **Shared NAS storage (NFS from DS1813-01):** `ds1813-nfs-volume-1` ~1.9 TB ·
 `-2` ~3.8 TB · `-3` ~5.7 TB (media, ~3.9 TB used). Mounted on all nodes.
@@ -99,8 +99,8 @@ erp-for-factory-games, seerr, shelfmark, cookbook, tautulli, audiobookshelf.
 
 | Item | Current IP | Priority |
 |---|---|---|
-| Proxmox hpe-01 / nuc-01 / desktop-01 (nodes) | 192.168.179.3 / .1 / .2 | High |
-| DS1813-01 (NAS) | 192.168.179.11 | High |
+| ~~Proxmox nodes~~ | **migrated 2026-08-02** → `10.0.0.13 / .11 / .12` (VLAN 1000) | ✅ done |
+| ~~DS1813-01 (NAS)~~ | **migrated 2026-08-02** → `10.0.0.10` (VLAN 1000) | ✅ done |
 | homeassistant | 192.168.179.102 | High |
 | prowlarr / sonarr / radarr | .152 / .153 / .154 | Medium |
 | bazarr | 192.168.179.156 (migrating) | Medium |

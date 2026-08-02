@@ -13,7 +13,7 @@
 #   ./wake-node.sh <node-name|MAC>            # wake by known node name or raw MAC
 #   ./wake-node.sh desktop-01                 # known node (see NODE_MACS below)
 #   ./wake-node.sh 18:c0:4d:de:9f:82          # raw MAC
-#   ./wake-node.sh -b 192.168.179.255 desktop-01   # directed broadcast (cross-subnet)
+#   ./wake-node.sh -b 10.0.255.255 desktop-01      # directed broadcast (cross-subnet; nodes are on VLAN 1000 since #37)
 #   ./wake-node.sh -p 7 desktop-01            # custom UDP port (default 9)
 #
 # Remote one-liner:
