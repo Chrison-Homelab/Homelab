@@ -13,7 +13,7 @@
 # Usage:
 #   pwsh ./wake-node.ps1 desktop-01                 # known node (see $NodeMacs below)
 #   pwsh ./wake-node.ps1 18:c0:4d:de:9f:82          # raw MAC
-#   pwsh ./wake-node.ps1 desktop-01 -Broadcast 192.168.179.255   # directed broadcast
+#   pwsh ./wake-node.ps1 desktop-01 -Broadcast 10.0.255.255      # directed broadcast (VLAN 1000 since #37)
 #   pwsh ./wake-node.ps1 desktop-01 -Port 7         # custom UDP port (default 9)
 #
 # Remote one-liner:

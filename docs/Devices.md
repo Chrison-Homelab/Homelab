@@ -35,13 +35,18 @@ node (see [NAS](#nas)).
 | **`local`** | 94 GB, 22% used | 39 GB, 64% used | 94 GB, 64% used |
 | **NIC** | Intel `e1000e` (I219) | Intel `e1000e` (I218) | Realtek `r8169` (RTL8111) |
 | **MAC** | `c8:d3:ff:9d:da:02` | `b8:ae:ed:72:82:fe` | `18:c0:4d:de:9f:82` |
-| **Mgmt IP** | 192.168.179.3 | 192.168.179.1 | 192.168.179.2 |
+| **Mgmt IP** | `10.0.0.13` | `10.0.0.11` | `10.0.0.12` |
+| **Mgmt DNS** | `hpe-01.homelab.chrison.internal` | `nuc-01.…` | `desktop-01.…` |
 | **BIOS** | N21 v02.21 (**2016**) | WYLPT10H.86A.0030 (**2014**) | F62b (2021) |
 | **Idle draw** | ~22 W | ~10 W | ~65 W |
 | **Power role** ([#191](https://github.com/Chrison-Homelab/Homelab/issues/191)) | always-on sentinel | always-on sentinel | **on-demand (sleep target)** |
 
-All three mgmt IPs are still on the legacy `192.168.178.0/23` subnet — migration
-pending ([#37](https://github.com/Chrison-Homelab/Homelab/issues/37)).
+**Migrated off the legacy subnet on 2026-08-02** ([#37](https://github.com/Chrison-Homelab/Homelab/issues/37)):
+all three now sit on the **Network Devices VLAN (1000)**, carried on a tagged
+`vmbr0.1000` sub-interface. `vmbr0` itself is `inet manual`, so guests still using the
+port's untagged native VLAN (the old arr fleet, CT 2005) are unaffected. Prefer the
+DNS names over the addresses — they are UniFi local-DNS records, so a future
+re-address needs no config change anywhere.
 
 ### Roles
 
@@ -95,7 +100,10 @@ boot. **Wake from full power-off (S5) is verified working on desktop-01.**
 
 ### DS1813-01 — Synology DS1813
 - **Role:** Shared NAS storage for all Proxmox nodes via NFS
-- **IP:** 192.168.179.11 (legacy — migration pending)
+- **IP:** `10.0.0.10` on VLAN 1000 · **DNS:** `nas.homelab.chrison.internal`
+  (migrated 2026-08-02, #340. The DNS record is attached to the DHCP **reservation**,
+  so name and lease move together — that is why the move needed zero DNS edits.)
+- **Link:** 4-port **802.3ad LACP bond** on switch ports 17–20 (port 17 is the LAG master)
 
 Single-disk volumes, **no redundancy** (see [ADR-0004](adr/ADR-0004-storage-architecture.md)).
 NFS volumes are mounted on every node (`shared`). Figures verified 2026-08-01.

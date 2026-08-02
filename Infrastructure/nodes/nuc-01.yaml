@@ -19,5 +19,7 @@ spec:
   storages: [local, local-lvm, ds1813-nfs-volume-1, ds1813-nfs-volume-2, ds1813-nfs-volume-3]
   network:                      # reconciled from discovery 2026-05-31
     bridge: vmbr0
-    address: 192.168.179.1/23   # legacy mgmt — migration to 10.x pending (#37)
+    address: 10.0.0.11/16       # mgmt on VLAN 1000 (Network Devices) — migrated 2026-08-02, #37.
+                                # Carried on a TAGGED sub-interface vmbr0.1000; vmbr0 itself is
+                                # `inet manual` so untagged guests keep reaching the Old Network.
     uplink: eno1
