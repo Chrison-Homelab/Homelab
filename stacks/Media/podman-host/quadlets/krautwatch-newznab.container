@@ -48,7 +48,8 @@ HealthOnFailure=kill
 [Service]
 Restart=always
 RestartSec=10
-TimeoutStartSec=300
+# Bounded so a wedged unit cannot hold the converge's blocking `systemctl start` for long.
+TimeoutStartSec=120
 
 [Install]
 WantedBy=default.target
