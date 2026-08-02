@@ -142,15 +142,22 @@ spec:
         sso: true
         target: { ip: 192.168.179.1, port: 8080, method: http }
       # Home Assistant (SmartHome stack) — replaces the raw :8123 UniFi port-forward with
-      # SSO-gated ingress. Target is the HAOS VM's legacy NIC (CT 2013 reaches it cross-VLAN
-      # via 10.10.0.1). sso REQUIRED (it controls the whole smart home). HA-side prerequisite:
-      # add 10.10.0.13 (Traefik) to `trusted_proxies` + use_x_forwarded_for in HA's http config,
-      # or HA rejects the proxied request. Retire the :8123 port-forward once verified.
+      # SSO-gated ingress. sso REQUIRED (it controls the whole smart home). HA-side
+      # prerequisite: add 10.10.0.13 (Traefik) to `trusted_proxies` + use_x_forwarded_for in
+      # HA's http config, or HA rejects the proxied request. Retire the :8123 port-forward
+      # once verified.
+      #
+      # Targeted BY NAME (#339): the record is attached to HA's DHCP reservation, so when the
+      # VM finally leaves the legacy subnet this entry does not change — the reservation moves
+      # and DNS follows. Resolvable from CT 2013 (verified). Same pattern as Pulse below.
+      # ⚠ The reservation is keyed on net0's MAC (02:1F:98:8B:6F:6A); if net0 is retired in
+      # favour of net2 (VLAN 1010), the reservation must be re-keyed to BC:24:11:3C:03:54 or
+      # this name stops resolving.
       - name: Home Assistant
         subdomain: homeassistant
         zone: lab
         sso: true
-        target: { ip: 192.168.179.102, port: 8123, method: http }
+        target: { ip: homeassistant.homelab.chrison.internal, port: 8123, method: http }
       # Pulse — fleet monitoring UI (stacks/monitoring CT 4000). SSO-gated; served at
       # pulse.lab.chrison.dev (covered by the *.lab wildcard — no new DNS record).
       - name: Pulse

@@ -40,7 +40,7 @@ Structured for both human reference and AI-assisted optimization. Key fields:
 
 | Name | VMID | Type | Node | Status | IP | Net | vCPU | RAM | Purpose |
 |---|---|---|---|---|---|---|---|---|---|
-| homeassistant | 2000 | VM (QEMU) | hpe-01 | 🟢 Running | 192.168.179.102 | ⚠️ | 2 | 2 GB | Smart-home controller (VLAN 1010 + 1040) |
+| homeassistant | 2000 | VM (QEMU) | hpe-01 | 🟢 Running | 192.168.179.102 · `homeassistant.homelab.chrison.internal` | ⚠️ | 2 | 2 GB | Smart-home controller. net1 (1040) + net2 (1010) exist but are `link_down` — see #339 |
 
 ## Media Stack (*arr)
 
