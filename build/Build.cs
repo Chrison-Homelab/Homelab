@@ -30,6 +30,16 @@ class Build : FalloutBuild
     [Parameter("Stack to plan/deploy — a directory name under stacks/ (e.g. 'Core').")]
     readonly string Stack;
 
+    // The engine has supported `--only` since #306, but no Fallout target ever forwarded it,
+    // so every Deploy was necessarily whole-stack. That is not merely inconvenient — a stack
+    // can hold a member that is intentionally absent (a stopped/deleted CT mid-migration),
+    // and a blanket apply would recreate it as a side effect of touching something unrelated.
+    // Forwarded verbatim; the engine owns validation and rejects an unknown member by name.
+    [Parameter("Restrict converge to these stack members (comma-separated names, e.g. 'cloudflared').")]
+    readonly string Only;
+
+    string OnlyArg => string.IsNullOrWhiteSpace(Only) ? "" : $" --only {Only}";
+
     AbsolutePath StacksDirectory => RootDirectory / "stacks";
     AbsolutePath EngineProject => RootDirectory / "Infrastructure" / "engine";
     AbsolutePath EngineDll => EngineProject / "bin" / "Release" / "net10.0" / "homelab-infra.dll";
@@ -141,7 +151,7 @@ class Build : FalloutBuild
         {
             var dir = ResolveStack();
             Log.Information("Previewing stack {Stack} (dry-run) — {Dir}", Stack, dir);
-            Engine($"converge {dir}");
+            Engine($"converge {dir}{OnlyArg}");
         });
 
     Target Deploy => _ => _
@@ -151,7 +161,7 @@ class Build : FalloutBuild
         {
             var dir = ResolveStack();
             Log.Warning("Deploying stack {Stack} — LIVE apply against the cluster — {Dir}", Stack, dir);
-            Engine($"converge {dir} --apply");
+            Engine($"converge {dir} --apply{OnlyArg}");
         });
 
     // ── PowerOrchestrator (#191) — build/test/publish/deploy the node service ──────
