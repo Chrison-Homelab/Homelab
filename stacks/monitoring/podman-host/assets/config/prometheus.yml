@@ -11,7 +11,11 @@ scrape_configs:
       auth: [synology]
       module: [if_mib, synology]
     static_configs:
-      - targets: ['192.168.179.11']   # DS1813 NAS (SNMP v2c, community 'homelab')
+      # DS1813 NAS (SNMP v2c, community 'homelab'). Addressed BY NAME, not by IP:
+      # the NAS moved 192.168.179.11 -> 10.0.0.10 (VLAN 1000) on 2026-08-02 and this
+      # target was the one thing that broke, because it was the last hard-coded copy
+      # of the old address outside the storage layer (#37, #340).
+      - targets: ['nas.homelab.chrison.internal']
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
