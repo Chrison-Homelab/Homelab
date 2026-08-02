@@ -263,14 +263,28 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
             return ApplyResult.Applied($"replica connector joined tunnel '{tunnelName}' (token installed)");
         }
 
-        var zoneName = string.Join('.', ingress[0].host.Split('.')[^2..]);
-        var zone = await api.GetZoneAsync(zoneName, ct);
+        // Zones are resolved PER HOSTNAME, not once from ingress[0] (#322). A single tunnel
+        // may legitimately front hostnames in more than one zone — the household media path
+        // lives in `tao-simon.family` while the rest of the stack is `chrison.dev`. The old
+        // code took ingress[0]'s zone and used its ZoneId for EVERY DNS call, so a
+        // second-zone hostname would have had its CNAME looked up (and created) in the WRONG
+        // zone: the existence check always misses, and the create either fails or plants a
+        // record in the first zone. Nothing caught it because no shape had ever mixed zones.
+        //
+        // AccountId is deliberately still taken once — tunnels and Access apps are
+        // account-level, and every zone we manage is in the same account.
+        var zonesByName = new Dictionary<string, CfZone>(StringComparer.OrdinalIgnoreCase);
+        foreach (var zn in ingress.Select(i => ZoneNameOf(i.host)).Distinct(StringComparer.OrdinalIgnoreCase))
+            zonesByName[zn] = await api.GetZoneAsync(zn, ct);
+        CfZone ZoneOf(string host) => zonesByName[ZoneNameOf(host)];
+
+        var zone = ZoneOf(ingress[0].host);   // account-level ops only
         var tunnelId = await api.FindTunnelIdAsync(zone.AccountId, tunnelName, ct);
         var svcActive = (await ctx.Exec.InContainerAsync(node, ctid, "systemctl is-active cloudflared")).Stdout.Trim() == "active";
 
         var dnsPresent = true;
         foreach (var (host, _, _) in ingress)
-            if (!await api.DnsExistsAsync(zone.ZoneId, host, ct)) { dnsPresent = false; break; }
+            if (!await api.DnsExistsAsync(ZoneOf(host).ZoneId, host, ct)) { dnsPresent = false; break; }
 
         // Content-aware ingress drift (#165): the live tunnel ingress must match the
         // shape's (hostname → service), else re-push. Without this, adding/changing a
@@ -331,9 +345,13 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
         var shapeHosts = ingress.Select(i => i.host).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var gatedHosts = ingress.Where(i => !publicHosts.Contains(i.host)).Select(i => i.host)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var cnamesToPrune = tunnelId is null
-            ? new List<CfDnsRecord>()
-            : CnamesToPrune(await api.ListCnamesAsync(zone.ZoneId, ct), tunnelId, shapeHosts);
+        // Pruned per zone, and the zone is carried alongside each record — DeleteDnsRecord
+        // needs the zone the record actually lives in, not ingress[0]'s.
+        var cnamesToPrune = new List<(string zoneId, CfDnsRecord rec)>();
+        if (tunnelId is not null)
+            foreach (var z in zonesByName.Values.DistinctBy(z => z.ZoneId))
+                foreach (var rec in CnamesToPrune(await api.ListCnamesAsync(z.ZoneId, ct), tunnelId, shapeHosts))
+                    cnamesToPrune.Add((z.ZoneId, rec));
         var appsToPrune = tunnelId is null || string.IsNullOrEmpty(stack)
             ? new List<CfAccessApp>()
             : AccessAppsToPrune(await api.ListAccessAppsAsync(zone.AccountId, ct), $" ({stack})", gatedHosts);
@@ -361,16 +379,28 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
         }
 
         foreach (var (host, _, _) in ingress)
-            if (!await api.DnsExistsAsync(zone.ZoneId, host, ct))
-                await api.CreateCnameAsync(zone.ZoneId, host, $"{tunnelId}.cfargotunnel.com", ct);
+            if (!await api.DnsExistsAsync(ZoneOf(host).ZoneId, host, ct))
+                await api.CreateCnameAsync(ZoneOf(host).ZoneId, host, $"{tunnelId}.cfargotunnel.com", ct);
 
         // Prune what left the shape (decided read-only above) now the desired state is in place.
-        foreach (var rec in cnamesToPrune) await api.DeleteDnsRecordAsync(zone.ZoneId, rec.Id, ct);
+        foreach (var (zid, rec) in cnamesToPrune) await api.DeleteDnsRecordAsync(zid, rec.Id, ct);
         foreach (var app in appsToPrune) await api.DeleteAccessAppAsync(zone.AccountId, app.Id, ct);
 
         var changes = (gated > 0 ? $"; {gated} Access change(s)" : "") + (ingressDrift ? "; ingress re-pushed" : "")
             + (pruneCount > 0 ? $"; pruned {cnamesToPrune.Count} CNAME(s) + {appsToPrune.Count} Access app(s)" : "");
         return ApplyResult.Applied($"tunnel '{tunnelName}' ensured ({ingress.Count} ingress){changes}");
+    }
+
+    // Registrable domain for a hostname — the zone a DNS record belongs in.
+    // Last two labels: seerr.chrison.dev → chrison.dev, seerr.tao-simon.family →
+    // tao-simon.family. This is the pre-existing heuristic, kept deliberately: it is wrong
+    // for multi-part public suffixes (a .co.nz zone would resolve to "co.nz" and the
+    // GetZoneAsync lookup would throw "zone not visible to token" rather than silently
+    // misfile the record). No homelab hostname uses one today.
+    internal static string ZoneNameOf(string host)
+    {
+        var parts = host.Split('.');
+        return parts.Length <= 2 ? host : string.Join('.', parts[^2..]);
     }
 
     private const string AccessPolicyName = "allow-homelab-admins";

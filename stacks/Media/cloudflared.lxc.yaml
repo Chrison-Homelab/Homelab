@@ -61,6 +61,15 @@ spec:
     # to logical names.
     ingress:
       - { hostname: seerr.chrison.dev,          service: "http://10.10.15.6:5055" }   # new seerr CT 5105 (was http://seerr:5055 → old 5011)
+      # HOUSEHOLD front door (#322). Same origin as seerr.chrison.dev, different zone —
+      # the family has no chrison.dev identity, which is the whole reason this hostname
+      # exists. It used to ride the legacy `hpe-01` tunnel pointed at the OLD seerr CT 5011,
+      # so stopping 5011 (#319) took the household offline without anyone noticing; moving it
+      # here puts it on the same reconciled origin as everything else and lets #321 retire
+      # that tunnel. public: true is REQUIRED — CF Access One-Time PIN only admits
+      # csimon@chrison.dev, so gating this would lock the family out. Seerr's own Plex login
+      # is the gate, which is exactly the identity the household already has (#316).
+      - { hostname: seerr.tao-simon.family,     service: "http://10.10.15.6:5055", public: true }
       # audiobookshelf: PUBLIC/direct — native mobile apps can't do CF Access OTP, and it
       # carries its own account auth. public: true → routed, but NOT behind the Access gate.
       - { hostname: audiobookshelf.chrison.dev, service: "http://10.10.182.200:13378", public: true }   # new abs CT 5112 (was http://audiobookshelf:13378 → old 5014)

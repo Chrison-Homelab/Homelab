@@ -717,4 +717,26 @@ public sealed class ConvergeCoreTests
         var pruned = CloudflaredProvisioner.AccessAppsToPrune(live, " (Media)", Hosts("seerr.chrison.dev"));
         Assert.Equal(new[] { "prowlarr.chrison.dev", "audiobookshelf.chrison.dev" }, pruned.Select(a => a.Domain));
     }
+
+    // #322 — a tunnel may front hostnames in more than one zone (the household media path
+    // is tao-simon.family while the rest of the stack is chrison.dev). Every DNS call used
+    // to be made against ingress[0]'s zone, which silently misfiled second-zone records.
+    [Theory]
+    [InlineData("seerr.chrison.dev", "chrison.dev")]
+    [InlineData("seerr.tao-simon.family", "tao-simon.family")]
+    [InlineData("audiobookshelf.tao-simon.family", "tao-simon.family")]
+    [InlineData("a.b.c.chrison.dev", "chrison.dev")]
+    [InlineData("chrison.dev", "chrison.dev")]          // apex — already only two labels
+    [InlineData("localhost", "localhost")]              // degenerate, must not throw
+    public void ZoneNameOf_ReturnsRegistrableDomain(string host, string expected)
+        => Assert.Equal(expected, CloudflaredProvisioner.ZoneNameOf(host));
+
+    [Fact]
+    public void ZoneNameOf_GroupsMixedZoneIngressCorrectly()
+    {
+        var hosts = new[] { "seerr.chrison.dev", "seerr.tao-simon.family", "audiobookshelf.chrison.dev" };
+        var zones = hosts.Select(CloudflaredProvisioner.ZoneNameOf)
+                         .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(z => z).ToArray();
+        Assert.Equal(new[] { "chrison.dev", "tao-simon.family" }, zones);
+    }
 }

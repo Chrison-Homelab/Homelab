@@ -114,6 +114,10 @@
   "allOf": [
     {
       "properties": {
+        "Only": {
+          "type": "string",
+          "description": "Restrict converge to these stack members (comma-separated names, e.g. 'cloudflared')"
+        },
         "Stack": {
           "type": "string",
           "description": "Stack to plan/deploy — a directory name under stacks/ (e.g. 'Core')"
