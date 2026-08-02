@@ -31,7 +31,7 @@ Structured for both human reference and AI-assisted optimization. Key fields:
 | teleport | 9904 | LXC | nuc-01 | 🟢 Running | — | — | 1 | 1 GB | Zero-trust access (SSH + app SSO) |
 | proxmox-datacenter-manager | 2002 | LXC | nuc-01 | 🟢 Running | 10.10.208.155 | ✅ | 2 | 2 GB | Proxmox Datacenter Manager UI |
 | pve-scripts-local | 2003 | LXC | nuc-01 | 🟢 Running | — | — | 2 | 4 GB | Local Proxmox helper scripts |
-| github-runner | 2005 | LXC | hpe-01 | 🟢 Running | 192.168.178.119 | ⚠️ | 2 | 2 GB | Self-hosted CI runner (Fallout/GH Actions) |
+| github-runner | 2005 | LXC | desktop-01 | 🔴 Stopped | — | ✅ | 2 | 2 GB | **RETIRED 2026-08-02** (#337) — was a runner for `ChrisonSimtian/ERP.Satisfactory`, not this org; deregistered |
 
 > **Teleport (9904) is deployed and running** — resolves BL-001. No `keycloak`
 > container exists (it was replaced by Teleport — closes BL-005).
@@ -105,7 +105,7 @@ erp-for-factory-games, seerr, shelfmark, cookbook, tautulli, audiobookshelf.
 | prowlarr / sonarr / radarr | .152 / .153 / .154 | Medium |
 | bazarr | 192.168.179.156 (migrating) | Medium |
 | ~~plex (dual-homed)~~ | **legacy NIC dropped 2026-08-02** (#344) → `10.10.200.98` only | ✅ done |
-| github-runner | 192.168.178.119 | Low |
+| ~~github-runner~~ | **retired 2026-08-02** (#337) — CT 2005 stopped, runner deregistered | ✅ done |
 | obsidian-livesync | (legacy lease) | Low |
 | Zigbee GW (`tube-zb-gw…`) | 192.168.179.222 | Low |
 
