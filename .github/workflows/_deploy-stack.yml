@@ -50,6 +50,23 @@ jobs:
       BAZARR_PASSWORD: ${{ secrets.BAZARR_PASSWORD }}
       BAZARR_OPENSUBTITLES_USER: ${{ secrets.BAZARR_OPENSUBTITLES_USER }}
       BAZARR_OPENSUBTITLES_PASSWORD: ${{ secrets.BAZARR_OPENSUBTITLES_PASSWORD }}
+
+      # Podman-host secrets. PodmanProvisioner resolves every one of these BEFORE building the
+      # converge script and fails the whole run if any is absent or empty, rather than creating an
+      # empty podman secret the units would silently mis-consume. None of them were passed here, so
+      # a CI deploy of a stack with a podman host could not converge it at all — the failure names
+      # the missing key, which is how it was found.
+      #
+      # SecretsEnv falls back to the process environment when there is no secrets.env file, which is
+      # the case on a runner. So these env names must match the secrets.env keys exactly.
+      PODMAN_USER_PASSWORD: ${{ secrets.PODMAN_USER_PASSWORD }}
+      YOUTARR_DB_ROOT_PASSWORD: ${{ secrets.YOUTARR_DB_ROOT_PASSWORD }}
+      YOUTARR_AUTH_USERNAME: ${{ secrets.YOUTARR_AUTH_USERNAME }}
+      YOUTARR_AUTH_PASSWORD: ${{ secrets.YOUTARR_AUTH_PASSWORD }}
+      KRAUTWATCH_DB_PASSWORD: ${{ secrets.KRAUTWATCH_DB_PASSWORD }}
+      KRAUTWATCH_DB_CONNECTIONSTRING: ${{ secrets.KRAUTWATCH_DB_CONNECTIONSTRING }}
+      KRAUTWATCH_APIKEY: ${{ secrets.KRAUTWATCH_APIKEY }}
+      KRAUTWATCH_TVDB_APIKEY: ${{ secrets.KRAUTWATCH_TVDB_APIKEY }}
       # shelfmark (#186 follow-up): Hardcover metadata-provider API token the provisioner
       # writes into /etc/shelfmark/.env. From the BW hardcover.app item.
       HARDCOVER_API_KEY: ${{ secrets.HARDCOVER_API_KEY }}
