@@ -23,31 +23,19 @@ spec:
 
   # Categories tv-sonarr / radarr and save paths under /data/torrents are app-level
   # config applied at cutover (no converge provisioner) — see ./README.md.
+  #
+  # ONE mount, deliberately. A second mp1 carried volume3's `data` at /mnt/data so the
+  # torrents inherited from CT 5007 could resume by the ABSOLUTE save_path their fastresume
+  # files recorded, with no data moved. That carry-over is finished (#347): every torrent
+  # was relocated onto volume4, and the API reports 0 of them referencing /mnt/data — so
+  # the mount had no readers left and volume3 no longer needs to be in this CT's blast
+  # radius. Retiring volume3 itself is still the separate, larger decision in #199, and
+  # Plex keeps its own volume3 mount (`data/media`, #329) — that one is untouched.
   mounts:
     - type: nfs
       storage: ds1813-nfs-volume-4
       source: data
       target: /data
-      acl: true
-      backup: false
-    # LEGACY SEED LIBRARY on volume3 (#347). The old qBittorrent CT 5007 held 470 torrents
-    # / 3.2 TB, and every one of its 471 fastresume files records an ABSOLUTE save_path
-    # under /mnt/data — verified, zero exceptions. qBittorrent resumes a torrent by that
-    # absolute path, so mounting volume3 here at the IDENTICAL path lets all of them carry
-    # over with NO DATA MOVED and no 3.2 TB recheck.
-    #
-    # /mnt/data is deliberately NOT /data. Two distinct roots, on purpose:
-    #   /data      volume4 — what the new *arr write into, the live library
-    #   /mnt/data  volume3 — seed-only history inherited from CT 5007
-    # Merging them would mean physically moving 3.2 TB between volumes for no benefit.
-    #
-    # This is also the real fix for #347's complaint: CT 5007 reached the NAS through its
-    # OWN /etc/fstab with a hard-coded IP, invisible to converge and to MountReconciler.
-    # Declaring it here makes it a host-level mountpoint the engine owns.
-    - type: nfs
-      storage: ds1813-nfs-volume-3
-      source: data
-      target: /mnt/data
       acl: true
       backup: false
   hookscript: local:snippets/ensure-data-mount.sh
