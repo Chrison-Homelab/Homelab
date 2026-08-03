@@ -26,11 +26,11 @@ spec:
   #
   # ONE mount, deliberately. A second mp1 carried volume3's `data` at /mnt/data so the
   # torrents inherited from CT 5007 could resume by the ABSOLUTE save_path their fastresume
-  # files recorded, with no data moved. That carry-over is finished (#347): every torrent
-  # was relocated onto volume4, and the API reports 0 of them referencing /mnt/data — so
-  # the mount had no readers left and volume3 no longer needs to be in this CT's blast
-  # radius. Retiring volume3 itself is still the separate, larger decision in #199, and
-  # Plex keeps its own volume3 mount (`data/media`, #329) — that one is untouched.
+  # files recorded, with no data moved. That carry-over is finished (#347, the media-stack
+  # cutover): every torrent was relocated onto volume4, and 0 of them still reference
+  # /mnt/data. The mount had no readers left, so removing it means this CT can no longer be
+  # affected by a volume3 outage. Retiring volume3 itself is separate (#199), and Plex keeps
+  # its own volume3 mount (`data/media`, #329) — that one is untouched.
   mounts:
     - type: nfs
       storage: ds1813-nfs-volume-4
