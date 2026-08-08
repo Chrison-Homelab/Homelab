@@ -233,4 +233,4 @@ different radio hardware).
 ---
 
 *Service inventory (LXCs/VMs) → [Services.md](Services.md). Network layout →
-[Network.md](Network.md).*
+[Network.md](Network.md). Physical rack mounting → [Rack.md](Rack.md).*
