@@ -31,3 +31,9 @@ ruvector.db
 .swarm/
 agentdb.rvf
 agentdb.rvf.lock
+
+# Rack model files under a Standard Digital File License, which forbids hosting them
+# on other platforms — a git remote is exactly that. The community inserts alongside
+# them are CC BY-NC-SA and DO stay tracked. See docs/rack/models/README.md.
+docs/rack/models/openrack-1u-19in-base*
+docs/rack/models/openrack-1u-blank-insert*
