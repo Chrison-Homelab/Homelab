@@ -186,7 +186,7 @@
     "networkInterface": {
       "type": "object",
       "additionalProperties": false,
-      "description": "A single Proxmox netX interface (full surface). Used in spec.networks[]. NOTE: the community-scripts create path provisions only one NIC — use spec.network for that; spec.networks is for converge (ProxmoxSharp).",
+      "description": "A single Proxmox netX interface (full surface). Used in spec.networks[]. For an LXC this renders to `name=…,bridge=…,tag=…,type=veth`; for a VM the multi-NIC list is still descriptive only (VmConverger maps the single-NIC `network` sugar).",
       "properties": {
         "name": { "type": "string", "description": "Interface name inside the container (e.g. 'eth0' or 'vlan1010')." },
         "bridge": { "type": "string", "default": "vmbr0", "description": "Host bridge to attach to." },
@@ -492,6 +492,10 @@
       "type": "object",
       "additionalProperties": false,
       "description": "Desired state for a Proxmox LXC. Only metadata.name + spec.ctid + spec.app are practically needed for the community-scripts create path; everything else has a sane default or is converge-only.",
+      "not": {
+        "required": ["network", "networks"],
+        "$comment": "#383 — `network` and `networks` are two spellings of the same net0. Allowing both means the create path reads one and the reconciler rewrites net0 from the other, so every converge bounces the primary link. Declare the single-NIC sugar OR the full list, never both."
+      },
       "properties": {
         "node": { "type": "string", "description": "Target Proxmox node (e.g. 'desktop-01'). Required to deploy; may be inherited from the stack's defaults." },
         "app": { "type": "string", "description": "community-scripts slug selecting ct/<app>.sh (e.g. 'forgejo', 'forgejo-runner', 'github-runner', 'docker', 'debian'). Required for the community-scripts create path." },
@@ -536,7 +540,7 @@
         "networks": {
           "type": "array",
           "items": { "$ref": "#/$defs/networkInterface" },
-          "description": "Full multi-NIC list (net0..netN), converge-only. Use spec.network for the single-NIC community-scripts path."
+          "description": "Full multi-NIC list, index-positional → net0..netN. Mutually exclusive with spec.network (which is the single-NIC sugar for the same net0). Create still provisions ONE interface — net0 is seeded from networks[0] via the community-scripts path, and net1..netN are added by converge's reconcile pass straight after (#383). Reconcile is additive: it adds a missing NIC and corrects a declared key that drifted, but never deletes a netN this list doesn't mention. A NIC with no `hwaddr` keeps the MAC it was created with, so DHCP reservations survive reconcile."
         },
         "nameserver": { "type": "string", "description": "DNS server IP (→ var_ns). Defaults to host setting." },
         "searchdomain": { "type": "string", "description": "DNS search domain (→ var_searchdomain)." },
