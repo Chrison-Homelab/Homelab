@@ -199,6 +199,63 @@ public sealed class ShapeValidatorTests : IDisposable
         Assert.Contains("totallyNotAField", text);
     }
 
+    [Fact]
+    public void LxcDeclaringBothNetworkAndNetworks_IsRejected()
+    {
+        // #383 — they are two spellings of the same net0. Allowing both means create reads
+        // one and reconcile rewrites net0 from the other, bouncing the link every converge.
+        var path = Write("both-nets.lxc.yaml", """
+            apiVersion: homelab/v1
+            kind: LXC
+            metadata:
+              name: both-nets
+            spec:
+              node: hpe-01
+              app: docker
+              ctid: 6005
+              network:
+                bridge: vmbr0
+                vlan: 1010
+                ipv4: dhcp
+              networks:
+                - bridge: vmbr0
+                  tag: 1010
+                  ip: dhcp
+                - bridge: vmbr0
+                  tag: 1040
+                  ip: dhcp
+            """);
+
+        Assert.False(ShapeValidator.ValidateFile(path).Valid);
+    }
+
+    [Fact]
+    public void LxcDeclaringOnlyNetworks_Validates()
+    {
+        var path = Write("multi-nic.lxc.yaml", """
+            apiVersion: homelab/v1
+            kind: LXC
+            metadata:
+              name: multi-nic
+            spec:
+              node: hpe-01
+              app: docker
+              ctid: 6005
+              networks:
+                - bridge: vmbr0
+                  tag: 1010
+                  ip: dhcp
+                  firewall: true
+                - bridge: vmbr0
+                  tag: 1040
+                  ip: dhcp
+                  firewall: true
+            """);
+
+        var result = ShapeValidator.ValidateFile(path);
+        Assert.True(result.Valid, string.Join("\n", result.Failures.Select(f => f.ToString())));
+    }
+
     // Backward-compat guard: every committed shape MUST validate. If this fails,
     // do NOT edit the shapes to force green — revisit the schema/model change.
     [Theory]

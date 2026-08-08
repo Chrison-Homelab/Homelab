@@ -3,14 +3,20 @@ using Homelab.Infrastructure.Shapes;
 namespace Homelab.Infrastructure.Converge;
 
 // Update lifecycle (issue #101): reconciles host-level CT config that Proxmox can
-// change in place — cores, memory, and tags — via `pct set`. Idempotent: reads
+// change in place — cores, memory, tags, and NICs — via `pct set`. Idempotent: reads
 // `pct config <ctid>`, computes the delta, and only issues `pct set` for fields
-// that actually differ. A CT whose cores/memory/tags already match is a no-op.
+// that actually differ. A CT whose config already matches is a no-op.
 //
 // Deliberately conservative: only fields that are safe to change live are
-// reconciled. Disk resize, network re-IP, and storage moves are NOT touched here
-// (they're disruptive / need their own flows). Anything not declared in the shape
+// reconciled. Disk resize and storage moves are NOT touched here (they're
+// disruptive / need their own flows). Anything not declared in the shape
 // is left alone — we never strip config we don't own.
+//
+// NICs (#383): `spec.networks[]` → netN. The community-scripts create path provisions
+// exactly ONE interface, so a multi-homed member is created with net0 and picks up
+// net1..netN here, on the reconcile pass the runner already runs straight after create.
+// Additive by the same rule as everything above: a missing NIC is added and a drifted key
+// corrected, but a netN the shape does not mention is never deleted.
 public sealed class CtConfigReconciler
 {
     private readonly INodeExec _exec;
@@ -66,8 +72,29 @@ public sealed class CtConfigReconciler
             }
         }
 
+        // NICs: spec.networks[] → net0..netN, index-positional.
+        for (var i = 0; i < sp.Networks.Count; i++)
+        {
+            var key = $"net{i}";
+            var live = cfg.GetValueOrDefault(key);
+            // Carry the live MAC forward when the shape doesn't pin one — see LxcNet.Render.
+            var liveHwaddr = LxcNet.Parse(live).GetValueOrDefault("hwaddr");
+            var desired = LxcNet.Render(sp.Networks[i], i, liveHwaddr);
+
+            if (live is null)
+            {
+                sets.Add($"--{key} \"{desired}\"");
+                changed.Add($"{key} added ({desired})");
+            }
+            else if (!LxcNet.Matches(live, desired))
+            {
+                sets.Add($"--{key} \"{desired}\"");
+                changed.Add($"{key} {live}→{desired}");
+            }
+        }
+
         if (sets.Count == 0)
-            return ApplyResult.NoChange("cores/memory/tags already match");
+            return ApplyResult.NoChange("cores/memory/tags/nics already match");
 
         var res = await _exec.OnNodeAsync(node, $"pct set {ctid} {string.Join(' ', sets)}", ct);
         return res.Ok

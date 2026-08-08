@@ -105,6 +105,11 @@ public sealed class CommunityScriptsCreator
         Add("var_version", sp.OsVersion);
         Add("var_container_storage", sp.Storage);
         Add("var_template_storage", sp.TemplateStorage);
+        // Create provisions exactly ONE NIC, so this maps the primary interface only.
+        // A member declaring the full multi-NIC form (spec.networks[]) instead of the
+        // `network` sugar seeds net0 from networks[0]; net1..netN are added afterwards by
+        // CtConfigReconciler (#383). The two forms are mutually exclusive in the schema, so
+        // at most one branch runs.
         if (sp.Network is { } n)
         {
             Add("var_brg", n.Bridge);
@@ -113,6 +118,16 @@ public sealed class CommunityScriptsCreator
             Add("var_gateway", n.Gateway);   // static IPs need an explicit default route (else no internet egress)
             Add("var_ipv6_method", n.Ipv6);
             Add("var_mtu", n.Mtu?.ToString());
+        }
+        else if (sp.Networks.Count > 0)
+        {
+            var primary = sp.Networks[0];
+            Add("var_brg", primary.Bridge);
+            Add("var_vlan", primary.Tag?.ToString());
+            Add("var_net", primary.Ip);
+            Add("var_gateway", primary.Gw);
+            Add("var_ipv6_method", primary.Ip6);
+            Add("var_mtu", primary.Mtu?.ToString());
         }
         Add("var_ns", sp.Nameserver);
         Add("var_searchdomain", sp.Searchdomain);

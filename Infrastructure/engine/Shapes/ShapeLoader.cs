@@ -106,15 +106,21 @@ public sealed class ShapeLoader
         member.RootfsOptions ??= defaults.RootfsOptions;
         member.Nameserver ??= defaults.Nameserver;
         member.Searchdomain ??= defaults.Searchdomain;
-        member.Network ??= defaults.Network;
+        if (member.Networks.Count == 0 && defaults.Networks.Count > 0)
+            member.Networks = defaults.Networks;
+        // A member declaring the full multi-NIC list owns net0 as well, so it must NOT also
+        // inherit the stack's single-NIC `network` sugar. The schema forbids both in one
+        // FILE, but it can't see a merge — without this gate, a stack whose defaults set
+        // `network` (as every stack here does) would silently describe net0 twice, with
+        // create reading the sugar and reconcile rewriting net0 from the list (#383).
+        if (member.Networks.Count == 0)
+            member.Network ??= defaults.Network;
         member.Features ??= defaults.Features;
         member.Timezone ??= defaults.Timezone;
         member.Console ??= defaults.Console;
         member.Pool ??= defaults.Pool;
         member.Hookscript ??= defaults.Hookscript;
         member.SshAuthorizedKey ??= defaults.SshAuthorizedKey;
-        if (member.Networks.Count == 0 && defaults.Networks.Count > 0)
-            member.Networks = defaults.Networks;
         if (member.Mounts.Count == 0 && defaults.Mounts.Count > 0)
             member.Mounts = defaults.Mounts;
         if (member.Devices.Count == 0 && defaults.Devices.Count > 0)
