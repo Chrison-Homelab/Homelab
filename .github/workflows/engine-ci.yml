@@ -26,11 +26,6 @@ jobs:
   build:
     runs-on: [self-hosted, homelab]
     env:
-      # PACKAGES_PAT, not GITHUB_TOKEN: driving the build through Fallout means restoring
-      # Fallout.* from the Fallout-build org's GitHub Packages feed, and the default
-      # GITHUB_TOKEN cannot read packages across orgs. Same reason power-orchestrator-ci
-      # uses it. (Our own *Sharp packages come from nuget.org now and need no auth.)
-      GITHUB_PACKAGES_PAT: ${{ secrets.PACKAGES_PAT }}
       DOTNET_ROOT: /usr/local/dotnet                      # .NET SDK pre-installed on the runner
     steps:
       - uses: actions/checkout@v6

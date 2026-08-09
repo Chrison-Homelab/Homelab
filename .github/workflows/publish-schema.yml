@@ -44,14 +44,10 @@ permissions:
 
 jobs:
   build:
-    # Self-hosted: building the engine restores the cross-org GitHub Packages
-    # feeds (Fallout-build + chrison-dev: ProxmoxSharp/UnifiSharp) — same as
-    # validate-shapes.yml. The PUBLISHED binary needs none of this at runtime.
+    # Self-hosted for the .NET 10 SDK that is already on that host, not for feed access:
+    # since #390 every package restores publicly from nuget.org. This could move to
+    # ubuntu-latest with a setup-dotnet step if the runner ever becomes the bottleneck.
     runs-on: [self-hosted, homelab]
-    env:
-      # nuget.config reads the PAT via %GITHUB_PACKAGES_PAT% (GitHub forbids the
-      # reserved GITHUB_ prefix on secret names, so the secret is PACKAGES_PAT).
-      GITHUB_PACKAGES_PAT: ${{ secrets.PACKAGES_PAT }}
     steps:
       - uses: actions/checkout@v6
         # No submodules: the engine + schema are superproject content.

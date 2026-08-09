@@ -36,10 +36,10 @@ wiring is the `deploy/deploy.sh` "sugar" the `Deploy` target shells out to.
 # equivalently: dotnet run --project build/_build.csproj -- <Target> [--stack X]
 ```
 
-Requires the .NET 10 SDK (see `../global.json`) and `GITHUB_PACKAGES_PAT` in the
-environment — Fallout restores from the Fallout-build GitHub Packages edge feed
-(`../nuget.config`); the engine restores `Chrison.ProxmoxSharp`/`Chrison.UnifiSharp`
-from nuget.org (public, no auth). A live `Deploy` also needs Proxmox API creds, `CF_API_TOKEN`,
+Requires the .NET 10 SDK (see `../global.json`) and no package credential: Fallout 10.4
+and the `Chrison.*Sharp` clients all restore publicly from nuget.org (`../nuget.config`).
+Restore worked against a cold packages folder with no token, which is the check to repeat if
+a feed is ever reintroduced. A live `Deploy` still needs Proxmox API creds, `CF_API_TOKEN`,
 and SSH to the target node (all per `secrets.env`).
 
 ## CI

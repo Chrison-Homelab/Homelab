@@ -11,8 +11,10 @@
 [Bb]in/
 [Oo]bj/
 artifacts/
-publish/        # self-contained publish output (Fallout PublishValidator / PublishPowerOrchestrator)
-dist/           # packaged release assets (publish-schema.yml)
+# Self-contained publish output (Fallout PublishValidator / PublishPowerOrchestrator)
+publish/
+# Packaged release assets (publish-schema.yml)
+dist/
 
 # Local secrets (PVE tokens etc.)
 *.env

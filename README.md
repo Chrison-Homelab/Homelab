@@ -77,7 +77,7 @@ flowchart LR
     FO2 --> ENGC["engine · converge --apply"]
   end
 
-  FEEDS["📦 nuget.org · Chrison.*<br/>+ Fallout-build feed"] -. restore .-> FO1
+  FEEDS["📦 nuget.org<br/>Fallout.* · Chrison.* · public"] -. restore .-> FO1
   FEEDS -. restore .-> FO2
 
   ENGC -->|ProxmoxSharp| PVE["🖥️ Proxmox VE<br/>LXCs / VMs"]
@@ -94,8 +94,9 @@ flowchart LR
 ./build.sh Deploy  --stack Core # live apply
 ```
 
-Requires the .NET 10 SDK (see [`global.json`](global.json)) and `GITHUB_PACKAGES_PAT`
-for the Fallout-build feed; the `*Sharp` clients come from **nuget.org** (public). Git
+Requires the .NET 10 SDK (see [`global.json`](global.json)) and nothing else — every
+package restores publicly from **nuget.org**: Fallout 10.4 (the build system) and the
+`Chrison.*Sharp` clients alike. No feed credential, no `GITHUB_PACKAGES_PAT`. Git
 guardrails (PR-only, no direct `main` push) are enforced client-side by a Husky.NET
 `pre-push` hook.
 
