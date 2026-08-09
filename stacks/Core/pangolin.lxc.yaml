@@ -72,7 +72,10 @@ spec:
     # legacy 'cloudflared' mode — plain HTTP behind the core tunnel — is still supported by
     # the provisioner for rollback.)
     edge: public-wildcard
-    wildcardZones: [lab, arr]                    # → *.lab.chrison.dev + *.arr.chrison.dev LE SANs
+    wildcardZones: [lab, arr, iot]               # → *.lab + *.arr + *.iot .chrison.dev LE SANs
+                                                 # `iot` added for the smart-home surface (#250). Converge
+                                                 # declares the grey-cloud A record; verified no pre-existing
+                                                 # `iot` record in the shared chrison.dev zone before adding.
 
     # ADDITIONAL BASE DOMAINS (#322) — Pangolin can now front more than one registrable
     # domain. `baseDomain` above always stays `domain1` (Pangolin keys resources by
@@ -158,6 +161,18 @@ spec:
         zone: lab
         sso: true
         target: { ip: homeassistant.homelab.chrison.internal, port: 8123, method: http }
+      # Home Assistant on CT 6005 — the container replacement (#250). Deliberately a SECOND,
+      # separate resource on the new `iot` zone rather than a re-point of the entry above:
+      # that one targets `homeassistant.homelab.chrison.internal`, which still resolves to the
+      # LIVE HAOS VM. Editing it would move the house's external HA access onto an
+      # unconfigured instance — that is the cutover, and the cutover is a deliberate event.
+      #
+      # At cutover the entry above is removed and this one carries the surface.
+      - name: Home Assistant (CT 6005)
+        subdomain: homeassistant
+        zone: iot
+        sso: true
+        target: { ip: homeassistant.iot.homelab.chrison.internal, port: 8123, method: http }
       # Pulse — fleet monitoring UI (stacks/monitoring CT 4000). SSO-gated; served at
       # pulse.lab.chrison.dev (covered by the *.lab wildcard — no new DNS record).
       - name: Pulse
