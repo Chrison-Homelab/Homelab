@@ -2,35 +2,46 @@ name: bump-stack-submodules
 
 # Phase 0 / ADR-0008 — the submodule auto-bump bot.
 #
-# Weekly (and on demand), advance every stacks/* submodule pointer to its
-# remote default-branch HEAD and open ONE PR with the bumped pointers. This
-# turns submodule drift into a reviewable PR instead of a silent footgun (the
-# stale-pointer trap we hit by hand), and removes the manual "second PR" after a
-# stack repo merges.
+# A git submodule ALWAYS pins a commit; there is no "track the branch head" mode. So the
+# superproject will always need a bump commit — the point of this workflow is that a human
+# never writes one. Hourly (and on demand) it advances every stacks/* pointer to its remote
+# default-branch HEAD, validates the newly-pinned shapes, and merges itself.
 #
-# The bump PR itself is gated by validate-shapes.yml (it touches stacks/**), so
-# the newly-pinned shapes are validated in the superproject before merge.
+# ⚠️ WHY VALIDATION RUNS IN THIS WORKFLOW AND NOT AS A PR CHECK
 #
-# Tokens: SUBMODULES_RO_PAT reads the private Homelab.Stacks.* repos to fetch
-# their latest HEAD; the default GITHUB_TOKEN (contents+PR write, below) pushes
-# the branch + opens the PR on this repo.
+# This used to open a PR and stop, with a comment claiming "the bump PR is gated by
+# validate-shapes.yml (it touches stacks/**)". That was never true: a branch pushed with the
+# default GITHUB_TOKEN does NOT trigger `pull_request` workflows — GitHub suppresses them so
+# workflows can't recurse. Bump PRs #298, #312 and #315 all merged with *zero* checks
+# reported. Auto-merging on that basis would mean auto-merging unvalidated pointers, so the
+# validate job below runs the gate itself rather than waiting for a check that never arrives.
+#
+# The PR is opened by the `bump` job, before validation, deliberately: if the gate fails the
+# PR stays open for a human to look at, instead of leaving an orphaned branch nobody sees.
+#
+# Tokens: SUBMODULES_RO_PAT reads the private Homelab.Stacks.* repos; the default
+# GITHUB_TOKEN (contents + PR write, below) pushes the branch, opens the PR and merges it.
 
 on:
   schedule:
-    - cron: '0 6 * * 1'      # Mondays 06:00 UTC (~Mon 18:00 NZ) — weekly
+    - cron: '0 * * * *'      # hourly — was weekly, so a merged stack change could sit
+                             # unbumped for days and ended up hand-bumped instead
   workflow_dispatch: {}
 
 permissions:
-  contents: write            # push the bump branch
+  contents: write            # push the bump branch, merge the PR
   pull-requests: write       # open/maintain the bump PR
 
 concurrency:
   group: bump-stack-submodules
-  cancel-in-progress: true
+  cancel-in-progress: false    # this one merges to main — never kill it mid-merge. Runs are
+                               # short and usually no-ops, so queueing costs nothing.
 
 jobs:
   bump:
     runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.bump.outputs.changed }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -42,8 +53,8 @@ jobs:
           TOKEN: ${{ secrets.SUBMODULES_RO_PAT }}
         run: |
           set -euo pipefail
-          # Auth the private submodule fetches via the RO PAT (scoped to this step,
-          # then removed so the later push uses the checkout's GITHUB_TOKEN creds).
+          # Auth the private submodule fetches via the RO PAT (scoped to this step, then
+          # removed so the later push uses the checkout's GITHUB_TOKEN creds).
           git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
           paths=$(git config --file .gitmodules --get-regexp path | awk '{print $2}' | grep '^stacks/')
           git submodule update --init $paths
@@ -57,22 +68,81 @@ jobs:
             echo "Bumped:"; git submodule status $paths
           fi
 
-      - name: Open / update the bump PR
+      - name: Push the branch and open the PR if there isn't one
         if: steps.bump.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          BRANCH=automation/bump-stack-submodules
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B "$BRANCH"
-          git commit -am "chore(submodules): bump stacks/* pointers to remote HEAD"
-          git push -f origin "$BRANCH"
-          if [ -z "$(gh pr list --head "$BRANCH" --state open --json number -q '.[].number')" ]; then
-            gh pr create --base main --head "$BRANCH" \
-              --title "chore(submodules): bump stacks/* pointers to remote HEAD" \
-              --body "Automated bump of \`stacks/*\` submodule pointers to each repo's default-branch HEAD (ADR-0008 auto-bump bot). Review the pointer diffs, confirm validate-shapes is green, then merge to compose the latest stack changes into the superproject."
-          else
-            echo "An open bump PR already exists for $BRANCH — updated its branch."
+          git checkout -B automation/bump-stack-submodules
+          git commit -am "Bump the stacks/* submodule pointers to remote HEAD"
+          git push -f origin automation/bump-stack-submodules
+
+          if [ -n "$(gh pr list --head automation/bump-stack-submodules --state open --json number -q '.[].number')" ]; then
+            echo "An open bump PR already exists — its branch has been updated."
+            exit 0
           fi
+
+          cat > /tmp/bump-body.md <<'BODY'
+          Automated bump of `stacks/*` submodule pointers to each repo's default-branch HEAD
+          (ADR-0008 auto-bump bot).
+
+          A submodule always pins a commit, so this PR exists to record *which* commit — it is
+          not a decision point. The shapes at the newly-pinned commits are validated by this
+          workflow's own `validate` job, which then merges this PR. If you are reading this on
+          an **open** PR, that gate failed and the pointers need a look.
+          BODY
+
+          gh pr create --base main --head automation/bump-stack-submodules \
+            --title "Bump the stacks/* submodule pointers to remote HEAD" \
+            --label skip-changelog \
+            --body-file /tmp/bump-body.md
+
+  # The gate. Self-hosted for the .NET 10 SDK already on that host; validation itself is
+  # offline — it loads every shape and checks it against shape.schema.json, including the
+  # stack content this bump is about to pin. No cluster reach required.
+  validate:
+    needs: bump
+    if: needs.bump.outputs.changed == 'true'
+    runs-on: [self-hosted, homelab]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: automation/bump-stack-submodules
+
+      - name: Fetch stack submodules at the newly-pinned commits
+        env:
+          TOKEN: ${{ secrets.SUBMODULES_RO_PAT }}
+        run: |
+          set -euo pipefail
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+          paths=$(git config --file .gitmodules --get-regexp path | awk '{print $2}' | grep '^stacks/')
+          git submodule update --init $paths
+          git config --global --unset-all url."https://x-access-token:${TOKEN}@github.com/".insteadOf || true
+
+      - name: Validate shapes
+        run: ./build.sh ValidateShapes
+
+  # Only reached when validate succeeded — a failed or skipped gate stops `needs` here, and
+  # the PR opened above is left for a human.
+  merge:
+    needs: [bump, validate]
+    if: needs.bump.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Merge the bump PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          PR=$(gh pr list --head automation/bump-stack-submodules --state open --json number -q '.[].number' | head -1)
+          if [ -z "$PR" ]; then
+            echo "No open bump PR to merge — nothing to do."
+            exit 0
+          fi
+          echo "Merging PR #$PR"
+          gh pr merge "$PR" --rebase --delete-branch
