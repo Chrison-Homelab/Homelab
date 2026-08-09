@@ -19,11 +19,6 @@ permissions:
 jobs:
   build:
     runs-on: [self-hosted, homelab]
-    env:
-      # Fallout (Fallout-build feed) + ProxmoxSharp/UnifiSharp (chrison-dev feed) both restore
-      # from GitHub Packages across two orgs — the default GITHUB_TOKEN can't (cross-org), so a
-      # real PAT is required. nuget.config reads it via the %GITHUB_PACKAGES_PAT% env var.
-      GITHUB_PACKAGES_PAT: ${{ secrets.PACKAGES_PAT }}
     steps:
       - uses: actions/checkout@v6
       # The homelab runner already has the .NET 10 SDK on PATH (see global.json); no setup-dotnet.

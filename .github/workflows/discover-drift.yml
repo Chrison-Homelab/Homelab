@@ -9,9 +9,8 @@ name: discover-drift
 # CF-Access-gated `proxmox.chrison.dev` hostname. This sidesteps the Cloudflare WAF
 # (which 403s datacenter/runner IPs) that blocked GitHub-hosted runners before.
 #
-# Package restore uses the built-in GITHUB_TOKEN — no PAT needed (the engine restores
-# Chrison.ProxmoxSharp/Chrison.UnifiSharp from nuget.org, public/no-auth; the cross-org
-# Fallout feed is build/-only and not touched here).
+# Package restore needs no credential at all since #390 — every package this repo builds
+# comes publicly from nuget.org (Fallout 10.4 and Chrison.ProxmoxSharp/UnifiSharp alike).
 #
 # Cluster-reach secrets are shared with _deploy-stack.yml (PROXMOX_BASE_URL points
 # at the LAN, PROXMOX_VERIFY_TLS=false for the self-signed direct cert):
@@ -43,9 +42,6 @@ jobs:
 
       - name: Discover live state
         env:
-          # nuget.config reads this for the GitHub Packages feed; the built-in
-          # token works once the packages grant this repo read access.
-          GITHUB_PACKAGES_PAT: ${{ secrets.GITHUB_TOKEN }}
           # Cluster-reach config shared with _deploy-stack.yml — LAN-direct, so
           # PROXMOX_VERIFY_TLS comes from the secret (false for the self-signed cert).
           PROXMOX_BASE_URL: ${{ secrets.PROXMOX_BASE_URL }}

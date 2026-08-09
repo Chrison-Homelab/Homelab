@@ -24,9 +24,9 @@
     <!-- Pinned to the highest version where ALL of cli+build+common+components
          exist together (cli tops out at preview.5 while the libs go further);
          pinning the set avoids tool/lib skew. Bump deliberately. -->
-    <PackageReference Include="Fallout.Build" Version="2026.1.0-preview.5.gd84fad5cd7" />
-    <PackageReference Include="Fallout.Common" Version="2026.1.0-preview.5.gd84fad5cd7" />
-    <PackageReference Include="Fallout.Components" Version="2026.1.0-preview.5.gd84fad5cd7" />
+    <PackageReference Include="Fallout.Build" Version="10.4.0" />
+    <PackageReference Include="Fallout.Common" Version="10.4.0" />
+    <PackageReference Include="Fallout.Components" Version="10.4.0" />
   </ItemGroup>
 
   <!-- Auto-install the Husky.NET git hooks (../.husky) on local build so the
