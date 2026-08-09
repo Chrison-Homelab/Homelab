@@ -120,13 +120,16 @@ Four things differ from Fallout, and they are deliberate:
 2. **PRs are created ready, not draft.** Fallout defaults to `--draft`. Here the
    author reviews and merges immediately, so a draft is friction. Use `--draft`
    only when you genuinely want to park something.
-3. **Stack submodules come in pairs.** A change under `stacks/<Name>/` is a PR in
-   the stack repo *and* a pointer-bump PR here (see
-   [ADR-0008](../adr/ADR-0008-stack-submodules.md)). Convention:
-   - stack repo PR: the real title, real category label
-   - superproject PR: `Bump the <Name> submodule — <what changed>`, labelled
-     `skip-changelog` unless the change is user-facing
-   - link them both ways
+3. **Stack submodule changes are ONE PR — never hand-write the bump.** A change under
+   `stacks/<Name>/` is a PR in the stack repo, and that is all you author (see
+   [ADR-0008](../adr/ADR-0008-stack-submodules.md)). The superproject pointer is advanced
+   **hourly** by [`bump-stack-submodules.yml`](../../.github/workflows/bump-stack-submodules.yml),
+   which validates the newly-pinned shapes and merges itself.
+   - A submodule always pins a commit — there is no "track the branch head" mode — so the
+     bump commit still exists; a human just never writes one.
+   - Need it sooner than the next hour: `gh workflow run bump-stack-submodules.yml`.
+   - An **open** bump PR means its validate gate failed. That is a real signal — a stack
+     repo landed a shape the superproject rejects. Fix the stack; don't merge past it.
 4. **Verification means live state, not CI.** CI validates shapes; it does not
    prove a converge applied or a service came back. Say what you checked against
    the running cluster.

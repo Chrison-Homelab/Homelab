@@ -72,6 +72,15 @@ their own `Homelab.Stacks.<Name>` repos, composed as submodules at `stacks/<Name
    Homelab runs `git submodule update --remote` and opens a PR bumping stack pointers,
    turning drift into a reviewable PR and removing the manual second PR.
 
+   > **Amended 2026-08-09.** Item 5 as shipped did not remove the manual second PR. A weekly
+   > cadence meant a merged stack change sat unbumped for days, so bump PRs got hand-written
+   > anyway. And the "reviewable PR" was never reviewed *by CI*: a branch pushed with the
+   > default `GITHUB_TOKEN` does not trigger `pull_request` workflows, so bump PRs #298, #312
+   > and #315 all merged with zero checks reported. The bot now runs **hourly**, validates the
+   > newly-pinned shapes **inside its own run**, and **merges itself** when that passes — so an
+   > open bump PR now means the gate failed. A submodule still pins a commit; that part is not
+   > changeable. What changed is that no human writes the bump.
+
 Phase 0 (items 4 + 5, plus the schema publish) is tracked in
 [#272](https://github.com/Chrison-Homelab/Homelab/issues/272) and **unlocks** the
 extractions.
