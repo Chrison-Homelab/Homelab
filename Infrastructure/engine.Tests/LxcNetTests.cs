@@ -9,15 +9,16 @@ namespace Homelab.Infrastructure.Tests;
 // Multi-NIC LXC support (#383) — pure + mocked, no live cluster.
 public sealed class LxcNetTests
 {
+    // Mirrors the real homeassistant.lxc.yaml, which names its NICs explicitly.
     private static NetworkInterfaceSpec Homelab() => new()
     {
-        Bridge = "vmbr0", Tag = 1010, Ip = "dhcp", Firewall = true,
+        Name = "vlan1010", Bridge = "vmbr0", Tag = 1010, Ip = "dhcp", Firewall = true,
         Hwaddr = "bc:24:11:3c:03:54",
     };
 
     private static NetworkInterfaceSpec IotLeg() => new()
     {
-        Bridge = "vmbr0", Tag = 1040, Ip = "dhcp", Firewall = true,
+        Name = "vlan1040", Bridge = "vmbr0", Tag = 1040, Ip = "dhcp", Firewall = true,
     };
 
     [Fact]
@@ -30,13 +31,29 @@ public sealed class LxcNetTests
     }
 
     [Fact]
-    public void Render_DefaultsInterfaceNameToVlanTag_MatchingTheCreatePath()
+    public void Render_DefaultsInterfaceNameToEthIndex_MatchingTheCreatePath()
     {
-        // community-scripts names the created net0 `vlan<tag>`. Defaulting to eth0 here
-        // would make the first reconcile rename net0 and bounce the primary link.
-        Assert.Equal("vlan1040", LxcNet.InterfaceName(IotLeg(), 1));
-        Assert.Equal("eth1", LxcNet.InterfaceName(new NetworkInterfaceSpec { Bridge = "vmbr0" }, 1));
+        // community-scripts names the created net0 `eth0` — verified on CT 6005, and NOT
+        // `vlan<tag>` as this originally assumed. Defaulting to anything else makes the first
+        // reconcile rename net0, which breaks the guest's networking (see RenamesInterface).
+        Assert.Equal("eth1", LxcNet.InterfaceName(new NetworkInterfaceSpec { Bridge = "vmbr0", Tag = 1040 }, 1));
+        Assert.Equal("eth0", LxcNet.InterfaceName(new NetworkInterfaceSpec { Bridge = "vmbr0", Tag = 1010 }, 0));
         Assert.Equal("custom", LxcNet.InterfaceName(new NetworkInterfaceSpec { Name = "custom", Tag = 7 }, 0));
+    }
+
+    [Fact]
+    public void RenamesInterface_DetectsTheCaseThatBreaksTheGuest()
+    {
+        const string live = "name=eth0,bridge=vmbr0,hwaddr=BC:24:11:52:1A:4C,ip=dhcp,tag=1010,type=veth";
+
+        // The CT 6005 case: eth0 -> vlan1010 left a stale `auto eth0` stanza and killed IPv4.
+        Assert.True(LxcNet.RenamesInterface(live, "name=vlan1010,bridge=vmbr0,ip=dhcp,tag=1010,type=veth"));
+
+        // Same name, other keys changing, is NOT a rename.
+        Assert.False(LxcNet.RenamesInterface(live, "name=eth0,bridge=vmbr0,ip=dhcp,tag=1040,firewall=1,type=veth"));
+
+        // A NIC being added fresh is not a rename either.
+        Assert.False(LxcNet.RenamesInterface(null, "name=eth1,bridge=vmbr0,ip=dhcp,type=veth"));
     }
 
     [Fact]

@@ -43,15 +43,38 @@ public static class LxcNet
         return string.Join(',', parts);
     }
 
-    // Default interface name. A tagged NIC becomes `vlan<tag>` to match what the
-    // community-scripts create path names net0 (see the `network` sugar in the schema) —
-    // without that, reconcile would rename net0 on the first run and bounce the link for
-    // no reason. Untagged falls back to eth<index>.
+    // Default interface name: `eth<index>` — what the community-scripts create path actually
+    // names net0.
+    //
+    // This originally defaulted to `vlan<tag>`, on the stated belief that it matched the create
+    // path. It does not: that naming belongs to the retired PowerShell renderer, and the belief
+    // was never checked against a real create. Deploying CT 6005 disproved it — net0 came up as
+    // `eth0`, the first reconcile renamed it, and the container lost IPv4 on BOTH legs. See
+    // RenamesInterface for why a rename is not cosmetic.
     public static string InterfaceName(NetworkInterfaceSpec n, int index)
     {
         ArgumentNullException.ThrowIfNull(n);
-        if (!string.IsNullOrEmpty(n.Name)) return n.Name!;
-        return n.Tag is { } tag ? $"vlan{tag}" : $"eth{index}";
+        return string.IsNullOrEmpty(n.Name) ? $"eth{index}" : n.Name!;
+    }
+
+    // Does applying `desired` RENAME an existing interface?
+    //
+    // Renaming is not cosmetic. Proxmox rewrites the guest's /etc/network/interfaces to add a
+    // stanza for the new name but LEAVES THE OLD STANZA BEHIND, pointing at a device that no
+    // longer exists. `ifup -a` fails on that stanza and stops, so every interface after it —
+    // including the renamed one — never gets DHCP. The guest ends up with link-local IPv6 only
+    // and no default route, while `pct config` looks perfectly healthy.
+    //
+    // Observed on CT 6005 (2026-08-09): `eth0` → `vlan1010` left `auto eth0` in place, and the
+    // container had no IPv4 on either leg until the stale stanza was removed and it rebooted.
+    public static bool RenamesInterface(string? live, string desired)
+    {
+        ArgumentNullException.ThrowIfNull(desired);
+        if (string.IsNullOrWhiteSpace(live)) return false;
+        var from = Parse(live).GetValueOrDefault("name");
+        var to = Parse(desired).GetValueOrDefault("name");
+        return !string.IsNullOrEmpty(from) && !string.IsNullOrEmpty(to)
+               && !string.Equals(from, to, StringComparison.OrdinalIgnoreCase);
     }
 
     // Parse a netN value into a key→value map. Proxmox prints the keys back in its own

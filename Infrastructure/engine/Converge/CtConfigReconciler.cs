@@ -89,7 +89,17 @@ public sealed class CtConfigReconciler
             else if (!LxcNet.Matches(live, desired))
             {
                 sets.Add($"--{key} \"{desired}\"");
-                changed.Add($"{key} {live}→{desired}");
+                // A rename silently breaks the guest's networking (LxcNet.RenamesInterface
+                // explains how), and `pct config` afterwards looks fine — so say it loudly
+                // here rather than leaving the operator to discover it via a container that
+                // has no IPv4. Not automated: restarting a guest's network is the operator's
+                // call, and on a member like Home Assistant it is not a quiet action.
+                var note = LxcNet.RenamesInterface(live, desired)
+                    ? " ⚠ RENAME — guest keeps a stale /etc/network/interfaces stanza for the old"
+                      + " name and will lose IPv4 on ALL interfaces until it is removed and the"
+                      + " guest network is restarted"
+                    : "";
+                changed.Add($"{key} {live}→{desired}{note}");
             }
         }
 
