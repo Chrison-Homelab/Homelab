@@ -37,6 +37,14 @@ apps:
   docker:
     script: docker
 
+  # Plain base Debian CT (ct/debian.sh) — no app at all. The building block for a shape
+  # whose `provisioner:` does the whole install itself, because community-scripts has no
+  # script for what it is: `pangolin` (Docker EE, installed by its provisioner) and
+  # `shell` (a tmux host) both create with this. No provisioner of its own — a bare
+  # debian: entry is create-only.
+  debian:
+    script: debian
+
   # Rootless Podman + quadlet host (ADR-0009 / #284). ct/podman.sh installs Podman
   # (rootful, with a root podman.socket + Portainer prompts we decline), then the
   # `podman` provisioner converts it to the rootless quadlet-native model: masks the
@@ -121,3 +129,14 @@ apps:
   pangolin:
     script: docker
     provisioner: pangolin
+
+  # Shell host — a CT that exists only to run a long-lived tmux server you attach to
+  # from any laptop (#404). There is no community-scripts app for "a terminal", so the
+  # CT is a plain base Debian (script: debian → ct/debian.sh) and the `shell`
+  # provisioner does all of it: tmux + CLI kit, the login user and its authorized_keys,
+  # the canonical ~/.tmux.conf and the rio terminfo (#405), TPM's plugins, and a systemd
+  # unit that brings the session back after a reboot (#408). See
+  # stacks/DevOps/shell.lxc.yaml.
+  shell:
+    script: debian
+    provisioner: shell
