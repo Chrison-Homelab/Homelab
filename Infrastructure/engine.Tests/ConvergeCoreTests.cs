@@ -769,6 +769,58 @@ public sealed class ConvergeCoreTests
         Assert.Equal(new[] { "prowlarr.chrison.dev", "audiobookshelf.chrison.dev" }, pruned.Select(a => a.Domain));
     }
 
+    // ---- CF Access trusted-IP bypass reconcile (#417) ---------------------
+    // The policy is matched by name, so existence alone used to end the story and an
+    // edited `access.bypass` never reached Cloudflare. These pin the drift decision.
+
+    [Fact]
+    public void BypassDrifted_DetectsAMissingAddressFamily()
+    {
+        // The actual bug: live carried only the IPv4 home address while the shape had
+        // grown the IPv6 prefix, so every dual-stack browser hit the OTP gate.
+        var live = new[] { "118.67.199.127/32" };
+        var desired = new[] { "118.67.199.127/32", "2407:8b00:116d:e500::/56" };
+        Assert.True(CloudflaredProvisioner.BypassDrifted(live, desired));
+    }
+
+    [Fact]
+    public void BypassDrifted_IsFalseWhenOnlyOrderOrSpellingDiffers()
+    {
+        // Cloudflare echoes back its own normalisation, and order is not meaningful.
+        // Treating either as drift would rewrite the policy on every single converge.
+        var live = new[] { "2407:8B00:116D:E500:0:0:0:0/56", "118.67.199.127/32" };
+        var desired = new[] { "118.67.199.127/32", "2407:8b00:116d:e500::/56" };
+        Assert.False(CloudflaredProvisioner.BypassDrifted(live, desired));
+    }
+
+    [Fact]
+    public void BypassDrifted_DetectsAWidenedOrNarrowedPrefix()
+    {
+        // /48 is Quic's pool, not the house — widening to it must never look like a no-op.
+        Assert.True(CloudflaredProvisioner.BypassDrifted(
+            new[] { "2407:8b00:116d:e500::/56" }, new[] { "2407:8b00:116d::/48" }));
+    }
+
+    [Fact]
+    public void BypassDrifted_DetectsARemovedEntryAndAnEmptyLivePolicy()
+    {
+        Assert.True(CloudflaredProvisioner.BypassDrifted(
+            new[] { "118.67.199.127/32", "203.0.113.5/32" }, new[] { "118.67.199.127/32" }));
+        Assert.True(CloudflaredProvisioner.BypassDrifted(
+            Array.Empty<string>(), new[] { "118.67.199.127/32" }));
+    }
+
+    [Fact]
+    public void BypassDrifted_KeepsUnparseableEntriesDistinct()
+    {
+        // A garbage entry must count as a difference, not normalise away to nothing and
+        // silently compare equal — that would leave a broken policy in place forever.
+        Assert.True(CloudflaredProvisioner.BypassDrifted(
+            new[] { "not-an-ip" }, new[] { "118.67.199.127/32" }));
+        Assert.False(CloudflaredProvisioner.BypassDrifted(
+            new[] { "not-an-ip" }, new[] { "not-an-ip" }));
+    }
+
     // #322 — a tunnel may front hostnames in more than one zone (the household media path
     // is tao-simon.family while the rest of the stack is chrison.dev). Every DNS call used
     // to be made against ingress[0]'s zone, which silently misfiled second-zone records.

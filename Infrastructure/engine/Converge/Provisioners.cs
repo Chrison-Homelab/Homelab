@@ -238,6 +238,9 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
             var allow = ParseAccessAllow(s.Spec.Config);
             if (allow.Count > 0)
                 yield return $"ensure a CF Access OTP app per gated hostname (allow {string.Join(", ", allow)})";
+            var bypass = ParseAccessBypass(s.Spec.Config);
+            if (bypass.Count > 0)
+                yield return $"reconcile the '{BypassPolicyName}' policy on each gated hostname to {string.Join(", ", bypass)}";
             yield return "reconcile: prune our managed CNAMEs + Access apps that left the shape (#195)";
         }
     }
@@ -335,14 +338,31 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
                 gated++;
             }
             // Trusted-IP bypass (e.g. home static IP): skip OTP from there. The app's own
-            // login still applies. ADD-ONLY + idempotent by policy name.
-            if (bypassIps.Count > 0 && !await api.AccessPolicyExistsAsync(zone.AccountId, appId, BypassPolicyName, ct))
+            // login still applies. Create-or-RECONCILE: unlike the allow policy this one's
+            // CONTENT is declared by the shape, so existence-by-name isn't enough — the live
+            // CIDR list is compared and rewritten on drift. Create-only was a silent trap:
+            // the home network gained IPv6, browsers began reaching Cloudflare over it, and
+            // the IPv4-only bypass stopped matching — while the shape looked correct and
+            // every converge reported no change (#417).
+            if (bypassIps.Count > 0)
             {
-                await api.CreateAccessBypassIpPolicyAsync(zone.AccountId, appId, BypassPolicyName, bypassIps, ct);
-                gated++;
+                var livePolicy = await api.GetAccessPolicyAsync(zone.AccountId, appId, BypassPolicyName, ct);
+                if (livePolicy is null)
+                {
+                    await api.CreateAccessBypassIpPolicyAsync(zone.AccountId, appId, BypassPolicyName, bypassIps, ct);
+                    gated++;
+                }
+                else if (BypassDrifted(livePolicy.IncludeIps, bypassIps))
+                {
+                    await api.UpdateAccessBypassIpPolicyAsync(zone.AccountId, appId, livePolicy.Id, BypassPolicyName, bypassIps, ct);
+                    gated++;
+                }
             }
         }
-        var gateNote = allowEmails.Count > 0 ? $", {ingress.Count} host(s) Access-gated" : "";
+        // A bypass-only shape (Core: the Access apps are hand-made, we own just the policy)
+        // still deserves a word in the no-change line — else it reads as if nothing is gated.
+        var gateNote = allowEmails.Count > 0 ? $", {ingress.Count} host(s) Access-gated"
+                     : bypassIps.Count > 0 ? ", trusted-IP bypass in sync" : "";
 
         // Declarative reconcile (#195): a converge makes live CF state match the shape, so
         // hostnames removed from the shape must not regress on the next run. ADD-ONLY still
@@ -440,6 +460,32 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
         => live.Where(a =>
             a.Name.EndsWith(stackSuffix, StringComparison.Ordinal)
             && !gatedHosts.Contains(a.Domain)).ToList();
+
+    // True when a live bypass policy's CIDR list differs from the shape's — the signal to
+    // rewrite it. Set comparison, so order never matters; CIDRs are normalised first
+    // because one IPv6 prefix has many spellings (`2407:8B00:116D:E500:0:0:0:0/56` and
+    // `2407:8b00:116d:e500::/56` are the same network) and Cloudflare echoes back its own.
+    // Without that, an unchanged list would look drifted and be rewritten every converge.
+    public static bool BypassDrifted(IEnumerable<string> live, IEnumerable<string> desired)
+        => !NormalizeCidrs(live).SetEquals(NormalizeCidrs(desired));
+
+    // Canonical form of a CIDR for comparison only — never for sending. Anything that
+    // doesn't parse as an address is kept verbatim rather than dropped: an unparseable
+    // entry must still count as a difference, not silently compare equal to nothing.
+    private static HashSet<string> NormalizeCidrs(IEnumerable<string> cidrs)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in cidrs)
+        {
+            var c = raw?.Trim();
+            if (string.IsNullOrEmpty(c)) continue;
+            var slash = c.IndexOf('/');
+            var addr = slash < 0 ? c : c[..slash];
+            var len = slash < 0 ? "" : c[slash..];
+            set.Add(System.Net.IPAddress.TryParse(addr, out var ip) ? ip.ToString() + len : c);
+        }
+        return set;
+    }
 
     // Ingress hostnames flagged `public: true` — routed by the tunnel but deliberately
     // NOT placed behind the CF Access OTP gate (the app provides its own auth and/or has
