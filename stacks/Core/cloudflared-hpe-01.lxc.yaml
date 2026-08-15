@@ -27,6 +27,36 @@ spec:
   # Post-create wiring (converge / BL-010 — ADD-ONLY on Cloudflare, see CLAUDE.md):
   config:
     tunnel: Homelab.Stacks.Core              # NEW named tunnel — never touches existing tunnels / CT 2001
+
+    # CF Access trusted-IP bypass (#417). Every hostname below is gated by a HAND-MADE
+    # Access app (`Pangolin (admin SSO)`, `PDM (…)`, `Proxmox node UI (break-glass)`) —
+    # this block does NOT try to own those. There is deliberately NO `allow:` key: with
+    # only `bypass:` set, converge creates no allow policy and leaves the hand-made ones
+    # (and their differing names) untouched, while still reconciling the one policy we do
+    # own, `bypass-trusted-ip`. The apps are found by domain, so nothing is created; the
+    # prune only ever matches apps named `… (Core)`, which none of these are.
+    #
+    # ⚠ BOTH ADDRESS FAMILIES, or the bypass silently does nothing. The v4 entry alone
+    # was the original bug: these hostnames are orange-clouded, so Cloudflare publishes
+    # AAAA records, the house has native IPv6 from Quic, and browsers prefer it — so
+    # Access saw an IPv6 client that the /32 could never match and served a One-Time PIN
+    # on every visit. Worse than it sounds: every *.lab/*.arr resource bounces through
+    # pangolin.chrison.dev/auth/resource/… for its SSO gate, so the PIN sat in the login
+    # path of the whole admin surface. Verify a change with BOTH:
+    #     curl -sI -4 https://pangolin.chrison.dev   # expect 200 from the origin
+    #     curl -sI -6 https://pangolin.chrison.dev   # expect 200 — a 302 to
+    #                                                # chrison.cloudflareaccess.com = still gated
+    access:
+      bypass:
+        - 118.67.199.127/32           # home WAN IPv4 — static (matches `publicIp` in pangolin.lxc.yaml)
+        - 2407:8b00:116d:e500::/56    # home IPv6 prefix — DHCPv6-PD from Quic, sticky in practice
+                                      # (UniFi shows no reservation for it, confirmed stable by the
+                                      # user). The /56 is the whole house: all four VLANs draw their
+                                      # /64s from it (1000/1010/1020/1040, e.g. …e503::/64). Do NOT
+                                      # widen this to the /48 — that is Quic's pool, i.e. other
+                                      # customers, and would let them past the gate. If OTP ever
+                                      # returns at home, re-check the prefix here first.
+
     # Ingress is a TUNNEL-level property defined ONCE here (the replica omits it).
     ingress:
       # Pangolin — SSO remote-access front door (ADR-0007). Replaces Teleport, whose

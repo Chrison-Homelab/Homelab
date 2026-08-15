@@ -42,6 +42,9 @@ public sealed class GithubApi
 public sealed record CfZone(string ZoneId, string AccountId);
 public sealed record CfDnsRecord(string Id, string Name, string Content, string Comment);
 public sealed record CfAccessApp(string Id, string Name, string Domain);
+// An Access policy plus the IP CIDRs it includes — enough to tell whether a shape's
+// `access.bypass` list still matches live (the policy is keyed by name, its content isn't).
+public sealed record CfAccessPolicy(string Id, string Name, IReadOnlyList<string> IncludeIps);
 
 public sealed class CloudflareApi
 {
@@ -232,6 +235,26 @@ public sealed class CloudflareApi
         await ResultAsync(await _http.PostAsync($"accounts/{accountId}/access/apps/{appId}/policies", body, ct), ct);
     }
 
+    // The named policy on an app together with the IP CIDRs it includes, or null if absent.
+    // Existence alone is not enough for the bypass policy: its CIDR list is the thing the
+    // shape declares, so a converge has to be able to see the live list and correct it.
+    public async Task<CfAccessPolicy?> GetAccessPolicyAsync(string accountId, string appId, string policyName, CancellationToken ct)
+    {
+        var r = await ResultAsync(await _http.GetAsync($"accounts/{accountId}/access/apps/{appId}/policies", ct), ct);
+        foreach (var p in r.EnumerateArray())
+        {
+            if (p.GetProperty("name").GetString() != policyName) continue;
+            var ips = new List<string>();
+            if (p.TryGetProperty("include", out var inc) && inc.ValueKind == JsonValueKind.Array)
+                foreach (var e in inc.EnumerateArray())
+                    if (e.TryGetProperty("ip", out var ipObj) && ipObj.ValueKind == JsonValueKind.Object
+                        && ipObj.TryGetProperty("ip", out var ip) && ip.GetString() is { Length: > 0 } cidr)
+                        ips.Add(cidr);
+            return new CfAccessPolicy(p.GetProperty("id").GetString()!, policyName, ips);
+        }
+        return null;
+    }
+
     // A `bypass` policy: requests from the given IP CIDRs skip authentication entirely
     // (no OTP) — used to exempt a trusted static IP (e.g. home) from the gate. The app's
     // OWN login (Proxmox/PDM/Pangolin/Seerr) still applies; this only drops the CF layer.
@@ -246,5 +269,23 @@ public sealed class CloudflareApi
         });
         var body = new StringContent(json, Encoding.UTF8, "application/json");
         await ResultAsync(await _http.PostAsync($"accounts/{accountId}/access/apps/{appId}/policies", body, ct), ct);
+    }
+
+    // Rewrite an EXISTING bypass policy's CIDR list. The only mutation here that edits
+    // rather than adds — and it is confined to a policy WE created, matched by our own
+    // name (`bypass-trusted-ip`), on an app the caller already resolved. Without it,
+    // `access.bypass` is write-once: the create is skipped forever once the policy
+    // exists, so editing the list in a shape moves nothing (how the IPv4-only bypass
+    // outlived the home network gaining IPv6).
+    public async Task UpdateAccessBypassIpPolicyAsync(string accountId, string appId, string policyId, string policyName, IReadOnlyList<string> cidrs, CancellationToken ct)
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            name = policyName,
+            decision = "bypass",
+            include = cidrs.Select(c => new { ip = new { ip = c } }).ToArray(),
+        });
+        var body = new StringContent(json, Encoding.UTF8, "application/json");
+        await ResultAsync(await _http.PutAsync($"accounts/{accountId}/access/apps/{appId}/policies/{policyId}", body, ct), ct);
     }
 }

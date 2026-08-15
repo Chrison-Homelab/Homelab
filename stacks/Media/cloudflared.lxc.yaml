@@ -44,9 +44,15 @@ spec:
     # IdP these emails log in via One-Time PIN (same pattern as PDM/Proxmox).
     access:
       allow: [csimon@chrison.dev]
-      # Trusted home static IP — requests from here skip the OTP gate entirely (the app's
-      # own login still applies). ADD-ONLY: a `bypass-trusted-ip` policy alongside the allow.
-      bypass: [118.67.199.127/32]
+      # Trusted home addresses — requests from here skip the OTP gate entirely (the app's
+      # own login still applies). The `bypass-trusted-ip` policy sits alongside the allow and
+      # is RECONCILED, not just created (#417): editing this list now actually moves live.
+      # BOTH families are required — seerr is orange-clouded, so a dual-stack browser reaches
+      # Cloudflare over IPv6 and a v4-only bypass never matches. See the Core tunnel shape for
+      # the full write-up and the /56-not-/48 warning.
+      bypass:
+        - 118.67.199.127/32           # home WAN IPv4 (static)
+        - 2407:8b00:116d:e500::/56    # home IPv6 prefix (DHCPv6-PD, sticky)
     # Ingress is a TUNNEL-level property defined ONCE here. ONLY the user-facing apps
     # are routed; the admin UIs + flaresolverr are internal-only (not listed = not exposed).
     # Entries flagged `public: true` get DNS + routing only (no CF Access — app's own auth).

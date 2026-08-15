@@ -230,6 +230,33 @@ deploy shape and the behind-cloudflared model. Findings:
   provisioned to unlock OIDC/external-IdP + RBAC (gated since the post-1.18.4 dual-licensing). Store it
   as a secret (`secrets.env` / Bitwarden) and install it on first boot; the dashboard then activates EE.
 
+### Operational note (2026-08-16, #417): the CF Access bypass needs BOTH address families
+
+The dashboard is the one piece of this ADR still behind Cloudflare Access — and the trusted-IP
+bypass that is supposed to make that invisible at home listed only the static IPv4 address, so it
+never matched. `pangolin.chrison.dev` is orange-clouded, Cloudflare therefore publishes AAAA
+records, the house has native IPv6, and browsers prefer it: Access saw an IPv6 client and served a
+One-Time PIN on every visit.
+
+That lands harder here than on the other gated hostnames, because **decision #1's split puts the
+dashboard in the login path of the whole `*.lab` / `*.arr` surface** — those resources are served
+by Traefik with no Cloudflare in front, but their SSO gate redirects to
+`pangolin.chrison.dev/auth/resource/…`. One unmatched bypass therefore re-gated every admin UI the
+ADR moved *off* Cloudflare.
+
+Both families are now declared in `stacks/Core/cloudflared-hpe-01.lxc.yaml` (and the Media tunnel's).
+Two things worth carrying forward:
+
+- **Verify a bypass change over IPv6, not just IPv4** — `curl -sI -6 https://<host>`; a 302 to
+  `chrison.cloudflareaccess.com` means still gated. An IPv4-only check passes while the browser path
+  is broken, which is exactly how this survived unnoticed.
+- **Bypass the `/56`, never the `/48`.** The `/56` is the delegated prefix all four VLANs draw their
+  `/64`s from — the house. The `/48` is Quic's pool: other customers, waved past the gate.
+
+The IPv6 prefix is DHCPv6-PD rather than static like the v4 address (open decision 5), so it is the
+one part of this that can drift. Since #417 the policy is reconciled rather than create-only, so
+correcting it is a shape edit plus a converge.
+
 ## Open decisions
 
 1. **Per-hostname map lives in the DSL (renamable IaC).** The hostname → backend map is declared in
