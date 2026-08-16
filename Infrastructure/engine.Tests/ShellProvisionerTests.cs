@@ -208,25 +208,91 @@ public sealed class ShellProvisionerTests : IDisposable
         var script = ShellProvisioner.BuildDeploy(ShellShape(), "abc123", "/home/csimon/.homelab-managed");
 
         var stamp = script.IndexOf("printf '%s' 'abc123'", StringComparison.Ordinal);
-        Assert.True(stamp > 0);
-        Assert.True(stamp > script.IndexOf("apt-get install", StringComparison.Ordinal));
-        Assert.True(stamp > script.IndexOf("systemctl enable --now tmux-main.service", StringComparison.Ordinal));
+        Assert.True(stamp > 0, "the marker must be stamped");
+
+        // Anchored on strings that must actually be present — an IndexOf that returns -1 for a
+        // renamed step would make `stamp > -1` pass for the wrong reason.
+        foreach (var step in new[] { "apt-get install", "loginctl enable-linger", "systemctl --user enable tmux-main.service" })
+        {
+            var at = script.IndexOf(step, StringComparison.Ordinal);
+            Assert.True(at > 0, $"expected the deploy script to contain '{step}'");
+            Assert.True(stamp > at, $"the marker must be stamped after '{step}'");
+        }
     }
 
     // ---- the boot unit (#408) ---------------------------------------------
 
     [Fact]
-    public void Unit_IsOneshotRemainAfterExit_AndRunsAsTheUser()
+    public void Unit_IsAForkingUserUnit()
     {
-        // `tmux new -d` forks the server and exits, so there is no main process to track.
-        // Type=forking would wait for a fork that has already happened.
+        // Regression guard for the bug this replaced. A SYSTEM unit with Type=oneshot +
+        // RemainAfterExit=yes looks right — `tmux new -d` really does fork and exit — but
+        // systemd reaps a oneshot's cgroup once ExecStart exits, killing the server it just
+        // started. RemainAfterExit keeps the UNIT active, not its processes: observed on
+        // CT 3003 as `active` with `Tasks: 0` and an empty cgroup.
         var unit = ShellProvisioner.BuildUnit("csimon", "main");
 
-        Assert.Contains("Type=oneshot", unit, StringComparison.Ordinal);
-        Assert.Contains("RemainAfterExit=yes", unit, StringComparison.Ordinal);
-        Assert.Contains("User=csimon", unit, StringComparison.Ordinal);
+        Assert.Contains("Type=forking", unit, StringComparison.Ordinal);
+        Assert.DoesNotContain("Type=oneshot", unit, StringComparison.Ordinal);
+        Assert.DoesNotContain("RemainAfterExit", unit, StringComparison.Ordinal);
+        // A user unit must not carry User= — the user manager already runs as the user, and
+        // systemd rejects the directive outright.
+        Assert.DoesNotContain("User=", unit, StringComparison.Ordinal);
         Assert.Contains("ExecStart=/usr/bin/tmux new-session -d -s main", unit, StringComparison.Ordinal);
-        Assert.Contains("WantedBy=multi-user.target", unit, StringComparison.Ordinal);
+        // default.target, not multi-user.target — this is the user manager's boot target.
+        Assert.Contains("WantedBy=default.target", unit, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deploy_EnablesLingerAndInstallsTheUnitIntoTheUsersOwnSystemdDir()
+    {
+        // Without linger the user manager does not start at boot with nobody logged in, and
+        // the unit — however correct — never runs.
+        var script = ShellProvisioner.BuildDeploy(ShellShape(), "m", "/p");
+
+        Assert.Contains("loginctl enable-linger csimon", script, StringComparison.Ordinal);
+        Assert.Contains("/home/csimon/.config/systemd/user/tmux-main.service", script, StringComparison.Ordinal);
+        Assert.Contains("systemctl --user enable tmux-main.service", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deploy_RetiresTheLegacySystemUnit()
+    {
+        // Hosts provisioned by the first cut carry /etc/systemd/system/tmux-main.service.
+        // Leaving it would race the user unit for the same session name.
+        var script = ShellProvisioner.BuildDeploy(ShellShape(), "m", "/p");
+
+        Assert.Contains("rm -f /etc/systemd/system/tmux-main.service", script, StringComparison.Ordinal);
+        // ...guarded, so a host that never had one still converges.
+        Assert.Contains("if [ -f /etc/systemd/system/tmux-main.service ]", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deploy_DoesNotStartTheUnitOverAServerThatIsAlreadyRunning()
+    {
+        // A converge must never kill a live tmux server to take ownership of it — that is
+        // someone's work. If one is up, enable the unit and let it adopt at the next boot.
+        var script = ShellProvisioner.BuildDeploy(ShellShape(), "m", "/p");
+
+        Assert.Contains("tmux has-session -t main", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deploy_NeverKillsAServerThatIsAlreadyHoldingWork()
+    {
+        // TPM's install_plugins needs a live server. On a fresh host we start a scratch one and
+        // kill it so the boot unit creates the real session cleanly — but on a RE-converge that
+        // same kill would throw away whatever the host has been keeping alive. The kill must
+        // therefore only ever appear in the no-server-running branch.
+        var script = ShellProvisioner.BuildDeploy(ShellShape(), "m", "/p");
+
+        var hasSession = script.IndexOf("tmux has-session'", StringComparison.Ordinal);
+        var elseBranch = script.IndexOf("\nelse\n", hasSession, StringComparison.Ordinal);
+        var kill = script.IndexOf("tmux kill-server", StringComparison.Ordinal);
+
+        Assert.True(hasSession > 0, "the TPM step must branch on whether a server is running");
+        Assert.True(kill > elseBranch && elseBranch > hasSession,
+            "tmux kill-server must sit in the else (no server running) branch, never unconditionally");
     }
 
     [Fact]

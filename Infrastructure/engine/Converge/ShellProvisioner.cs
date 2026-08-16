@@ -87,7 +87,9 @@ public sealed class ShellProvisioner : IAppProvisioner
             yield return $"tic -x {ti} → ~{user}/.terminfo (else SSH in reports 'unknown terminal type')";
 
         yield return $"clone TPM + run install_plugins non-interactively (no one to press prefix + I)";
-        yield return $"install + enable {UnitName(session)} → tmux session '{session}' returns after a reboot (#408)";
+        yield return $"loginctl enable-linger {user} → user units start at boot with nobody logged in";
+        yield return $"install + enable ~{user}/.config/systemd/user/{UnitName(session)} → tmux session " +
+                     $"'{session}' returns after a reboot (#408); retires the old system unit if present";
     }
 
     // Stable marker over every managed input.
@@ -208,25 +210,73 @@ public sealed class ShellProvisioner : IAppProvisioner
             sb.Append($"chown -R {user}:{user} {home}/.terminfo\n");
         }
 
-        // 7. TPM + plugins. install_plugins needs a live server to talk to, so start one and
-        //    source the config first; `tmux kill-server` afterwards leaves the boot unit to
-        //    create the real session cleanly rather than inheriting this scratch one.
+        // 7. TPM + plugins. install_plugins needs a live server to talk to.
+        //
+        //    The branch matters. On a fresh host we start a scratch server, install into it and
+        //    kill it, so the boot unit below creates the real session cleanly instead of
+        //    inheriting the scratch one. But on a RE-converge there may already be a server
+        //    holding real work — killing that to install a plugin would throw away exactly what
+        //    this host exists to keep. So when one is running we source the (possibly updated)
+        //    config into it and install into it, and leave it alone otherwise.
         sb.Append(AsUser(user, $"[ -d {home}/.tmux/plugins/tpm ] || " +
                                $"git clone --depth 1 {TpmRepo} {home}/.tmux/plugins/tpm"));
-        sb.Append(AsUser(user, "tmux start-server"));
-        sb.Append(AsUser(user, $"tmux source-file {home}/.tmux.conf || true"));
-        sb.Append(AsUser(user, $"{home}/.tmux/plugins/tpm/bin/install_plugins"));
-        sb.Append(AsUser(user, "tmux kill-server || true"));
+        sb.Append($"if {AsUserInline(user, "tmux has-session")} 2>/dev/null; then\n");
+        sb.Append($"  {AsUserInline(user, $"tmux source-file {home}/.tmux.conf")} || true\n");
+        sb.Append($"  {AsUserInline(user, $"{home}/.tmux/plugins/tpm/bin/install_plugins")}\n");
+        sb.Append("else\n");
+        sb.Append($"  {AsUserInline(user, "tmux start-server")}\n");
+        sb.Append($"  {AsUserInline(user, $"tmux source-file {home}/.tmux.conf")} || true\n");
+        sb.Append($"  {AsUserInline(user, $"{home}/.tmux/plugins/tpm/bin/install_plugins")}\n");
+        sb.Append($"  {AsUserInline(user, "tmux kill-server")} || true\n");
+        sb.Append("fi\n");
 
-        // 8. The boot unit. Type=oneshot + RemainAfterExit: `tmux new -d` forks the server and
-        //    exits, so there is no main process for systemd to track — oneshot models that
-        //    honestly, where Type=forking would wait for a fork that already happened.
-        var unit = BuildUnit(user, session);
-        sb.Append($"cat > /etc/systemd/system/{UnitName(session)} <<'HOMELAB_UNIT'\n");
-        sb.Append(unit);
+        // 8. The boot unit — a USER unit under linger, not a system unit.
+        //
+        //    The first cut was a SYSTEM unit with Type=oneshot + RemainAfterExit=yes, reasoning
+        //    that `tmux new -d` forks the server and exits so there is no main process to track.
+        //    That is true, and it does not work: systemd reaps a oneshot's cgroup once ExecStart
+        //    exits, so the server it just started is killed moments later. RemainAfterExit only
+        //    keeps the UNIT marked active — it does not keep the processes. Observed live on
+        //    CT 3003: `tmux-main.service` reported active with `Tasks: 0` and an empty cgroup,
+        //    while the only surviving tmux sat in a leftover SSH session scope.
+        //
+        //    A user unit under `loginctl enable-linger` is the right model: the user manager
+        //    starts it at boot with nobody logged in, and Type=forking tracks the daemonised
+        //    server as the unit's main process, so it lives in the unit's cgroup and is not
+        //    tied to any login session.
+        sb.Append($"loginctl enable-linger {user}\n");
+        // enable-linger returns before user@.service has finished starting, and a
+        // `systemctl --user` that races it fails with "Failed to connect to bus". Bounded so a
+        // genuinely broken host still errors rather than hanging. (Same wait PodmanProvisioner
+        // needs, for the same reason.)
+        sb.Append($"UID_N=$(id -u {user})\n");
+        sb.Append("for i in $(seq 1 30); do [ -S /run/user/$UID_N/bus ] && break; sleep 1; done\n");
+
+        sb.Append($"install -d -o {user} -g {user} -m 755 {home}/.config/systemd/user\n");
+        sb.Append($"cat > {home}/.config/systemd/user/{UnitName(session)} <<'HOMELAB_UNIT'\n");
+        sb.Append(BuildUnit(user, session));
         sb.Append("HOMELAB_UNIT\n");
-        sb.Append("systemctl daemon-reload\n");
-        sb.Append($"systemctl enable --now {UnitName(session)}\n");
+        sb.Append($"chown -R {user}:{user} {home}/.config/systemd\n");
+
+        //    Migration: retire the system unit this provisioner used to install. Guarded so a
+        //    host that never had one does not fail the converge.
+        sb.Append($"if [ -f /etc/systemd/system/{UnitName(session)} ]; then\n");
+        sb.Append($"  systemctl disable --now {UnitName(session)} || true\n");
+        sb.Append($"  rm -f /etc/systemd/system/{UnitName(session)}\n");
+        sb.Append("  systemctl daemon-reload\n");
+        sb.Append("fi\n");
+
+        sb.Append($"{UserCmd(user, "systemctl --user daemon-reload")}\n");
+        sb.Append($"{UserCmd(user, $"systemctl --user enable {UnitName(session)}")}\n");
+        //    Start it only if no server is already running. A converge must never kill a live
+        //    tmux server to take ownership of it — that is someone's work. If one is already up
+        //    (including the orphan the old system unit left behind), the unit is enabled and
+        //    adopts the session at the next boot instead.
+        sb.Append($"if {UserCmd(user, $"tmux has-session -t {session}")} 2>/dev/null; then\n");
+        sb.Append($"  echo 'tmux server already running — unit enabled, it will own the session from the next boot'\n");
+        sb.Append("else\n");
+        sb.Append($"  {UserCmd(user, $"systemctl --user start {UnitName(session)}")}\n");
+        sb.Append("fi\n");
 
         // 9. Marker LAST — anything above failing means no marker, means a re-run.
         sb.Append($"printf '%s' '{marker}' > {markerPath}\n");
@@ -237,32 +287,48 @@ public sealed class ShellProvisioner : IAppProvisioner
 
     internal static string UnitName(string session) => $"tmux-{session}.service";
 
+    // A systemd USER unit — installed to ~/.config/systemd/user, enabled under linger.
+    // No User= line: the user manager already runs as the user, and setting it in a user unit
+    // is an error.
     internal static string BuildUnit(string user, string session) => $"""
         [Unit]
         Description=Long-lived tmux session '{session}' for {user} (homelab shell host)
         Documentation=https://github.com/Chrison-Homelab/Homelab/issues/404
-        After=network-online.target
-        Wants=network-online.target
 
         [Service]
-        Type=oneshot
-        RemainAfterExit=yes
-        User={user}
-        # tmux-resurrect restores into the session this creates; TERM has to name an entry
-        # that exists on the host, not whatever the last client happened to use.
-        Environment=TERM=tmux-256color
+        # Type=forking, because `tmux new-session -d` daemonises the server and the client
+        # exits. systemd then tracks the surviving server as the unit's main process, so it
+        # lives in the unit's cgroup rather than in whichever login session happened to start
+        # it. See the note in BuildDeploy for why the system-unit oneshot this replaces could
+        # not work.
+        Type=forking
         ExecStart=/usr/bin/tmux new-session -d -s {session}
         ExecStop=/usr/bin/tmux kill-session -t {session}
+        Restart=on-failure
+        # tmux-resurrect restores into the session this creates; TERM has to name an entry that
+        # exists on the host, not whatever the last client happened to use.
+        Environment=TERM=tmux-256color
 
         [Install]
-        WantedBy=multi-user.target
+        WantedBy=default.target
 
         """;
 
     // Run a command as the login user with a real login environment. `sudo -u` alone keeps
     // root's HOME, which sends TPM's clone and the plugin install into /root.
-    private static string AsUser(string user, string cmd) =>
-        $"runuser -l {user} -c {Quote(cmd)}\n";
+    private static string AsUser(string user, string cmd) => AsUserInline(user, cmd) + "\n";
+
+    // Same, without the trailing newline — for use inside an if/else in the generated script.
+    private static string AsUserInline(string user, string cmd) =>
+        $"runuser -l {user} -c {Quote(cmd)}";
+
+    // Run a command as the user with a working user-systemd/dbus session. `pct exec` has no
+    // login session, no tty and no PAM environment, so `systemctl --user` cannot find the bus
+    // on its own — both variables are required. Interpolates $UID_N, which BuildDeploy defines
+    // before the first use. (Same incantation PodmanProvisioner established in #284.)
+    internal static string UserCmd(string user, string cmd) =>
+        $"runuser -u {user} -- env XDG_RUNTIME_DIR=/run/user/$UID_N " +
+        $"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$UID_N/bus {cmd}";
 
     private static string Quote(string s) => "'" + s.Replace("'", "'\\''") + "'";
 
