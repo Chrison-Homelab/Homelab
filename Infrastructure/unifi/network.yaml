@@ -48,6 +48,38 @@ spec:
       protocol: tcp
       log: false
 
+    # ── Gerbil / WireGuard (#406, #137). Gerbil is Pangolin's WireGuard server and is now
+    #    part of the stack (stacks/Core/pangolin.lxc.yaml, includeGerbil: true). These two
+    #    forwards are what make it reachable from outside; without them Gerbil comes up and
+    #    listens but nothing can hand it a handshake.
+    #
+    #    51820 is the standard WireGuard data port (remote sites / clients). 21820 is
+    #    Gerbil's second listener — both are published by the container and both are
+    #    documented in ADR-0007's port table, so declare the pair rather than discovering
+    #    the second one later.
+    #
+    #    UDP, deliberately: WireGuard is UDP-only. This is also what keeps mosh viable as
+    #    the #407 answer, where a TCP-only path (cloudflared access ssh) would not.
+    - name: pangolin-wireguard
+      enabled: true
+      interface: wan
+      source: any
+      destinationPort: "51820"
+      forwardIp: 10.10.0.13
+      forwardPort: "51820"
+      protocol: udp
+      log: false
+
+    - name: pangolin-wireguard-alt
+      enabled: true
+      interface: wan
+      source: any
+      destinationPort: "21820"
+      forwardIp: 10.10.0.13
+      forwardPort: "21820"
+      protocol: udp
+      log: false
+
   # Controller-local DNS (#419). The three Pangolin-fronted zones are grey-cloud A records
   # at Cloudflare pointing to the home WAN IP, so INSIDE the house they resolved to the WAN
   # too and every admin UI was reached by NAT hairpin back through the port-forward above.
