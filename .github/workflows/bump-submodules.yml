@@ -1,11 +1,29 @@
-name: bump-stack-submodules
+name: bump-submodules
 
 # Phase 0 / ADR-0008 — the submodule auto-bump bot.
 #
 # A git submodule ALWAYS pins a commit; there is no "track the branch head" mode. So the
 # superproject will always need a bump commit — the point of this workflow is that a human
-# never writes one. Hourly (and on demand) it advances every stacks/* pointer to its remote
-# default-branch HEAD, validates the newly-pinned shapes, and merges itself.
+# never writes one. Hourly (and on demand) it advances every stacks/* AND vendor/* pointer
+# to its remote default-branch HEAD, validates the newly-pinned shapes, and merges itself.
+#
+# ⚠️ THE TWO PATH SETS MEAN DIFFERENT THINGS
+#
+#   stacks/*  is CONTENT. The engine loads these shapes, so the pinned commit changes what
+#             converge does — which is why the validate gate below exists.
+#   vendor/*  is REFERENCE. The engine consumes Chrison.ProxmoxSharp / .UnifiSharp /
+#             .SynoSharp as NuGet packages pinned in the csproj, so these pointers change
+#             nothing about the build. They exist so the vendored source you read matches
+#             the client you are building against.
+#
+# vendor/* was excluded until 2026-08-16 and drifted silently for months: vendor/UnifiSharp
+# sat two releases behind the package the engine consumed, and ProxmoxSharp/SynoSharp were
+# stale too. Nobody noticed, because nothing breaks — it just quietly stops being true.
+#
+# Because a vendor pointer tracks the repo's HEAD rather than the released package, it can
+# now sit slightly AHEAD of the pinned NuGet version between a merge and a release. That is
+# the lesser of the two mismatches and it is deliberate; #433 is the real fix, which is to
+# stop vendoring these at all.
 #
 # ⚠️ WHY VALIDATION RUNS IN THIS WORKFLOW AND NOT AS A PR CHECK
 #
@@ -21,6 +39,8 @@ name: bump-stack-submodules
 #
 # Tokens: SUBMODULES_RO_PAT reads the private Homelab.Stacks.* repos; the default
 # GITHUB_TOKEN (contents + PR write, below) pushes the branch, opens the PR and merges it.
+# The three vendor/* repos are PUBLIC, so they need no credential — they are covered by the
+# same `insteadOf` rewrite only because it is simpler than special-casing them.
 
 on:
   schedule:
@@ -33,7 +53,7 @@ permissions:
   pull-requests: write       # open/maintain the bump PR
 
 concurrency:
-  group: bump-stack-submodules
+  group: bump-submodules
   cancel-in-progress: false    # this one merges to main — never kill it mid-merge. Runs are
                                # short and usually no-ops, so queueing costs nothing.
 
@@ -47,7 +67,7 @@ jobs:
         with:
           fetch-depth: 0     # need history to push a branch
 
-      - name: Bump stacks/* submodules to remote HEAD
+      - name: Bump stacks/* and vendor/* submodules to remote HEAD
         id: bump
         env:
           TOKEN: ${{ secrets.SUBMODULES_RO_PAT }}
@@ -56,13 +76,13 @@ jobs:
           # Auth the private submodule fetches via the RO PAT (scoped to this step, then
           # removed so the later push uses the checkout's GITHUB_TOKEN creds).
           git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
-          paths=$(git config --file .gitmodules --get-regexp path | awk '{print $2}' | grep '^stacks/')
+          paths=$(git config --file .gitmodules --get-regexp path | awk '{print $2}' | grep -E '^(stacks|vendor)/')
           git submodule update --init $paths
           git submodule update --remote $paths
           git config --global --unset-all url."https://x-access-token:${TOKEN}@github.com/".insteadOf || true
           if git diff --quiet -- $paths; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No stack submodule updates."
+            echo "No submodule updates."
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "Bumped:"; git submodule status $paths
@@ -76,27 +96,33 @@ jobs:
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B automation/bump-stack-submodules
-          git commit -am "Bump the stacks/* submodule pointers to remote HEAD"
-          git push -f origin automation/bump-stack-submodules
+          git checkout -B automation/bump-submodules
+          git commit -am "Bump the submodule pointers to remote HEAD"
+          git push -f origin automation/bump-submodules
 
-          if [ -n "$(gh pr list --head automation/bump-stack-submodules --state open --json number -q '.[].number')" ]; then
+          if [ -n "$(gh pr list --head automation/bump-submodules --state open --json number -q '.[].number')" ]; then
             echo "An open bump PR already exists — its branch has been updated."
             exit 0
           fi
 
           cat > /tmp/bump-body.md <<'BODY'
-          Automated bump of `stacks/*` submodule pointers to each repo's default-branch HEAD
-          (ADR-0008 auto-bump bot).
+          Automated bump of `stacks/*` and `vendor/*` submodule pointers to each repo's
+          default-branch HEAD (ADR-0008 auto-bump bot).
 
           A submodule always pins a commit, so this PR exists to record *which* commit — it is
           not a decision point. The shapes at the newly-pinned commits are validated by this
           workflow's own `validate` job, which then merges this PR. If you are reading this on
           an **open** PR, that gate failed and the pointers need a look.
+
+          `stacks/*` is content the engine loads, so its commit changes what converge does.
+          `vendor/*` is reference only — the engine consumes the `Chrison.*Sharp` clients as
+          NuGet packages pinned in the csproj, so those pointers change nothing about the
+          build and exist so the vendored source matches the client being built against
+          (Homelab#433 removes the need for them entirely).
           BODY
 
-          gh pr create --base main --head automation/bump-stack-submodules \
-            --title "Bump the stacks/* submodule pointers to remote HEAD" \
+          gh pr create --base main --head automation/bump-submodules \
+            --title "Bump the submodule pointers to remote HEAD" \
             --label skip-changelog \
             --body-file /tmp/bump-body.md
 
@@ -110,15 +136,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: automation/bump-stack-submodules
+          ref: automation/bump-submodules
 
-      - name: Fetch stack submodules at the newly-pinned commits
+      - name: Fetch submodules at the newly-pinned commits
         env:
           TOKEN: ${{ secrets.SUBMODULES_RO_PAT }}
         run: |
           set -euo pipefail
           git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
-          paths=$(git config --file .gitmodules --get-regexp path | awk '{print $2}' | grep '^stacks/')
+          paths=$(git config --file .gitmodules --get-regexp path | awk '{print $2}' | grep -E '^(stacks|vendor)/')
           git submodule update --init $paths
           git config --global --unset-all url."https://x-access-token:${TOKEN}@github.com/".insteadOf || true
 
@@ -139,7 +165,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          PR=$(gh pr list --head automation/bump-stack-submodules --state open --json number -q '.[].number' | head -1)
+          PR=$(gh pr list --head automation/bump-submodules --state open --json number -q '.[].number' | head -1)
           if [ -z "$PR" ]; then
             echo "No open bump PR to merge — nothing to do."
             exit 0
