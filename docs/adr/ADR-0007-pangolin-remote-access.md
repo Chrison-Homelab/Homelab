@@ -211,6 +211,11 @@ deploy shape and the behind-cloudflared model. Findings:
   and correct the header/comments. `PangolinProvisioner` (#145) changes to match.
 - **Gerbil/WireGuard is unused** in the on-prem-behind-cloudflared model (no Newt clients) — installed
   but idle. Confirms **no VPS / no Newt** needed for the SSO goal, as decided above.
+  > **Amended 2026-08-16 (#406):** still true of the *SSO goal*, no longer true of the stack. Gerbil is
+  > now **on** (`includeGerbil: true`), which is upstream's recommended topology — pangolin + traefik +
+  > gerbil — and the prerequisite for raw TCP/UDP resources, Newt clients, and the VPS graduation in
+  > decision #4. See open decision 6 below. It is a **topology change**: gerbil owns `:80`/`:443`
+  > (tcp+udp) and traefik joins its netns rather than publishing the ports itself.
 - **Ingress integration.** Public ingress is the **home-IP `:443` port-forward** (UniFi WAN → Pangolin
   Traefik); Traefik routes by Host header to the backend and the **badger** plugin enforces Pangolin
   auth (redirect-to-login). A new service is a **DNS-only A record under `*.lab` / `*.arr` + a Pangolin
@@ -280,6 +285,20 @@ correcting it is a shape edit plus a converge.
 5. ~~DDNS for the home WAN IP~~ — **resolved:** the WAN IP is **static** (`chrison.dev` already
    resolves to it; `quic.nz` rDNS points back). The `*.lab` / `*.arr` grey-cloud A records point at
    the static IP directly — no DDNS updater needed.
+6. ~~Off-network transport to the shell host~~ — **resolved (2026-08-16, [#406](https://github.com/Chrison-Homelab/Homelab/issues/406)):**
+   a **Pangolin raw resource over Gerbil**, not a mesh VPN and not `cloudflared access ssh`.
+   The shell host (CT 3003, [#404](https://github.com/Chrison-Homelab/Homelab/issues/404)) is reached
+   off-network through Pangolin's own WireGuard path. Rationale: it is upstream's recommended topology
+   (pangolin + traefik + gerbil) rather than a trimmed variant; it keeps remote access consolidated as
+   this ADR intended, instead of standing up a second mechanism; and it is the same machinery Newt
+   clients and the decision-#4 VPS graduation need, so the work is not throwaway.
+   The counter-argument was **circularity** — the shell host is where you would sit to fix Pangolin, so
+   a transport that depends on Pangolin shares a failure domain with the thing it rescues. Accepted
+   knowingly, and it *resolves itself* at the VPS graduation: once the public ingress runs off-site,
+   the entry point is no longer behind the home edge. Until then, break-glass is the LAN and the node
+   consoles. UDP also keeps **mosh** viable for
+   [#407](https://github.com/Chrison-Homelab/Homelab/issues/407), which a TCP-only path would have
+   silently ruled out.
 
 ## Out of scope
 

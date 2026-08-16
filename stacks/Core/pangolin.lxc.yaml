@@ -104,8 +104,25 @@ spec:
     publicIp: 118.67.199.127
     letsEncryptEmail: csimon@chrison.dev
     leStaging: false                             # flip true to use the LE STAGING CA while iterating
-    # includeGerbil: false                       # WireGuard idle in the home-IP trial; enable for the
-                                                  # VPS/Newt graduation (#137). Default off (traefik owns :80/:443).
+    # GERBIL — WireGuard server, ON (#406). This is the upstream-recommended topology:
+    # pangolin + traefik + gerbil, rather than the trimmed pangolin + traefik we ran during
+    # the home-IP trial. Turning it on now buys three things, in increasing order of value:
+    #
+    #   1. It unblocks RAW TCP/UDP resources, which is how the shell host (#404) gets an
+    #      off-network SSH path — the decision recorded on #406.
+    #   2. It is the prerequisite for NEWT clients, i.e. a site dialling OUT to Pangolin.
+    #      That is the same shape as a Cloudflare tunnel, on our own edge.
+    #   3. It is the graduation path ADR-0007 already documents (#137): once a VPS runs the
+    #      public ingress, the home network goes back to outbound-only. Running Gerbil here
+    #      first means that move is a relocation, not a re-architecture.
+    #
+    # ⚠ TOPOLOGY CHANGE, not a flag flip. With gerbil on, GERBIL owns :80/:443 (tcp+udp) and
+    #   traefik joins its network namespace (network_mode: service:gerbil) instead of
+    #   publishing the ports itself. Applying this RESTARTS the public front door for
+    #   *.lab / *.arr / *.iot — Home Assistant, every arr UI, Pulse. Do it deliberately.
+    #   Needs the 51820/udp + 21820/udp forwards declared in
+    #   ../../Infrastructure/unifi/network.yaml to be in place for WireGuard to be reachable.
+    includeGerbil: true
 
     # Image/version pins (the pieces confirmed live during rollout). Defaults live in
     # PangolinProvisioner; override here if a bump is needed:
