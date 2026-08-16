@@ -597,6 +597,56 @@ public sealed class ConvergeCoreTests
     }
 
     [Fact]
+    public void Pangolin_GerbilBaseEndpoint_IsThePublicIp_NotTheCloudflareProxiedDashboard()
+    {
+        // The dashboard is served through the core Cloudflare tunnel, so its hostname resolves
+        // to Cloudflare — and Cloudflare's proxy does not carry WireGuard UDP. A Newt connector
+        // handed that endpoint sends handshakes into a black hole. In public-wildcard mode the
+        // endpoint must be the home WAN IP the 51820/udp forward lives behind.
+        var s = PangolinWildcardShape();
+        s.Spec.Config["publicIp"] = "118.67.199.127";
+
+        Assert.Equal("118.67.199.127", PangolinProvisioner.GerbilBaseEndpoint(s, "pangolin.chrison.dev"));
+    }
+
+    [Fact]
+    public void Pangolin_Marker_ChangesWhenTheGerbilEndpointChanges()
+    {
+        // #437 hashed the compose and Traefik config but not config.yml — where base_endpoint
+        // lives, and whose inputs appear in no other marker component. So the first attempt at
+        // the endpoint fix rendered a new config.yml and still reported NOCHANGE.
+        var before = PangolinWildcardShape();
+        before.Spec.Config["publicIp"] = "118.67.199.127";
+        var after = PangolinWildcardShape();
+        after.Spec.Config["publicIp"] = "118.67.199.127";
+        after.Spec.Config["gerbilEndpoint"] = "edge.example.net";
+
+        Assert.NotEqual(PangolinProvisioner.DesiredMarker(before), PangolinProvisioner.DesiredMarker(after));
+    }
+
+    [Fact]
+    public void Pangolin_GerbilBaseEndpoint_IsOverridableForTheVpsGraduation()
+    {
+        // When Gerbil moves off-site, connectors dial the VPS — this is the knob that turns.
+        var s = PangolinWildcardShape();
+        s.Spec.Config["publicIp"] = "118.67.199.127";
+        s.Spec.Config["gerbilEndpoint"] = "edge.example.net";
+
+        Assert.Equal("edge.example.net", PangolinProvisioner.GerbilBaseEndpoint(s, "pangolin.chrison.dev"));
+    }
+
+    [Fact]
+    public void Pangolin_GerbilBaseEndpoint_FallsBackToTheDashboardHost_WhenNoPublicIp()
+    {
+        // cloudflared mode has no public :443 and no WireGuard path — keep prior behaviour
+        // rather than inventing an endpoint.
+        var s = PangolinWildcardShape();
+        s.Spec.Config.Remove("publicIp");
+
+        Assert.Equal("pangolin.chrison.dev", PangolinProvisioner.GerbilBaseEndpoint(s, "pangolin.chrison.dev"));
+    }
+
+    [Fact]
     public void Pangolin_Marker_ChangesWhenGerbilIsTurnedOn()
     {
         // Regression guard (#406). The marker enumerated `gerbilImage` but NOT `includeGerbil`
