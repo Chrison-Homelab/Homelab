@@ -124,7 +124,32 @@ public static class UnifiConverge
             }
         }
 
-        return new UnifiConvergeResult(plan, created, Applied: apply, Updated: updated);
+        // Static DNS (v2 site API). Read live even on a dry-run so the plan shows real
+        // drift rather than intent.
+        var liveDns = await client.ListStaticDnsAsync(ct).ConfigureAwait(false);
+        var dnsPlan = doc.Spec.StaticDns.Select(d => UnifiStaticDns.Plan(d, liveDns)).ToList();
+        if (apply)
+        {
+            foreach (var item in dnsPlan)
+            {
+                if (item.Action == StaticDnsAction.Create)
+                {
+                    await client.CreateStaticDnsAsync(UnifiStaticDns.ToRecord(item.Desired), ct).ConfigureAwait(false);
+                }
+                else if (item.Action == StaticDnsAction.Update)
+                {
+                    // Full replacement — v2 rejects partials — carrying the live record's
+                    // untouched fields forward rather than resetting them to defaults.
+                    var live = liveDns.First(r => r.Id == item.LiveId);
+                    await client.UpdateStaticDnsAsync(item.LiveId!, UnifiStaticDns.ToRecord(item.Desired, live), ct)
+                        .ConfigureAwait(false);
+                }
+            }
+        }
+
+        return new UnifiConvergeResult(plan, created, Applied: apply, Updated: updated,
+            StaticDns: dnsPlan,
+            UndeclaredDns: UnifiStaticDns.Undeclared(liveDns, doc.Spec.StaticDns));
     }
 #pragma warning restore CS0618
 }
@@ -143,4 +168,6 @@ public sealed record UnifiConvergeResult(
     UnifiConvergePlan Plan,
     IReadOnlyList<string> Created,
     bool Applied,
-    IReadOnlyList<string> Updated);
+    IReadOnlyList<string> Updated,
+    IReadOnlyList<StaticDnsPlanItem> StaticDns,
+    IReadOnlyList<UndeclaredDnsRecord> UndeclaredDns);

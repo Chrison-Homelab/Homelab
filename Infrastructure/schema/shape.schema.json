@@ -101,7 +101,25 @@
           "type": "array",
           "description": "WAN→LAN port-forwards.",
           "items": { "$ref": "#/$defs/portForward" }
+        },
+        "staticDns": {
+          "type": "array",
+          "description": "Controller-local DNS records (#314/#419) — how a name resolves ON THE LAN, with no public zone involved. Reconciled, not just created: a record that exists but answers differently is corrected. Declared here rather than on a guest shape because the useful ones are zone-level and belong to no single member; a per-client record that rides a DHCP reservation is a different endpoint and lives on the guest as network.reservation.localDnsRecord (#416).",
+          "items": { "$ref": "#/$defs/staticDnsRecord" }
         }
+      }
+    },
+    "staticDnsRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "value"],
+      "description": "A single controller-local DNS record. Matched (for add-only idempotency) by name + type. Wildcards are supported and match arbitrary labels — '*.lab.chrison.dev' answers 'anything.lab.chrison.dev'.",
+      "properties": {
+        "name": { "type": "string", "description": "The name to answer for, e.g. '*.lab.chrison.dev' or 'prometheus.homelab.chrison.internal'." },
+        "value": { "type": "string", "description": "The answer — an address for A/AAAA, a target name for CNAME." },
+        "type": { "type": "string", "enum": ["A", "AAAA", "CNAME", "TXT"], "default": "A", "description": "Record type." },
+        "ttl": { "type": "integer", "minimum": 0, "description": "Seconds. Omit to leave the controller's default (300) alone — stating it makes converge own it." },
+        "enabled": { "type": "boolean", "default": true }
       }
     },
     "portForward": {

@@ -21,6 +21,15 @@ public sealed class UnifiNetworkMetadata
 public sealed class UnifiNetworkSpec
 {
     public List<PortForwardSpec> PortForwards { get; set; } = [];
+
+    /// <summary>
+    /// Controller-local DNS records (#314/#419) — LAN-only resolution, no public zone
+    /// involved. Declared here rather than on a guest shape because the useful ones are
+    /// zone-level (a wildcard per Pangolin-fronted zone) and belong to no single member.
+    /// Per-client records that ride a DHCP reservation are a different endpoint and live
+    /// on the guest, as <c>network.reservation.localDnsRecord</c> (#416).
+    /// </summary>
+    public List<StaticDnsSpec> StaticDns { get; set; } = [];
 }
 
 /// <summary>A WAN→LAN port-forward, declared in network.yaml. Maps to the legacy API's port-forward object.</summary>
