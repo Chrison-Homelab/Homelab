@@ -40,19 +40,33 @@ public sealed class UnifiReservationReconciler : IDisposable
     /// Declared reservations for a shape, paired with the netN index each belongs to.
     /// <c>spec.network</c> is the primary NIC (net0); <c>spec.networks[i]</c> is netI.
     /// </summary>
-    public static IEnumerable<(int Index, ReservationSpec Reservation, int? Vlan)> Declared(Shape s)
+    public static IEnumerable<(int Index, ReservationSpec Reservation, int? Vlan)> Declared(Shape s) =>
+        Declared(s.Spec.Network, s.Spec.Networks);
+
+    /// <summary>
+    /// Same, for a <c>kind: VM</c> member. VM reservations are <b>declaration-only</b> today:
+    /// the audit counts them, but the apply path reconciles LXC members only, so a VM's
+    /// reservation is never written. That is fine for the case this exists to serve — a
+    /// <c>parked:</c> reservation held for a retired VM is never meant to be written — and the
+    /// audit calls out any VM reservation that is NOT parked rather than passing over it,
+    /// because a declaration converge silently ignores is worse than no declaration at all.
+    /// </summary>
+    public static IEnumerable<(int Index, ReservationSpec Reservation, int? Vlan)> Declared(VmShape s) =>
+        Declared(s.Spec.Network, s.Spec.Networks);
+
+    private static IEnumerable<(int Index, ReservationSpec Reservation, int? Vlan)> Declared(
+        NetworkSpec? primaryNic, IReadOnlyList<NetworkInterfaceSpec> extraNics)
     {
-        var sp = s.Spec;
-        if (sp.Network?.Reservation is { } primary)
+        if (primaryNic?.Reservation is { } primary)
         {
-            yield return (0, primary, sp.Network.Vlan);
+            yield return (0, primary, primaryNic.Vlan);
         }
 
-        for (var i = 0; i < sp.Networks.Count; i++)
+        for (var i = 0; i < extraNics.Count; i++)
         {
-            if (sp.Networks[i].Reservation is { } r)
+            if (extraNics[i].Reservation is { } r)
             {
-                yield return (i, r, sp.Networks[i].Tag);
+                yield return (i, r, extraNics[i].Tag);
             }
         }
     }

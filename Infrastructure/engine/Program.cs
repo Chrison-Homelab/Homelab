@@ -95,7 +95,7 @@ static async Task<int> RunUnifiReservationReport(string[] args)
         .ToList();
     if (Directory.EnumerateFiles(root, "*.lxc.yaml").Any()) stackDirs.Insert(0, root);
 
-    var declared = new List<(string Stack, string Member, ReservationSpec Spec)>();
+    var declared = new List<(string Stack, string Member, ReservationSpec Spec, bool IsVm)>();
     foreach (var dir in stackDirs)
     {
         ShapeLoader.LoadedStack loaded;
@@ -105,7 +105,14 @@ static async Task<int> RunUnifiReservationReport(string[] args)
         var stackName = loaded.Stack?.Metadata.Name ?? Path.GetFileName(dir);
         foreach (var s in loaded.Members)
             foreach (var (_, spec, _) in UnifiReservationReconciler.Declared(s))
-                declared.Add((stackName, s.Metadata.Name, spec));
+                declared.Add((stackName, s.Metadata.Name, spec, false));
+
+        // VM members count as declared too — otherwise a reservation parked for a retired
+        // VM shows up as an orphan candidate on every run, and a report that cries wolf
+        // stops being read.
+        foreach (var v in loaded.VmMembers)
+            foreach (var (_, spec, _) in UnifiReservationReconciler.Declared(v))
+                declared.Add((stackName, v.Metadata.Name, spec, true));
     }
 
 #pragma warning disable CS0618 // legacy adapter is intentionally obsolete (ADR-0003)
@@ -116,7 +123,7 @@ static async Task<int> RunUnifiReservationReport(string[] args)
 
     Console.WriteLine($"unifi-reservations — {declared.Count} declared across {stackDirs.Count} stack(s), {live.Count} live on the controller\n");
 
-    foreach (var (stack, member, spec) in declared.OrderBy(d => d.Stack, StringComparer.Ordinal))
+    foreach (var (stack, member, spec, isVm) in declared.OrderBy(d => d.Stack, StringComparer.Ordinal))
     {
         var match = live.FirstOrDefault(u => UnifiReservations.IpEquals(u.FixedIp, spec.FixedIp));
         var mark = spec.IsParked ? "P" : match is null ? "!" : "=";
@@ -128,6 +135,14 @@ static async Task<int> RunUnifiReservationReport(string[] args)
             && !UnifiReservations.DnsEquals(match.LocalDnsRecord, spec.LocalDnsRecord))
         {
             Console.WriteLine($"      dns drift: {match.LocalDnsRecord ?? "(unset)"} → {spec.LocalDnsRecord}");
+        }
+
+        // Say it out loud rather than letting the declaration look load-bearing: the apply
+        // path reconciles LXC members only, so this one is audited but never written.
+        if (isVm && !spec.IsParked)
+        {
+            Console.WriteLine("      ⚠ declared on a VM shape — converge does NOT write VM reservations; "
+                              + "this row is audited only. Reserve it by hand, or mark it parked:.");
         }
     }
 
