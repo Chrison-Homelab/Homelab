@@ -201,15 +201,22 @@ spec:
       #    VLAN 1010 (validated live per-port 2026-07-14). DEPENDS ON DHCP reservations for
       #    these IPs (#13) — until reserved, a new lease silently breaks the target (same
       #    caveat as stacks/Media/cloudflared.lxc.yaml). Retiring the old fleet later lets
-      #    these revert to logical names. sso defaults ON (badger SSO gate); audiobookshelf
-      #    carries its own account auth + native mobile apps that can't do the interstitial
-      #    → sso:false.
+      #    these revert to logical names.
+      #
+      #    sso defaults ON (badger SSO gate). Two exceptions, both for the same reason: a
+      #    NATIVE CLIENT cannot complete the SSO interstitial — it is an HTML login page, and
+      #    the app expects the app's own API to answer. Both carry real auth of their own, so
+      #    sso:false gates them one layer down rather than not at all:
+      #      • audiobookshelf — its own accounts, plus the iOS/Android apps.
+      #      • seerr          — Plex OAuth, plus the native iOS clients (PocketSeerr).
+      #    ⚠ Anything listed sso:false is reachable from the public internet with only the
+      #      APP's login in front of it. Only do this where the app genuinely has one.
       - { name: Prowlarr,       subdomain: prowlarr,       zone: arr, target: { ip: 10.10.201.184, port: 9696,  method: http } }
       - { name: Sonarr,         subdomain: sonarr,         zone: arr, target: { ip: 10.10.250.29,  port: 8989,  method: http } }
       - { name: Radarr,         subdomain: radarr,         zone: arr, target: { ip: 10.10.48.217,  port: 7878,  method: http } }
       - { name: Bazarr,         subdomain: bazarr,         zone: arr, target: { ip: 10.10.102.133, port: 6767,  method: http } }
       - { name: qBittorrent,    subdomain: qbittorrent,    zone: arr, target: { ip: 10.10.110.115, port: 8090,  method: http } }
-      - { name: Seerr,          subdomain: seerr,          zone: arr, target: { ip: 10.10.15.6,    port: 5055,  method: http } }
+      - { name: Seerr,          subdomain: seerr,          zone: arr, sso: false, target: { ip: 10.10.15.6,    port: 5055,  method: http } }
       - { name: Tracearr,       subdomain: tracearr,       zone: arr, target: { ip: 10.10.202.145, port: 3000,  method: http } }
       - { name: RomM,           subdomain: romm,           zone: arr, target: { ip: 10.10.202.240, port: 80,    method: http } }
       - { name: Youtarr,        subdomain: youtarr,        zone: arr, target: { ip: 10.10.73.250,  port: 3087,  method: http } }
