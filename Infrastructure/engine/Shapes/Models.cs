@@ -98,6 +98,28 @@ public sealed class NetworkSpec
     public int? Mtu { get; set; }
     public string? Hwaddr { get; set; }
     public bool? Firewall { get; set; }
+    public ReservationSpec? Reservation { get; set; }
+}
+
+/// <summary>
+/// The UniFi DHCP reservation for one interface (#416). The MAC is deliberately NOT
+/// declared here — it is read off the live guest after create, so a shape never has
+/// to predict one. The UniFi network is resolved from the interface's VLAN tag.
+/// </summary>
+public sealed class ReservationSpec
+{
+    public string? FixedIp { get; set; }
+    public string? LocalDnsRecord { get; set; }
+    /// <summary>Controller-facing label; defaults to "&lt;member&gt; (CT &lt;ctid&gt;)".</summary>
+    public string? Name { get; set; }
+    /// <summary>
+    /// Why the reservation is held for a deliberately-stopped guest. Non-empty means
+    /// converge reports it but never writes it, so a parked guest neither drifts nor
+    /// gets resurrected.
+    /// </summary>
+    public string? Parked { get; set; }
+
+    public bool IsParked => !string.IsNullOrWhiteSpace(Parked);
 }
 
 // A single full Proxmox netX interface (spec.networks[]) — converge-only.
@@ -116,6 +138,7 @@ public sealed class NetworkInterfaceSpec
     public int? Mtu { get; set; }
     public double? Rate { get; set; }
     public bool? LinkDown { get; set; }
+    public ReservationSpec? Reservation { get; set; }
 }
 
 public sealed class FeaturesSpec

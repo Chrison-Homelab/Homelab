@@ -51,6 +51,16 @@ spec:
   memory: 4096           # MB — Prometheus TSDB + Loki + Tempo + Grafana + collector + Pulse
   disk: 30               # GB — matches CT 4000; 3.9 GB of state today, grows with retention
 
+  # DHCP reservation + the local DNS name (#416). `monitoring.homelab.chrison.internal`
+  # is a per-client record ON this reservation, so it is what scrape targets and the
+  # power orchestrator's telemetry endpoint resolve through — re-keying the reservation
+  # re-points the name with nothing to notice.
+  # Only the reservation is set here — bridge/vlan/ipv4 still come from the stack.
+  network:
+    reservation:
+      fixedIp: 10.10.204.35
+      localDnsRecord: monitoring.homelab.chrison.internal
+
   features:
     nesting: true        # rootless podman needs nesting for its own nested userns
     keyctl: true         # containers keyring — settable only via the pct/SSH create path

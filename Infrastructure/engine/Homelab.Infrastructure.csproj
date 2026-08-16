@@ -23,10 +23,13 @@
          code. Carries the LXC lifecycle write path (PctWriter, #149). -->
     <PackageReference Include="Chrison.ProxmoxSharp" Version="0.2.0-preview.5" />
     <!-- UniFi discover surface + the legacy write adapter (UnifiSharp.Legacy:
-         port-forwards/firewall/networks). From nuget.org (Chrison.* prefix); assembly/
-         namespace unchanged (UnifiSharp). Pinned exactly (like Chrison.ProxmoxSharp).
-         Carries the session-auth legacy write client. -->
-    <PackageReference Include="Chrison.UnifiSharp" Version="0.1.0-preview.2" />
+         port-forwards/firewall/networks/clients). From nuget.org (Chrison.* prefix);
+         assembly/namespace unchanged (UnifiSharp). Pinned exactly (like
+         Chrison.ProxmoxSharp). 0.2.0 adds X-API-KEY auth — without it the legacy
+         adapter requires UNIFI_USERNAME/UNIFI_PASSWORD, which secrets.env does not
+         carry, so converge-unifi could not authenticate at all (#416) — plus the
+         rest/user endpoints the DHCP-reservation reconcile is built on. -->
+    <PackageReference Include="Chrison.UnifiSharp" Version="0.2.0" />
     <!-- YAML parsing for homelab/v1 shapes (BL-010 converge). -->
     <PackageReference Include="YamlDotNet" Version="16.*" />
     <!-- JSON Schema (draft-2020-12) validation of homelab/v1 shapes against

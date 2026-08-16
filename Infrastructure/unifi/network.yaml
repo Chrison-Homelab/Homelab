@@ -4,9 +4,23 @@
 # resources that are missing (matched by name) and never deletes hand-managed
 # ones — same guardrail as the Cloudflare reconcile (CLAUDE.md).
 #
-# Auth (env): UNIFI_LEGACY_BASE_URL (…/proxy/network/api/s/default),
-#             UNIFI_USERNAME, UNIFI_PASSWORD, UNIFI_VERIFY_TLS.
+# Declared resources are RECONCILED, not merely created (#416). A rule that exists
+# but no longer matches this file is corrected, and the diff is printed. It used to
+# stop at "is a rule with this name present?", so re-pointing the forward target in
+# the UI left this file and the controller disagreeing while converge reported
+# success indefinitely — the same write-once failure the CF Access bypass had (#417).
+#
+# Auth (env): UNIFI_API_KEY + UNIFI_LOCAL_HOST — what `secrets.env` actually carries,
+#             and enough on its own (the site URL is derived from the host). Session
+#             auth (UNIFI_LEGACY_BASE_URL + UNIFI_USERNAME + UNIFI_PASSWORD) still
+#             works and is what the .containers/unifi test controller needs.
+#             UNIFI_VERIFY_TLS=false for the console's self-signed cert.
 # Validate the reconcile read-only with `converge-unifi <file>`; `--apply` writes.
+#
+# DHCP RESERVATIONS ARE NOT DECLARED HERE. They live on the guest that owns them, as
+# `network.reservation` in the LXC/VM shape, because converge has to read the guest's
+# live MAC to write one. `homelab-infra unifi-reservations stacks` audits declared
+# against live and names the reservations no shape accounts for (#416).
 apiVersion: homelab/v1
 kind: UnifiNetwork
 

@@ -16,6 +16,9 @@ using Homelab.Infrastructure.Unifi;
 //   homelab-infra discover-unifi         # dump a UniFi network snapshot as JSON
 //   homelab-infra converge-unifi <file>           # plan UniFi network desired-state (dry run)
 //   homelab-infra converge-unifi <file> --apply   # reconcile it (add-only, legacy write API)
+//   homelab-infra unifi-reservations <stacks-dir> # read-only DHCP-reservation audit (#416):
+//                                         #   declared-vs-live by address, plus the
+//                                         #   reservations no shape accounts for
 //   homelab-infra converge <stack-dir>            # state-diff plan (dry run, read-only)
 //   homelab-infra converge <stack-dir> --apply    # create + reconcile config + provision
 //   homelab-infra converge <stack-dir> --destroy           # destroy plan (read-only)
@@ -48,11 +51,104 @@ switch (command)
         return await RunConverge(args);
     case "converge-unifi":
         return await RunConvergeUnifi(args);
+    case "unifi-reservations":
+        return await RunUnifiReservationReport(args);
     case "validate":
         return RunValidate(args);
     default:
-        Console.Error.WriteLine($"Unknown command '{command}'. Supported: discover, discover-diff, discover-unifi, converge, converge-unifi, validate");
+        Console.Error.WriteLine($"Unknown command '{command}'. Supported: discover, discover-diff, discover-unifi, converge, converge-unifi, unifi-reservations, validate");
         return 1;
+}
+
+// unifi-reservations <stacks-dir>: read-only audit of DHCP reservations (#416).
+// Compares every reservation declared across the stacks against the controller, and
+// names the ones the controller holds that no shape accounts for.
+//
+// Matched on ADDRESS, not MAC, on purpose: a shape declares an address but never a MAC
+// (the MAC only exists on the live guest), so this runs from the repo alone — no
+// Proxmox, no credentials beyond UniFi, nothing to converge first.
+static async Task<int> RunUnifiReservationReport(string[] args)
+{
+    if (args.Length < 2)
+    {
+        Console.Error.WriteLine("usage: homelab-infra unifi-reservations <stacks-dir>");
+        return 2;
+    }
+    var root = Path.GetFullPath(args[1]);
+    if (!Directory.Exists(root))
+    {
+        Console.Error.WriteLine($"directory not found: {root}");
+        return 2;
+    }
+
+    var options = UnifiLegacyOptions.TryFromEnvironment();
+    if (options is null)
+    {
+        Console.Error.WriteLine("Missing UniFi config. Set UNIFI_API_KEY + UNIFI_LOCAL_HOST (see secrets.env).");
+        return 2;
+    }
+
+    // Every stack dir under the root, plus the root itself if it is one.
+    var stackDirs = Directory.EnumerateDirectories(root)
+        .Where(d => File.Exists(Path.Combine(d, "stack.yaml")) || Directory.EnumerateFiles(d, "*.lxc.yaml").Any())
+        .OrderBy(d => d, StringComparer.Ordinal)
+        .ToList();
+    if (Directory.EnumerateFiles(root, "*.lxc.yaml").Any()) stackDirs.Insert(0, root);
+
+    var declared = new List<(string Stack, string Member, ReservationSpec Spec)>();
+    foreach (var dir in stackDirs)
+    {
+        ShapeLoader.LoadedStack loaded;
+        try { loaded = ShapeLoader.LoadStack(dir); }
+        catch (Exception ex) { Console.Error.WriteLine($"  ! {Path.GetFileName(dir)}: {ex.Message}"); continue; }
+
+        var stackName = loaded.Stack?.Metadata.Name ?? Path.GetFileName(dir);
+        foreach (var s in loaded.Members)
+            foreach (var (_, spec, _) in UnifiReservationReconciler.Declared(s))
+                declared.Add((stackName, s.Metadata.Name, spec));
+    }
+
+#pragma warning disable CS0618 // legacy adapter is intentionally obsolete (ADR-0003)
+    using var client = new UnifiLegacyClient(options);
+    var users = await client.ListUsersAsync();
+#pragma warning restore CS0618
+    var live = users.Where(u => u.UseFixedIp == true).ToList();
+
+    Console.WriteLine($"unifi-reservations — {declared.Count} declared across {stackDirs.Count} stack(s), {live.Count} live on the controller\n");
+
+    foreach (var (stack, member, spec) in declared.OrderBy(d => d.Stack, StringComparer.Ordinal))
+    {
+        var match = live.FirstOrDefault(u => UnifiReservations.IpEquals(u.FixedIp, spec.FixedIp));
+        var mark = spec.IsParked ? "P" : match is null ? "!" : "=";
+        var note = spec.IsParked ? $"parked — {spec.Parked}"
+                 : match is null ? "DECLARED BUT NOT ON THE CONTROLLER"
+                 : "present";
+        Console.WriteLine($"  {mark} {spec.FixedIp,-16} {stack}/{member}  ({note})");
+        if (match is not null && !string.IsNullOrWhiteSpace(spec.LocalDnsRecord)
+            && !UnifiReservations.DnsEquals(match.LocalDnsRecord, spec.LocalDnsRecord))
+        {
+            Console.WriteLine($"      dns drift: {match.LocalDnsRecord ?? "(unset)"} → {spec.LocalDnsRecord}");
+        }
+    }
+
+    var orphans = UnifiReservations.OrphanCandidates(
+        live, declaredIps: declared.Select(d => d.Spec.FixedIp ?? ""));
+    if (orphans.Count > 0)
+    {
+        Console.WriteLine($"\n{orphans.Count} reservation(s) on the controller that no shape declares:");
+        foreach (var o in orphans)
+            Console.WriteLine($"  ? {o.FixedIp,-16} {o.Name ?? o.Mac}{(string.IsNullOrWhiteSpace(o.LocalDnsRecord) ? "" : $"  dns={o.LocalDnsRecord}")}");
+        Console.WriteLine(
+            "\n  These are candidates, not garbage — a stopped guest kept for rollback looks\n" +
+            "  identical to an orphan from here. Cross-check the MAC against Proxmox before\n" +
+            "  removing one, and prefer use_fixedip=false to deleting the client entry.");
+    }
+    else
+    {
+        Console.WriteLine("\nEvery live reservation is declared by a shape.");
+    }
+
+    return 0;
 }
 
 // validate <path>: a single shape file, a stack dir, or Infrastructure/nodes/.
@@ -259,8 +355,9 @@ static async Task<int> RunConvergeUnifi(string[] args)
     if (options is null)
     {
         Console.Error.WriteLine(
-            "Missing UniFi legacy config. Set UNIFI_LEGACY_BASE_URL (…/proxy/network/api/s/default), " +
-            "UNIFI_USERNAME, UNIFI_PASSWORD (and optionally UNIFI_VERIFY_TLS=false for self-signed).");
+            "Missing UniFi config. Set UNIFI_API_KEY plus UNIFI_LOCAL_HOST (or UNIFI_LEGACY_BASE_URL), " +
+            "which is what secrets.env carries. Session auth (UNIFI_USERNAME + UNIFI_PASSWORD) also works " +
+            "and is what the .containers/unifi test controller needs. UNIFI_VERIFY_TLS=false for self-signed.");
         return 2;
     }
 
@@ -276,12 +373,18 @@ static async Task<int> RunConvergeUnifi(string[] args)
         Console.WriteLine($"  = {name} (present)");
     foreach (var pf in result.Plan.ToCreate)
         Console.WriteLine($"  {(apply ? "+" : "~")} {pf.Name} → {pf.Interface} :{pf.DestinationPort} ⇒ {pf.ForwardIp}:{pf.ForwardPort}/{pf.Protocol}{(apply ? " (created)" : " (would create)")}");
+    foreach (var drift in result.Plan.ToUpdate)
+    {
+        Console.WriteLine($"  {(apply ? "~" : "!")} {drift.Spec.Name} DRIFTED{(apply ? " (corrected)" : "")}");
+        foreach (var c in drift.Changes) Console.WriteLine($"      {c}");
+    }
 
-    Console.WriteLine(result.Plan.ToCreate.Count == 0
-        ? "All declared port-forwards present — nothing to do."
+    var work = result.Plan.ToCreate.Count + result.Plan.ToUpdate.Count;
+    Console.WriteLine(work == 0
+        ? "All declared port-forwards present and matching — nothing to do."
         : apply
-            ? $"Applied: created {result.Created.Count}."
-            : $"Plan: {result.Plan.ToCreate.Count} to create. Re-run with --apply to write.");
+            ? $"Applied: created {result.Created.Count}, corrected {result.Updated.Count}."
+            : $"Plan: {result.Plan.ToCreate.Count} to create, {result.Plan.ToUpdate.Count} to correct. Re-run with --apply to write.");
     return 0;
 }
 

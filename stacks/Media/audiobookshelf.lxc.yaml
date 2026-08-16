@@ -29,6 +29,14 @@ spec:
   memory: 2048           # MB — Node app + FFmpeg transcode/probe
   disk: 8                # GB — app + SQLite + metadata/cache; audiobooks live on /audiobooks (NFS)
 
+  # DHCP reservation (#416). The Media tunnel pins this address as the origin for
+  # audiobookshelf.chrison.dev, which is `public: true` — the native mobile apps hold it
+  # directly and can't be sent through an SSO gate, so a moved lease breaks them silently.
+  # Only the reservation is set here — bridge/vlan/ipv4 still come from the stack.
+  network:
+    reservation:
+      fixedIp: 10.10.182.200
+
   mounts:
     - type: nfs
       storage: ds1813-nfs-volume-4
