@@ -21,6 +21,15 @@ spec:
   disk: 8                # GB
   dependsOn: [sonarr, radarr]
 
+  # DHCP reservation (#416). Both tunnels pin THIS address as the origin for
+  # seerr.chrison.dev and seerr.tao-simon.family (Media/cloudflared.lxc.yaml), so a new
+  # lease takes the household front door offline. That was a ⚠ comment and a hand-made
+  # controller object; now it is declared and reconciled.
+  # Only the reservation is set here — bridge/vlan/ipv4 still come from the stack.
+  network:
+    reservation:
+      fixedIp: 10.10.15.6
+
   # Post-create wiring (SeerrProvisioner): adds Sonarr + Radarr as default request targets
   # via the Seerr API (add-only, after the manual Plex/owner setup wizard). The owner/Plex
   # link is a one-time browser OAuth step — not automatable, so the provisioner Skips until

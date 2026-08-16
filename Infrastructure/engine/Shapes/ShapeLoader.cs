@@ -83,6 +83,49 @@ public sealed class ShapeLoader
         }
     }
 
+    // Fill the primary-NIC sugar FIELD BY FIELD rather than all-or-nothing.
+    //
+    // It used to be `member.Network ??= defaults.Network`, so a member that declared any
+    // part of `network:` silently forfeited every field it didn't restate. That was
+    // invisible while the only reason to declare the block was to override the whole
+    // thing — but a member now has a reason to add exactly one key (`reservation:`), and
+    // under the old rule that would have dropped its VLAN, address and gateway on the
+    // floor and rendered a NIC on the wrong network.
+    //
+    // A no-op for a member that declares the full block, which is all three that exist.
+    private static NetworkSpec? MergeNetwork(NetworkSpec? defaults, NetworkSpec? member)
+    {
+        if (defaults is null) return member;
+
+        // A reservation is never inherited — a stack default would otherwise hand every
+        // member the same fixed address. Copying rather than handing back the defaults
+        // instance also stops one member's later edits leaking into its siblings.
+        if (member is null)
+        {
+            return new NetworkSpec
+            {
+                Bridge = defaults.Bridge,
+                Vlan = defaults.Vlan,
+                Ipv4 = defaults.Ipv4,
+                Gateway = defaults.Gateway,
+                Ipv6 = defaults.Ipv6,
+                Mtu = defaults.Mtu,
+                Hwaddr = defaults.Hwaddr,
+                Firewall = defaults.Firewall,
+            };
+        }
+
+        member.Bridge ??= defaults.Bridge;
+        member.Vlan ??= defaults.Vlan;
+        member.Ipv4 ??= defaults.Ipv4;
+        member.Gateway ??= defaults.Gateway;
+        member.Ipv6 ??= defaults.Ipv6;
+        member.Mtu ??= defaults.Mtu;
+        member.Hwaddr ??= defaults.Hwaddr;
+        member.Firewall ??= defaults.Firewall;
+        return member;
+    }
+
     // Fill member spec from stack defaults where the member left it unset.
     private static void Merge(LxcSpec defaults, LxcSpec member)
     {
@@ -114,7 +157,7 @@ public sealed class ShapeLoader
         // `network` (as every stack here does) would silently describe net0 twice, with
         // create reading the sugar and reconcile rewriting net0 from the list (#383).
         if (member.Networks.Count == 0)
-            member.Network ??= defaults.Network;
+            member.Network = MergeNetwork(defaults.Network, member.Network);
         member.Features ??= defaults.Features;
         member.Timezone ??= defaults.Timezone;
         member.Console ??= defaults.Console;

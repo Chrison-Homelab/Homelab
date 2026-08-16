@@ -37,6 +37,17 @@ spec:
   disk: 30               # GB — was 15; six more image layers (~250 MB each) + the Postgres store.
                          # Media still lives on NFS, so this does not grow with the library.
 
+  # DHCP reservation + the local DNS name (#416). The reservation is where
+  # `media.homelab.chrison.internal` is defined — it is a per-client record on the
+  # controller, not a zone entry, so re-keying this reservation to another MAC silently
+  # re-points the name. That makes it the thing every internal reference to this host
+  # resolves through, which is why it is declared rather than clicked.
+  # Only the reservation is set here — bridge/vlan/ipv4 still come from the stack.
+  network:
+    reservation:
+      fixedIp: 10.10.255.254
+      localDnsRecord: media.homelab.chrison.internal
+
   features:
     nesting: true        # rootless podman needs nesting for its own nested userns
     keyctl: true         # containers keyring — settable only via the pct/SSH create path

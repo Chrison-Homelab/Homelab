@@ -39,8 +39,14 @@ spec:
     network:
       bridge: vmbr0
       vlan: 1010          # Homelab — real tag → interface name=vlan1010,tag=1010
-      ipv4: dhcp          # ⚠ each connector needs a DHCP reservation so the tunnel
-                          #    target is stable across reboots (tracked in #118).
+      ipv4: dhcp          # A member that needs a stable address declares
+                          #    `network.reservation` and converge reconciles it against
+                          #    the controller (#416) — no hand-made prerequisite.
+                          #    The two cloudflared connectors deliberately have none:
+                          #    they dial OUT to Cloudflare and are never dialled, so
+                          #    nothing resolves them by address. Pangolin (CT 2013) is
+                          #    the exception and pins a STATIC ip instead, because the
+                          #    tunnel and the WAN :443 forward both target it.
       ipv6: none
     timezone: Pacific/Auckland
     tags: [core, community-script]

@@ -43,8 +43,11 @@ spec:
     network:
       bridge: vmbr0
       vlan: 1010          # Homelab — real tag → interface name=vlan1010,tag=1010
-      ipv4: dhcp          # ⚠ file-touching members + the connector want DHCP
-                          #    reservations so origins/mounts are stable (#117-class).
+      ipv4: dhcp          # File-touching members + tunnel origins need stable addresses.
+                          #    That is no longer a warning to act on by hand: a member
+                          #    declares `network.reservation` and converge reconciles it
+                          #    against the controller (#416). seerr, audiobookshelf and
+                          #    podman-host do; anything else here is still lease-of-the-day.
       ipv6: none
     timezone: Pacific/Auckland
     tags: [media, arr, community-script]

@@ -158,6 +158,9 @@ public sealed class ConvergeRunner
                 Console.WriteLine($"    secret {mark} {r.Name}: {r.Description}");
             }
 
+            foreach (var step in UnifiReservationReconciler.PlanSteps(s))
+                Console.WriteLine($"    unifi: {step}");
+
             foreach (var step in registry.For(sp.Provisioner ?? sp.App).PlanSteps(s))
                 Console.WriteLine($"    post-create: {step}");
 
@@ -239,6 +242,10 @@ public sealed class ConvergeRunner
         var creator = new CommunityScriptsCreator(exec);
         var reconciler = new CtConfigReconciler(exec);
         var mountReconciler = new MountReconciler(exec);
+        // Reservations reconcile against the network controller, not Proxmox — no UniFi
+        // credentials just means those steps report SKIPPED (see the reconciler).
+        using var reservations = new UnifiReservationReconciler(
+            exec, UnifiSharp.Legacy.UnifiLegacyOptions.TryFromEnvironment());
         var ct = CancellationToken.None;
 
         var stackName = loaded.Stack?.Metadata.Name ?? Path.GetFileName(_stackDir);
@@ -330,6 +337,29 @@ public sealed class ConvergeRunner
                     }
                 }
                 catch (Exception ex) { Console.WriteLine($"    config FAILED: {ex.Message}"); failed++; Console.WriteLine(); continue; }
+            }
+
+            // DHCP reservations (#416): runs straight after the NIC reconcile so a netN the
+            // shape just added already has a MAC to reserve against. Never fatal to the
+            // member — a controller we can't reach reports SKIPPED and converge continues.
+            if (UnifiReservationReconciler.Declared(s).Any())
+            {
+                try
+                {
+                    var res = await reservations.ReconcileAsync(s, apply: true, ct);
+                    switch (res.Outcome)
+                    {
+                        case ApplyOutcome.Applied:
+                            applied++; Console.WriteLine($"    reservation APPLIED: {res.Message}"); break;
+                        case ApplyOutcome.Failed:
+                            failed++; Console.WriteLine($"    reservation FAILED: {res.Message}"); break;
+                        case ApplyOutcome.Skipped:
+                            Console.WriteLine($"    reservation SKIPPED: {res.Message}"); break;
+                        default:
+                            Console.WriteLine($"    reservation: {res.Message}"); break;
+                    }
+                }
+                catch (Exception ex) { Console.WriteLine($"    reservation FAILED: {ex.Message}"); failed++; }
             }
 
             // Mounts + hookscript: apply declared mpN entries (e.g. the shared /data NFS
