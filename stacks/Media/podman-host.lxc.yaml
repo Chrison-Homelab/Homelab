@@ -43,10 +43,17 @@ spec:
   # re-points the name. That makes it the thing every internal reference to this host
   # resolves through, which is why it is declared rather than clicked.
   # Only the reservation is set here — bridge/vlan/ipv4 still come from the stack.
+  #
+  # `name` is set EXPLICITLY because three stacks each have a member called `podman-host`
+  # (Media 5114, monitoring 4001, SmartHome 6004). The default label is "<member> (CT <id>)",
+  # so all three would read as plain "podman-host" on the controller — and converge, seeing
+  # the hand-set "media podman-host (CT 5114)" as drift, rewrote it to the bare form on the
+  # first apply. Stating it keeps the stack visible where the operator actually looks.
   network:
     reservation:
       fixedIp: 10.10.255.254
       localDnsRecord: media.homelab.chrison.internal
+      name: media podman-host (CT 5114)
 
   features:
     nesting: true        # rootless podman needs nesting for its own nested userns

@@ -56,10 +56,17 @@ spec:
   # power orchestrator's telemetry endpoint resolve through — re-keying the reservation
   # re-points the name with nothing to notice.
   # Only the reservation is set here — bridge/vlan/ipv4 still come from the stack.
+  #
+  # `name` is set EXPLICITLY: three stacks each have a member called `podman-host`, and the
+  # default label is "<member> (CT <id>)", so all three would read as plain "podman-host" on
+  # the controller. Without this, the next converge would rewrite the hand-set
+  # "monitoring podman-host (CT 4001)" to the bare form — which is exactly what happened to
+  # the Media host on its first apply.
   network:
     reservation:
       fixedIp: 10.10.204.35
       localDnsRecord: monitoring.homelab.chrison.internal
+      name: monitoring podman-host (CT 4001)
 
   features:
     nesting: true        # rootless podman needs nesting for its own nested userns
