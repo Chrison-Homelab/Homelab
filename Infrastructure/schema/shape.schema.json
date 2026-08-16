@@ -209,7 +209,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["fixedIp"],
-      "description": "The UniFi DHCP reservation for THIS interface (#416). Declared on the guest because the facts belong to the guest: converge resolves the interface's live MAC after create, then reconciles the reservation against the controller. The UniFi network is resolved from the interface's VLAN tag, so it is never restated here. ADD-ONLY — converge only ever writes a known-client entry whose MAC a shape declares.",
+      "description": "The UniFi DHCP reservation for THIS interface (#416). Declared on the guest because the facts belong to the guest: converge resolves the interface's live MAC after create, then reconciles the reservation against the controller. The UniFi network is resolved from the interface's VLAN tag, so it is never restated here. ADD-ONLY — converge only ever writes a known-client entry whose MAC a shape declares. NOTE on a kind: VM shape this is AUDIT-ONLY — `unifi-reservations` counts it, but the apply path reconciles LXC members only, so a non-parked VM reservation is never written (the audit flags that rather than passing over it). Its intended use on a VM is `parked:`.",
       "properties": {
         "fixedIp": { "type": "string", "description": "The reserved address, e.g. '10.10.135.221'. Must sit inside the subnet of the interface's VLAN." },
         "localDnsRecord": { "type": "string", "description": "Per-client local DNS name, e.g. 'shell.devops.chrison.internal' — how the guest resolves from OUTSIDE its own network's domain. Omit for a reservation that only pins an address." },

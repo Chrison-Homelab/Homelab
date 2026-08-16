@@ -361,6 +361,57 @@ public sealed class UnifiReservationTests
     }
 
     [Fact]
+    public void Declared_reads_a_vm_shape_too()
+    {
+        // VmSpec carries the same NetworkSpec/NetworkInterfaceSpec types, so `reservation:`
+        // parses and validates on a VM shape whether or not anything reads it. If the audit
+        // didn't, a reservation parked for a retired VM would be reported as an orphan on
+        // every single run — and a report that cries wolf stops being read.
+        var vm = new VmShape
+        {
+            Metadata = new ShapeMetadata { Name = "homeassistant" },
+            Spec = new VmSpec
+            {
+                Networks =
+                {
+                    new NetworkInterfaceSpec
+                    {
+                        Reservation = new ReservationSpec { FixedIp = "192.168.179.102", Parked = "rollback for CT 6005, #250" },
+                    },
+                    new NetworkInterfaceSpec { Tag = 1040 },   // no reservation
+                    new NetworkInterfaceSpec
+                    {
+                        Tag = 1010,
+                        Reservation = new ReservationSpec { FixedIp = "10.10.0.20", Parked = "rollback for CT 6005, #250" },
+                    },
+                },
+            },
+        };
+
+        var declared = UnifiReservationReconciler.Declared(vm).ToList();
+
+        Assert.Equal(2, declared.Count);
+        Assert.Equal([0, 2], declared.Select(d => d.Index));   // index survives the gap
+        Assert.All(declared, d => Assert.True(d.Reservation.IsParked));
+    }
+
+    [Fact]
+    public void A_vm_shapes_primary_nic_reservation_is_read_as_net0()
+    {
+        var vm = new VmShape
+        {
+            Metadata = new ShapeMetadata { Name = "vm" },
+            Spec = new VmSpec
+            {
+                Network = new NetworkSpec { Vlan = 1010, Reservation = new ReservationSpec { FixedIp = "10.10.0.7" } },
+            },
+        };
+
+        var only = Assert.Single(UnifiReservationReconciler.Declared(vm));
+        Assert.Equal((0, "10.10.0.7", 1010), (only.Index, only.Reservation.FixedIp, only.Vlan));
+    }
+
+    [Fact]
     public void PlanSteps_says_parked_rather_than_promising_a_write()
     {
         var shape = new Shape
