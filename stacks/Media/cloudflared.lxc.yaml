@@ -79,6 +79,15 @@ spec:
       # audiobookshelf: PUBLIC/direct — native mobile apps can't do CF Access OTP, and it
       # carries its own account auth. public: true → routed, but NOT behind the Access gate.
       - { hostname: audiobookshelf.chrison.dev, service: "http://10.10.182.200:13378", public: true }   # new abs CT 5112 (was http://audiobookshelf:13378 → old 5014)
+      # HOUSEHOLD audiobooks (#322), the pair to seerr.tao-simon.family above. This rode the
+      # legacy hpe-01 tunnel pointed at the OLD abs CT 5014; retiring that tunnel (#321) took
+      # both the ingress and the DNS record with it, so the hostname has been NXDOMAIN — the
+      # family lost audiobooks entirely rather than being repointed to CT 5112. The
+      # chrison.dev twin above was already on the new origin, which is why this went unnoticed.
+      # public: true for the same reason as seerr's: CF Access admits only csimon@chrison.dev,
+      # so gating it locks the household out, and the mobile apps can't answer an OTP anyway.
+      # abs's own account login is the gate until #316 (Plex as IdP) gives the family a real one.
+      - { hostname: audiobookshelf.tao-simon.family, service: "http://10.10.182.200:13378", public: true }
   secrets:
     - name: tunnelToken
       valueFrom:
