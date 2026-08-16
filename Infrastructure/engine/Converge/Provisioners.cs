@@ -659,9 +659,27 @@ public sealed class PangolinProvisioner : IAppProvisioner
             string.Join(",", WildcardZones(s)),
             // additional base domains change both config.yml's `domains:` block and Traefik's
             // TLS SAN list, so they must re-render the deploy (#322).
-            string.Join(",", AdditionalDomains(s)));
+            string.Join(",", AdditionalDomains(s)),
+            // Hash the RENDERED ARTEFACTS, not just the field list above.
+            //
+            // The enumerated fields are a allowlist, and an allowlist is only correct until
+            // someone adds a config key and forgets to list it here. That happened with
+            // `includeGerbil`: `gerbilImage` was listed but the flag that decides whether
+            // gerbil exists at all was not, so flipping it changed the desired compose —
+            // gerbil added, traefik moved into its netns — while the marker stayed put and
+            // converge reported NOCHANGE. Desired state moved and nothing was applied.
+            //
+            // Hashing the rendered compose + Traefik configs closes the whole class: any
+            // input that changes what actually lands on the host changes the marker, whether
+            // or not it is remembered above. Same lesson PodmanProvisioner records at its own
+            // DesiredMarker, which hashes its generated script for exactly this reason.
+            Sha(BuildComposeYaml(s)),
+            Sha(BuildTraefikStatic(s, BaseDomain(s))));
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..12].ToLowerInvariant();
     }
+
+    private static string Sha(string s) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(s))).ToLowerInvariant();
 
     // The wildcard zones (e.g. ["lab","arr"]) — from config.wildcardZones, else derived
     // from the distinct zones declared on resources[]. Drives the LE wildcard SANs.

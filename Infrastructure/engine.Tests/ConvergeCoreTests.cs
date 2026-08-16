@@ -597,6 +597,36 @@ public sealed class ConvergeCoreTests
     }
 
     [Fact]
+    public void Pangolin_Marker_ChangesWhenGerbilIsTurnedOn()
+    {
+        // Regression guard (#406). The marker enumerated `gerbilImage` but NOT `includeGerbil`
+        // — so turning gerbil ON changed the rendered compose (gerbil added; traefik moved to
+        // network_mode: service:gerbil) while the marker stayed put, and the apply reported
+        // NOCHANGE. Desired state moved and nothing was applied.
+        var before = PangolinWildcardShape();
+        var after = PangolinWildcardShape();
+        after.Spec.Config["includeGerbil"] = true;
+
+        Assert.NotEqual(PangolinProvisioner.DesiredMarker(before), PangolinProvisioner.DesiredMarker(after));
+    }
+
+    [Fact]
+    public void Pangolin_Marker_TracksTheRenderedCompose_NotJustAnAllowlistOfFields()
+    {
+        // The structural fix behind the test above: the marker hashes the rendered artefacts,
+        // so ANY input that changes what lands on the host moves it — including one added
+        // later and forgotten here. Asserted through a field deliberately NOT enumerated in
+        // the marker's explicit list.
+        var before = PangolinWildcardShape();
+        var after = PangolinWildcardShape();
+        after.Spec.Config["includeGerbil"] = true;
+
+        Assert.NotEqual(PangolinProvisioner.BuildComposeYaml(before), PangolinProvisioner.BuildComposeYaml(after));
+        Assert.Contains("network_mode: service:gerbil", PangolinProvisioner.BuildComposeYaml(after));
+        Assert.DoesNotContain("gerbil", PangolinProvisioner.BuildComposeYaml(before));
+    }
+
+    [Fact]
     public void Pangolin_WildcardARecords_OnePerZone_ToPublicIp_WhenPublicWildcard()
     {
         var s = PangolinWildcardShape();
