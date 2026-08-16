@@ -674,12 +674,24 @@ public sealed class PangolinProvisioner : IAppProvisioner
             // or not it is remembered above. Same lesson PodmanProvisioner records at its own
             // DesiredMarker, which hashes its generated script for exactly this reason.
             Sha(BuildComposeYaml(s)),
-            Sha(BuildTraefikStatic(s, BaseDomain(s))));
+            Sha(BuildTraefikStatic(s, BaseDomain(s))),
+            // ...and config.yml, which #437 missed. It carries gerbil.base_endpoint, whose
+            // inputs (publicIp / gerbilEndpoint) are in NO other marker component — so changing
+            // where connectors are told to send WireGuard rendered a new config.yml and still
+            // reported NOCHANGE. "Hash the rendered artefacts" only works if it is ALL of them.
+            // The marker placeholder keeps this deterministic: config.yml embeds the marker, so
+            // hashing the real value would be circular.
+            Sha(string.Join("\n", BuildConfigLines(s, "<marker>", DashboardHost(s), DashboardUrl(s), BaseDomain(s)))));
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..12].ToLowerInvariant();
     }
 
     private static string Sha(string s) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(s))).ToLowerInvariant();
+
+    internal static string DashboardUrl(Shape s) => s.Spec.Config.Str("dashboardUrl") ?? "";
+
+    internal static string DashboardHost(Shape s) =>
+        s.Spec.Config.Str("dashboardUrl") is { Length: > 0 } u ? new Uri(u).Host : "";
 
     // The wildcard zones (e.g. ["lab","arr"]) — from config.wildcardZones, else derived
     // from the distinct zones declared on resources[]. Drives the LE wildcard SANs.
@@ -731,6 +743,30 @@ public sealed class PangolinProvisioner : IAppProvisioner
                     && !extra.Contains(ds, StringComparer.OrdinalIgnoreCase))
                     extra.Add(ds);
         return extra;
+    }
+
+    // Where a Newt connector is told to send WireGuard — rendered as gerbil.base_endpoint.
+    //
+    // This defaulted to the DASHBOARD host, which is correct only while Gerbil is idle. The
+    // dashboard is served through the core Cloudflare tunnel, so `pangolin.chrison.dev`
+    // resolves to Cloudflare (104.21.65.197 / 172.67.165.129, CLOUDFLARENET) — and Cloudflare's
+    // proxy does not carry WireGuard UDP. A connector handed that endpoint sends handshakes to
+    // Cloudflare's edge, which drops them, and the tunnel never comes up.
+    //
+    // In public-wildcard mode the address that actually reaches our edge is the home WAN IP —
+    // the same `publicIp` the grey-cloud wildcard records already point at, and the same IP the
+    // 51820/udp port-forward lives behind. An IP rather than a name is deliberate: it is static
+    // (ADR-0007 open decision 5) and it keeps the WireGuard path from depending on any DNS.
+    //
+    // `gerbilEndpoint` overrides it — that is the knob the VPS graduation turns, when Gerbil
+    // moves off-site and connectors dial the VPS instead.
+    internal static string GerbilBaseEndpoint(Shape s, string dashboardHost)
+    {
+        var c = s.Spec.Config;
+        if (c.Str("gerbilEndpoint") is { Length: > 0 } explicitEndpoint) return explicitEndpoint;
+        if ((c.Str("edge") ?? "cloudflared") == PublicWildcard && c.Str("publicIp") is { Length: > 0 } ip)
+            return ip;
+        return dashboardHost;
     }
 
     // The grey-cloud A records public-wildcard mode declares (#221): one per wildcard SAN,
@@ -1151,7 +1187,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
             $"# homelab-managed: {marker}",
             "gerbil:",
             "    start_port: 51820",
-            $"    base_endpoint: \"{host}\"",
+            $"    base_endpoint: \"{GerbilBaseEndpoint(s, host)}\"",
             "app:",
             $"    dashboard_url: \"{url}\"",
             "    log_level: \"info\"",
@@ -1279,7 +1315,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
             $"# homelab-managed: {marker}",
             "gerbil:",
             "    start_port: 51820",
-            $"    base_endpoint: \"{host}\"",
+            $"    base_endpoint: \"{GerbilBaseEndpoint(s, host)}\"",
             "app:",
             $"    dashboard_url: \"{url}\"",
             "    log_level: \"info\"",
