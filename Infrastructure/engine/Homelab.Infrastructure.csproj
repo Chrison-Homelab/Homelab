@@ -29,7 +29,7 @@
          adapter requires UNIFI_USERNAME/UNIFI_PASSWORD, which secrets.env does not
          carry, so converge-unifi could not authenticate at all (#416) — plus the
          rest/user endpoints the DHCP-reservation reconcile is built on. -->
-    <PackageReference Include="Chrison.UnifiSharp" Version="0.2.0" />
+    <PackageReference Include="Chrison.UnifiSharp" Version="0.3.0" />
     <!-- YAML parsing for homelab/v1 shapes (BL-010 converge). -->
     <PackageReference Include="YamlDotNet" Version="16.*" />
     <!-- JSON Schema (draft-2020-12) validation of homelab/v1 shapes against

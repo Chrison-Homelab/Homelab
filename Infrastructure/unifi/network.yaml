@@ -17,10 +17,15 @@
 #             UNIFI_VERIFY_TLS=false for the console's self-signed cert.
 # Validate the reconcile read-only with `converge-unifi <file>`; `--apply` writes.
 #
-# DHCP RESERVATIONS ARE NOT DECLARED HERE. They live on the guest that owns them, as
-# `network.reservation` in the LXC/VM shape, because converge has to read the guest's
-# live MAC to write one. `homelab-infra unifi-reservations stacks` audits declared
-# against live and names the reservations no shape accounts for (#416).
+# TWO KINDS OF LOCAL DNS, two homes — they are different endpoints, not a style choice:
+#   * `staticDns` BELOW — zone-level records on the controller's v2 site API. They belong
+#     to no single guest, so they live here.
+#   * `network.reservation.localDnsRecord` ON THE GUEST SHAPE — a PER-CLIENT record
+#     attached to a DHCP reservation, which converge can only write after reading that
+#     guest's live MAC (#416). `homelab-infra unifi-reservations stacks` audits those.
+# A name served one way cannot be managed from the other.
+#
+# DHCP RESERVATIONS ARE NOT DECLARED HERE either, for the same reason — see above.
 apiVersion: homelab/v1
 kind: UnifiNetwork
 
@@ -42,3 +47,29 @@ spec:
       forwardPort: "443"
       protocol: tcp
       log: false
+
+  # Controller-local DNS (#419). The three Pangolin-fronted zones are grey-cloud A records
+  # at Cloudflare pointing to the home WAN IP, so INSIDE the house they resolved to the WAN
+  # too and every admin UI was reached by NAT hairpin back through the port-forward above.
+  # That made the forward load-bearing for LAN access, not just remote access — so ADR-0007's
+  # "reversible exit" of closing :443 would have taken the whole admin surface down at home.
+  # These three records answer locally with Traefik's real address, which decouples the two.
+  #
+  # WILDCARDS, not ~16 individual records: the controller supports them and matches arbitrary
+  # labels (verified — the Azure Lab's `*.topaz.local.dev` answers any label under it). A new
+  # Pangolin resource therefore needs no DNS work at all.
+  #
+  # ⚠ Deliberately NOT overridden here:
+  #   - pangolin.chrison.dev itself — orange-clouded, rides the Core CF tunnel. Resources
+  #     bounce through it for the SSO gate, and pointing it at Traefik locally would take
+  #     that redirect off the tunnel it is served by.
+  #   - vpn.chrison.dev — also a WAN A record, but a VPN endpoint has to resolve to the WAN
+  #     address from inside the house as well, or the client dials its own LAN.
+  #   - Everything else in the zone is an orange-cloud CNAME to a tunnel; a local override
+  #     would bypass Cloudflare Access on the break-glass hostnames.
+  #
+  # Let's Encrypt is unaffected: the wildcards use DNS-01, which needs no inbound path.
+  staticDns:
+    - { name: "*.lab.chrison.dev", value: 10.10.0.13 }   # Pangolin/Traefik (CT 2013)
+    - { name: "*.arr.chrison.dev", value: 10.10.0.13 }
+    - { name: "*.iot.chrison.dev", value: 10.10.0.13 }

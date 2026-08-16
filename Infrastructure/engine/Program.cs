@@ -394,12 +394,38 @@ static async Task<int> RunConvergeUnifi(string[] args)
         foreach (var c in drift.Changes) Console.WriteLine($"      {c}");
     }
 
-    var work = result.Plan.ToCreate.Count + result.Plan.ToUpdate.Count;
-    Console.WriteLine(work == 0
-        ? "All declared port-forwards present and matching — nothing to do."
+    if (doc.Spec.StaticDns.Count > 0 || result.UndeclaredDns.Count > 0)
+    {
+        Console.WriteLine($"\nstatic DNS — {doc.Spec.StaticDns.Count} declared, {result.UndeclaredDns.Count} on the controller we don't own");
+        foreach (var item in result.StaticDns)
+        {
+            var d = item.Desired;
+            switch (item.Action)
+            {
+                case StaticDnsAction.NoChange:
+                    Console.WriteLine($"  = {d.Name,-34} {d.Type} → {d.Value}");
+                    break;
+                case StaticDnsAction.Create:
+                    Console.WriteLine($"  {(apply ? "+" : "~")} {d.Name,-34} {d.Type} → {d.Value}{(apply ? " (created)" : " (would create)")}");
+                    break;
+                case StaticDnsAction.Update:
+                    Console.WriteLine($"  {(apply ? "~" : "!")} {d.Name,-34} DRIFTED{(apply ? " (corrected)" : "")}");
+                    foreach (var c in item.Changes) Console.WriteLine($"      {c}");
+                    break;
+            }
+        }
+
+        foreach (var u in result.UndeclaredDns)
+            Console.WriteLine($"  ? {u.Key,-34} {u.Type} → {u.Value}  (no shape declares this — left alone)");
+    }
+
+    var pfWork = result.Plan.ToCreate.Count + result.Plan.ToUpdate.Count;
+    var dnsWork = result.StaticDns.Count(i => i.Action != StaticDnsAction.NoChange);
+    Console.WriteLine(pfWork + dnsWork == 0
+        ? "\nEverything declared is present and matching — nothing to do."
         : apply
-            ? $"Applied: created {result.Created.Count}, corrected {result.Updated.Count}."
-            : $"Plan: {result.Plan.ToCreate.Count} to create, {result.Plan.ToUpdate.Count} to correct. Re-run with --apply to write.");
+            ? $"\nApplied: {result.Created.Count} port-forward(s) created, {result.Updated.Count} corrected; {dnsWork} DNS record(s) written."
+            : $"\nPlan: {pfWork} port-forward change(s), {dnsWork} DNS change(s). Re-run with --apply to write.");
     return 0;
 }
 
