@@ -69,7 +69,65 @@ spec:
   #     would bypass Cloudflare Access on the break-glass hostnames.
   #
   # Let's Encrypt is unaffected: the wildcards use DNS-01, which needs no inbound path.
+  #
+  # ── TLS, for the internal names below (#314, decided 2026-08-16) ────────────────────
+  # Internal services are PLAIN HTTP and stay that way. `.internal` is not a real TLD so
+  # Let's Encrypt cannot issue for it, and the alternative — an internal CA — was ruled
+  # out deliberately: none of the clients are enrolled in anything, so its root would have
+  # to be installed by hand on every device, and a root nobody trusts is worse than no TLS
+  # at all. These records exist to make internal communication addressable by name, not to
+  # secure it. (The Azure emulator's own self-signed `*.topaz.local.dev` cert is a
+  # per-service exception you trust once — see stacks/Azure/stack/README.md — not a lab CA.)
+  #
+  # ── EVERY record on the controller is declared here ─────────────────────────────────
+  # Audited 2026-08-16 by resolving each record's target against live Proxmox + UniFi
+  # state rather than reading its name: all 20 point at our own guests or nodes. There is
+  # no third-party or unexplained record on this controller. `converge-unifi` lists
+  # anything undeclared, so that stays true without anyone checking.
   staticDns:
-    - { name: "*.lab.chrison.dev", value: 10.10.0.13 }   # Pangolin/Traefik (CT 2013)
+    # ── Core: Pangolin / Traefik (CT 2013) ──
+    - { name: "*.lab.chrison.dev", value: 10.10.0.13 }
     - { name: "*.arr.chrison.dev", value: 10.10.0.13 }
     - { name: "*.iot.chrison.dev", value: 10.10.0.13 }
+
+    # ── The Proxmox nodes ──
+    # ⚠ This is the ONE place in the repo their addresses are written down, and it is
+    # deliberate. CLAUDE.md says nothing should hard-code 10.0.0.11/.12/.13 precisely so a
+    # re-address is a single edit — that rule is about CONSUMERS, which reach nodes by
+    # name. The name→address mapping has to exist somewhere; before this it existed only
+    # as three records clicked into the controller. Re-addressing a node is now: edit the
+    # line, converge. secrets.env's PROXMOX_BASE_URL resolves through these names.
+    - { name: nuc-01.homelab.chrison.internal,     value: 10.0.0.11 }
+    - { name: desktop-01.homelab.chrison.internal, value: 10.0.0.12 }
+    - { name: hpe-01.homelab.chrison.internal,     value: 10.0.0.13 }
+
+    # ── SmartHome ──
+    # homeassistant: the hub, CT 6005 on its Homelab leg. NOTE the same host also answers
+    # `homeassistant.iot.chrison.internal`, which is a PER-CLIENT record on its DHCP
+    # reservation (a different endpoint — see homeassistant.lxc.yaml). Two names, two
+    # mechanisms, one address; both are declared, neither is redundant enough to drop
+    # without checking what points at which.
+    - { name: homeassistant.homelab.chrison.internal, value: 10.10.0.21 }
+    # smarthome: the stack's rootless podman host, CT 6004, on the IoT VLAN.
+    - { name: smarthome.homelab.chrison.internal,     value: 10.40.207.170 }
+
+    # ── Azure Lab: the Topaz emulator, CT 2009 on desktop-01 (VLAN 1050) ──
+    # Azure SDK clients derive endpoint hostnames from the service name, so the emulator
+    # needs a name per service family rather than one wildcard — and Key Vault's authorizer
+    # rejects any host not ending in `.vault.topaz.local.dev`, so the deep names are load
+    # bearing, not cosmetic. stacks/Azure/stack/README.md documented creating these BY HAND
+    # as a one-time step ("yours to run"); this replaces that step.
+    # They live here rather than in the Azure submodule because staticDns is a property of
+    # the UnifiNetwork shape, which is superproject-global.
+    - { name: topaz.local.dev,                       value: 10.50.0.10 }
+    - { name: "*.topaz.local.dev",                   value: 10.50.0.10 }
+    - { name: "*.storage.topaz.local.dev",           value: 10.50.0.10 }
+    - { name: "*.blob.storage.topaz.local.dev",      value: 10.50.0.10 }
+    - { name: "*.table.storage.topaz.local.dev",     value: 10.50.0.10 }
+    - { name: "*.queue.storage.topaz.local.dev",     value: 10.50.0.10 }
+    - { name: "*.file.storage.topaz.local.dev",      value: 10.50.0.10 }
+    - { name: "*.vault.topaz.local.dev",             value: 10.50.0.10 }
+    - { name: "*.keyvault.topaz.local.dev",          value: 10.50.0.10 }
+    - { name: "*.servicebus.topaz.local.dev",        value: 10.50.0.10 }
+    - { name: "*.eventhub.topaz.local.dev",          value: 10.50.0.10 }
+    - { name: "*.cr.topaz.local.dev",                value: 10.50.0.10 }
