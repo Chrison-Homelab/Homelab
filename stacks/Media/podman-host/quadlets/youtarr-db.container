@@ -15,7 +15,18 @@ After=network-online.target
 Wants=network-online.target
 
 [Container]
-Image=docker.io/library/mariadb:10.3
+# MariaDB 11.4 LTS (supported to 2029). Was 10.3, EOL since May 2023 — three years of
+# unfixed bugs, on an ubu2004 base that is itself out of support.
+#
+# ⚠ Upstream Youtarr STILL PINS 10.3 in its own docker-compose.yml, so this is a deliberate
+# divergence, not catching up with them. What makes it safe is that Youtarr owns its schema
+# through Sequelize migrations (see the SequelizeMeta table), so the data moved by mysqldump
+# + re-import into a fresh 11.4 data dir — NOT an in-place upgrade across four major
+# versions, which MariaDB does not support in one hop.
+#
+# ROLLBACK: the 10.3 data dir is kept as ../database-mariadb103. Put this tag back to 10.3,
+# restore the --innodb-large-prefix flag below, rename that dir to `database`, converge.
+Image=docker.io/library/mariadb:11.4
 ContainerName=youtarr-db
 Network=youtarr.network
 
@@ -31,7 +42,12 @@ UserNS=keep-id:uid=999,gid=999
 
 # compose `command:` → quadlet Exec=. No quoting needed here, so it survives systemd's
 # parser intact (contrast HealthCmd below).
-Exec=--port=3321 --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --innodb-file-per-table=1 --innodb-large-prefix=ON
+#
+# --innodb-large-prefix was REMOVED in MariaDB 10.6 — leaving it here makes 11.4 refuse to
+# start with "unknown variable", which is the failure a straight tag bump walks into. It was
+# only ever needed to allow >767-byte indexes on the old COMPACT row format; DYNAMIC has
+# been the default since 10.2 and makes it meaningless anyway.
+Exec=--port=3321 --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --innodb-file-per-table=1
 
 AutoUpdate=registry
 
