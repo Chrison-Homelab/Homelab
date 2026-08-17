@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Homelab.Infrastructure.Converge;
 using Homelab.Infrastructure.Shapes;
 using Xunit;
@@ -348,6 +349,76 @@ public sealed class ConvergeCoreTests
             "... A temporary password is provided for this session: NEWpw22");
         Assert.Equal("NEWpw22", ArrExec.ParseQbitTempPassword(journal));
         Assert.Null(ArrExec.ParseQbitTempPassword("nothing here"));
+    }
+
+    // ---- qBittorrent download-client dialects (#363) ----------------------
+    //
+    // The two ways a Servarr download-client resource differs per app. Both were
+    // wrong once: Prowlarr NRE'd on the missing `categories` list, and Sonarr/Radarr
+    // silently dropped a category posted under the wrong field name.
+
+    private static JsonElement QbitBody(string category, ArrExec.QbitClientDialect dialect) =>
+        JsonDocument.Parse(ArrExec.QbitDownloadClientJson(
+            "10.0.0.1", "user", "pw", category, dialect)).RootElement;
+
+    private static string? FieldValue(JsonElement body, string name) =>
+        body.GetProperty("fields").EnumerateArray()
+            .Where(f => f.GetProperty("name").GetString() == name)
+            .Select(f => f.GetProperty("value").ToString())
+            .FirstOrDefault();
+
+    [Theory]
+    [InlineData("tvCategory", "tv-sonarr")]
+    [InlineData("movieCategory", "radarr")]
+    [InlineData("category", "prowlarr")]
+    public void QbitDownloadClientJson_NamesTheCategoryFieldPerApp(string field, string category)
+    {
+        var dialect = field switch
+        {
+            "tvCategory" => ArrExec.QbitClientDialect.Sonarr,
+            "movieCategory" => ArrExec.QbitClientDialect.Radarr,
+            _ => ArrExec.QbitClientDialect.Prowlarr,
+        };
+        var body = QbitBody(category, dialect);
+
+        Assert.Equal(category, FieldValue(body, field));
+        // Exactly one category field — a stray `category` on Sonarr is dropped silently
+        // by the server, so it must not be posted at all.
+        Assert.Single(body.GetProperty("fields").EnumerateArray(),
+            f => f.GetProperty("name").GetString()!.Contains("ategory"));
+    }
+
+    [Fact]
+    public void QbitDownloadClientJson_SendsCategoriesListForProwlarrOnly()
+    {
+        // Prowlarr: present and empty ("all categories"). Absent => null server-side =>
+        // NullReferenceException in DownloadClientBase.ValidateCategories during the
+        // pre-save connection test, which is what failed every Media deploy.
+        var prowlarr = QbitBody("prowlarr", ArrExec.QbitClientDialect.Prowlarr);
+        Assert.True(prowlarr.TryGetProperty("categories", out var cats));
+        Assert.Equal(JsonValueKind.Array, cats.ValueKind);
+        Assert.Empty(cats.EnumerateArray());
+
+        // Sonarr/Radarr have no such property on their definition — don't invent one.
+        Assert.False(QbitBody("tv-sonarr", ArrExec.QbitClientDialect.Sonarr)
+            .TryGetProperty("categories", out _));
+        Assert.False(QbitBody("radarr", ArrExec.QbitClientDialect.Radarr)
+            .TryGetProperty("categories", out _));
+    }
+
+    [Fact]
+    public void QbitDownloadClientJson_KeepsTheSharedConnectionFields()
+    {
+        var body = QbitBody("prowlarr", ArrExec.QbitClientDialect.Prowlarr);
+
+        Assert.Equal("qBittorrent", body.GetProperty("name").GetString());
+        Assert.Equal("QBittorrent", body.GetProperty("implementation").GetString());
+        Assert.Equal("QBittorrentSettings", body.GetProperty("configContract").GetString());
+        Assert.True(body.GetProperty("enable").GetBoolean());
+        Assert.Equal("10.0.0.1", FieldValue(body, "host"));
+        Assert.Equal(ArrExec.QbitWebUiPort.ToString(), FieldValue(body, "port"));
+        Assert.Equal("user", FieldValue(body, "username"));
+        Assert.Equal("pw", FieldValue(body, "password"));
     }
 
     // ---- Provisioner idempotency (faked INodeExec seam) -------------------
