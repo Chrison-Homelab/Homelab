@@ -104,27 +104,67 @@ public static class ArrExec
         return true;
     }
 
-    // qBittorrent download-client body for any Servarr app (Sonarr/Radarr v3, Prowlarr v1).
-    // QBittorrentSettings is shared Servarr code → the field set is identical across apps;
-    // only the api version in the POST path differs. add-only — POST this when the app has
-    // no download client named "qBittorrent". Used by the *arr base AND the Prowlarr
-    // provisioner (so Prowlarr's own Search tab can grab releases).
-    public static string QbitDownloadClientJson(string qbitIp, string qbitUser, string qbitPass, string category) =>
-        JsonSerializer.Serialize(new
+    // How one Servarr app's download-client resource differs from another's (#363).
+    //
+    // QBittorrentSettings is shared Servarr code, so it is tempting to POST one body to
+    // every app. It does not work: the settings contract is generated per app, and the
+    // resource wrapped around it differs too. Two divergences, both load-bearing.
+    //
+    //   CategoryField — the qBittorrent category is `tvCategory` on Sonarr,
+    //     `movieCategory` on Radarr and `category` on Prowlarr. A field name the contract
+    //     does not know is dropped silently rather than rejected, so posting `category` to
+    //     Sonarr left the category unset. That went unnoticed because Servarr's own
+    //     defaults happen to be `tv-sonarr` and `radarr` — the values we wanted anyway.
+    //
+    //   RoutesByCategory — Prowlarr's DownloadClientDefinition carries a top-level
+    //     `categories` list (the newznab categories that route a grab to this client);
+    //     Sonarr's and Radarr's do not. Omit it and it deserialises to NULL, which the
+    //     pre-save connection test then dereferences:
+    //         System.NullReferenceException
+    //           at DownloadClientBase`1.ValidateCategories(...) DownloadClientBase.cs:101
+    //           at DownloadClientBase`1.Test()                  DownloadClientBase.cs:116
+    //     The API reports that as "Test was aborted due to an error: Object reference not
+    //     set to an instance of an object." — an error that names no field and looks like
+    //     a connectivity or credential fault, but is neither. An empty list means "every
+    //     category", which is what we want.
+    public readonly record struct QbitClientDialect(string CategoryField, bool RoutesByCategory)
+    {
+        public static readonly QbitClientDialect Sonarr = new("tvCategory", false);
+        public static readonly QbitClientDialect Radarr = new("movieCategory", false);
+        public static readonly QbitClientDialect Prowlarr = new("category", true);
+    }
+
+    // qBittorrent download-client body for a Servarr app, in that app's dialect (above).
+    // add-only — POST this when the app has no download client named "qBittorrent". Used
+    // by the *arr base AND the Prowlarr provisioner (so Prowlarr's own Search tab can grab
+    // releases).
+    public static string QbitDownloadClientJson(
+        string qbitIp, string qbitUser, string qbitPass, string category, QbitClientDialect dialect)
+    {
+        var body = new JsonObject
         {
-            enable = true, protocol = "torrent", priority = 1, name = "qBittorrent",
-            implementation = "QBittorrent", implementationName = "qBittorrent", configContract = "QBittorrentSettings",
-            fields = new object[]
-            {
-                new { name = "host", value = (object)qbitIp },
-                new { name = "port", value = (object)QbitWebUiPort },
-                new { name = "useSsl", value = (object)false },
-                new { name = "username", value = (object)qbitUser },
-                new { name = "password", value = (object)qbitPass },
-                new { name = "category", value = (object)category },
-            },
-            tags = Array.Empty<int>(),
-        });
+            ["enable"] = true,
+            ["protocol"] = "torrent",
+            ["priority"] = 1,
+            ["name"] = "qBittorrent",
+            ["implementation"] = "QBittorrent",
+            ["implementationName"] = "qBittorrent",
+            ["configContract"] = "QBittorrentSettings",
+            ["fields"] = new JsonArray(
+                Field("host", qbitIp),
+                Field("port", QbitWebUiPort),
+                Field("useSsl", false),
+                Field("username", qbitUser),
+                Field("password", qbitPass),
+                Field(dialect.CategoryField, category)),
+            ["tags"] = new JsonArray(),
+        };
+        if (dialect.RoutesByCategory) body["categories"] = new JsonArray();
+        return body.ToJsonString();
+
+        static JsonObject Field(string name, JsonNode? value) =>
+            new() { ["name"] = name, ["value"] = value };
+    }
 
     // qBittorrent (4.6+) prints a random WebUI password to its journal on first run:
     //   "...A temporary password is provided for this session: <pw>".
@@ -299,6 +339,7 @@ public abstract class ArrAppProvisionerBase : IAppProvisioner
     protected abstract int Port { get; }              // 8989 sonarr / 7878 radarr
     protected abstract string RootFolder { get; }     // /data/media/{tv,movies}
     protected abstract string QbitCategory { get; }   // tv-sonarr / radarr
+    protected abstract ArrExec.QbitClientDialect QbitDialect { get; }   // per-app download-client shape
     protected abstract int[] SyncCategories { get; }   // newznab cats Prowlarr syncs to this app
     protected abstract string PasswordSecret { get; }  // secrets.env key for this app's WebUI password
 
@@ -346,7 +387,7 @@ public abstract class ArrAppProvisionerBase : IAppProvisioner
             var qbitPass = ctx.Secrets.Get("QBIT_PASSWORD");
             if (qbitIp is null) return ApplyResult.Failed("could not resolve qbittorrent IP for download client");
             if (string.IsNullOrEmpty(qbitPass)) return ApplyResult.Failed("QBIT_PASSWORD not set — needed for the download client");
-            var body = ArrExec.QbitDownloadClientJson(qbitIp, ctx.Secrets.Get("QBIT_USER") ?? "admin", qbitPass, QbitCategory);
+            var body = ArrExec.QbitDownloadClientJson(qbitIp, ctx.Secrets.Get("QBIT_USER") ?? "admin", qbitPass, QbitCategory, QbitDialect);
             var (ok, resp) = await self.PostAsync("api/v3/downloadclient", body, ct);
             if (!ok) return ApplyResult.Failed($"add download client failed: {resp}");
             changed++;
@@ -394,6 +435,7 @@ public sealed class SonarrProvisioner : ArrAppProvisionerBase
     protected override int Port => 8989;
     protected override string RootFolder => "/data/media/tv";
     protected override string QbitCategory => "tv-sonarr";
+    protected override ArrExec.QbitClientDialect QbitDialect => ArrExec.QbitClientDialect.Sonarr;
     protected override int[] SyncCategories => new[] { 5000, 5010, 5020, 5030, 5040, 5045, 5050 };
     protected override string PasswordSecret => "SONARR_PASSWORD";
 }
@@ -404,6 +446,7 @@ public sealed class RadarrProvisioner : ArrAppProvisionerBase
     protected override int Port => 7878;
     protected override string RootFolder => "/data/media/movies";
     protected override string QbitCategory => "radarr";
+    protected override ArrExec.QbitClientDialect QbitDialect => ArrExec.QbitClientDialect.Radarr;
     protected override int[] SyncCategories => new[] { 2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060 };
     protected override string PasswordSecret => "RADARR_PASSWORD";
 }
@@ -500,8 +543,9 @@ public sealed class ProwlarrProvisioner : IAppProvisioner
 
         // 3. qBittorrent download client (add-only). Prowlarr's Search tab can grab a
         //    release directly only if it has its own download client — the *arr each
-        //    register qbit on their side, but Prowlarr needs its own. Same shared
-        //    QBittorrentSettings contract (v1 path); grabs land in the `prowlarr` category.
+        //    register qbit on their side, but Prowlarr needs its own. Posted in Prowlarr's
+        //    own dialect (v1 path, `category` field, `categories` routing list — see
+        //    QbitClientDialect); grabs land in the `prowlarr` category.
         var clients = await self.GetAsync("api/v1/downloadclient", ct);
         if (!ArrExec.HasName(clients, "qBittorrent"))
         {
@@ -509,7 +553,7 @@ public sealed class ProwlarrProvisioner : IAppProvisioner
             var qbitPass = ctx.Secrets.Get("QBIT_PASSWORD");
             if (qbitIp is null) return ApplyResult.Failed("could not resolve qbittorrent IP for download client");
             if (string.IsNullOrEmpty(qbitPass)) return ApplyResult.Failed("QBIT_PASSWORD not set — needed for the download client");
-            var body = ArrExec.QbitDownloadClientJson(qbitIp, ctx.Secrets.Get("QBIT_USER") ?? "admin", qbitPass, "prowlarr");
+            var body = ArrExec.QbitDownloadClientJson(qbitIp, ctx.Secrets.Get("QBIT_USER") ?? "admin", qbitPass, "prowlarr", ArrExec.QbitClientDialect.Prowlarr);
             var (ok, resp) = await self.PostAsync("api/v1/downloadclient", body, ct);
             if (!ok) return ApplyResult.Failed($"add qBittorrent download client failed: {resp}");
             changed++;
