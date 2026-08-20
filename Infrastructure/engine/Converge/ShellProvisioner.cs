@@ -48,7 +48,9 @@ public sealed class ShellProvisioner : IAppProvisioner
     internal static readonly string[] BasePackages =
     {
         "tmux", "git", "curl", "ca-certificates", "openssh-server",
-        "ncurses-bin", "ncurses-term", "sudo", "locales",
+        "ncurses-bin", "ncurses-term", "sudo", "locales", "gnupg",
+        // Homebrew prerequisites on Debian: it compiles from source when no bottle exists.
+        "build-essential", "procps", "file",
     };
 
     // TPM, and the marker file, both live under the user's home.
@@ -57,6 +59,21 @@ public sealed class ShellProvisioner : IAppProvisioner
     // Optional. Present → the login account gets this password, which is what makes Pangolin's
     // browser terminal usable without a key file. Absent → the account stays password-locked.
     internal const string PasswordSecretKey = "SHELL_USER_PASSWORD";
+
+    // ── toolchain (#421) ────────────────────────────────────────────────────────────
+    internal const string BrewPrefix = "/home/linuxbrew/.linuxbrew";
+    internal const string BrewBin = BrewPrefix + "/bin/brew";
+    internal const string BrewfileName = "Brewfile";
+    internal const string BrewInstaller = "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh";
+
+    // Anthropic's signed apt repo. Claude Code is a Homebrew CASK, and casks are macOS-only,
+    // so brew cannot install it on Linux — this is the declarative alternative, and arguably
+    // the better fit: the repo is GPG-signed and updates arrive with normal apt upgrades.
+    internal const string ClaudeKeyUrl = "https://downloads.claude.ai/keys/claude-code.asc";
+    internal const string ClaudeKeyPath = "/etc/apt/keyrings/claude-code.asc";
+    // Verified before the repo is trusted, per Anthropic's own install docs. A key served from
+    // a hijacked CDN is exactly what a fingerprint check is for.
+    internal const string ClaudeKeyFingerprint = "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE";
 
     // Assets are small (a config and a terminfo source), but the ceiling that killed the
     // monitoring converge on CT 4001 is a property of the pct exec command line, not of
@@ -95,6 +112,14 @@ public sealed class ShellProvisioner : IAppProvisioner
 
         yield return $"clone TPM + run install_plugins non-interactively (no one to press prefix + I)";
         yield return $"loginctl enable-linger {user} → user units start at boot with nobody logged in";
+        if (Homebrew(s))
+            yield return AssetFiles(s).Contains(BrewfileName)
+                ? $"install Homebrew to {BrewPrefix} as '{user}' + `brew bundle` the staged {BrewfileName}"
+                : $"install Homebrew to {BrewPrefix} as '{user}' (no {BrewfileName} asset — nothing to bundle)";
+        if (ClaudeCode(s))
+            yield return "add Anthropic's signed apt repo (fingerprint-checked) + install claude-code " +
+                         "— it is a Homebrew CASK, and casks are macOS-only, so brew cannot do it here";
+
         yield return $"install + enable ~{user}/.config/systemd/user/{UnitName(session)} → tmux session " +
                      $"'{session}' returns after a reboot (#408); retires the old system unit if present";
     }
@@ -310,7 +335,53 @@ public sealed class ShellProvisioner : IAppProvisioner
         sb.Append($"  {UserCmd(user, $"systemctl --user start {UnitName(session)}")}\n");
         sb.Append("fi\n");
 
-        // 9. Marker LAST — anything above failing means no marker, means a re-run.
+        // 9. The toolchain (#421). LAST of the real work, deliberately: brew's first run can
+        //    take minutes, and if it fails the terminal itself — packages, config, session,
+        //    boot unit — is already in place. No marker is stamped, so the next converge
+        //    retries just this.
+        if (Homebrew(s))
+        {
+            // The installer refuses to run as root and needs sudo for /home/linuxbrew, which
+            // the login user has passwordless. NONINTERACTIVE skips its "press RETURN" prompt,
+            // without which this hangs forever under pct exec.
+            sb.Append($"if [ ! -x {BrewBin} ]; then\n");
+            sb.Append("  " + AsUserInline(user, $"NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL {BrewInstaller})\"") + "\n");
+            sb.Append("fi\n");
+
+            // Put brew on PATH via /etc/profile.d, NOT by appending to ~/.bashrc.
+            //
+            // Debian's stock .bashrc opens with `case $- in *i*) ;; *) return;; esac` — it
+            // RETURNS IMMEDIATELY for a non-interactive shell. An appended line therefore never
+            // runs for `bash -lc`, `ssh host 'cmd'`, or anything scripted: brew appeared to
+            // install fine and then `brew: command not found`, which is how this was found.
+            // A profile.d drop-in is read by every login shell, interactive or not, and being a
+            // whole file it is idempotent without a grep guard.
+            sb.Append("cat > /etc/profile.d/homebrew.sh <<'HOMELAB_BREW_ENV'\n");
+            sb.Append("# MANAGED BY converge (ShellProvisioner) — edit the shape, not this file.\n");
+            sb.Append($"[ -x {BrewBin} ] && eval \"$({BrewBin} shellenv)\"\n");
+            sb.Append("HOMELAB_BREW_ENV\n");
+            sb.Append("chmod 0644 /etc/profile.d/homebrew.sh\n");
+
+            // `brew bundle` is what makes this declarative rather than a pile of installs.
+            if (assets.Contains(BrewfileName))
+                sb.Append(AsUser(user,
+                    $"eval \"$({BrewBin} shellenv)\" && brew bundle --file={StagingDir}/{BrewfileName}"));
+        }
+
+        if (ClaudeCode(s))
+        {
+            sb.Append("install -d -m 0755 /etc/apt/keyrings\n");
+            sb.Append($"curl -fsSL {ClaudeKeyUrl} -o {ClaudeKeyPath}\n");
+            // Fail closed on a fingerprint mismatch rather than trusting whatever was served.
+            sb.Append($"gpg --show-keys --with-colons {ClaudeKeyPath} | grep -q '{ClaudeKeyFingerprint}' || " +
+                      "{ echo 'claude-code signing key fingerprint MISMATCH — refusing to trust the repo'; exit 1; }\n");
+            sb.Append($"echo 'deb [signed-by={ClaudeKeyPath}] https://downloads.claude.ai/claude-code/apt/stable stable main' " +
+                      "> /etc/apt/sources.list.d/claude-code.list\n");
+            sb.Append("apt-get update -qq\n");
+            sb.Append("apt-get install -y -qq claude-code\n");
+        }
+
+        // 10. Marker LAST — anything above failing means no marker, means a re-run.
         sb.Append($"printf '%s' '{marker}' > {markerPath}\n");
         sb.Append($"chown {user}:{user} {markerPath}");
 
@@ -424,6 +495,13 @@ public sealed class ShellProvisioner : IAppProvisioner
     }
 
     // ── config accessors ────────────────────────────────────────────────────────────
+
+    internal static bool Homebrew(Shape s) => Flag(s, "homebrew");
+    internal static bool ClaudeCode(Shape s) => Flag(s, "claudeCode");
+
+    private static bool Flag(Shape s, string key) =>
+        s.Spec.Config.TryGetValue(key, out var v) && v is not null
+        && bool.TryParse(v.ToString(), out var b) && b;
 
     internal static string User(Shape s) => s.Spec.Config.Str("user") ?? DefaultUser;
 
