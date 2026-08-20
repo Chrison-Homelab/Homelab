@@ -54,6 +54,10 @@ public sealed class ShellProvisioner : IAppProvisioner
     // TPM, and the marker file, both live under the user's home.
     private const string TpmRepo = "https://github.com/tmux-plugins/tpm";
 
+    // Optional. Present → the login account gets this password, which is what makes Pangolin's
+    // browser terminal usable without a key file. Absent → the account stays password-locked.
+    internal const string PasswordSecretKey = "SHELL_USER_PASSWORD";
+
     // Assets are small (a config and a terminfo source), but the ceiling that killed the
     // monitoring converge on CT 4001 is a property of the pct exec command line, not of
     // the payload — so chunk on the same terms rather than assuming these stay small.
@@ -74,6 +78,9 @@ public sealed class ShellProvisioner : IAppProvisioner
             ? "NO authorizedKeys declared — nobody can log in; declare config.authorizedKeys[]"
             : $"write {keys.Count} authorized key(s) → ~{user}/.ssh/authorized_keys (declarative: the file is replaced)";
 
+        yield return $"set the login password from {PasswordSecretKey} if present, else leave the account " +
+                     "password-locked (key-only)";
+
         var assets = AssetFiles(s);
         if (assets.Count == 0)
             yield return $"NO assets found (looked in {AssetsSourceDir(s) ?? "(unresolved stack dir)"}) — " +
@@ -93,7 +100,13 @@ public sealed class ShellProvisioner : IAppProvisioner
     }
 
     // Stable marker over every managed input.
-    public static string DesiredMarker(Shape s)
+    //
+    // `password` is a MANAGED INPUT even though it lives in secrets.env rather than the shape.
+    // Its HASH is included (never the value) for two reasons: adding the secret to a host that
+    // was provisioned without it must re-converge and set it, and ROTATING it must re-converge
+    // too. Leaving it out is the silent-no-op trap this codebase has hit repeatedly — desired
+    // state changes, the marker does not, and converge reports success having done nothing.
+    public static string DesiredMarker(Shape s, string? password = null)
     {
         var parts = new List<string>
         {
@@ -101,6 +114,7 @@ public sealed class ShellProvisioner : IAppProvisioner
             Session(s),
             string.Join(",", Packages(s)),
             string.Join(",", AuthorizedKeys(s)),
+            password is { Length: > 0 } ? $"pw={Sha(password)[..16]}" : "pw=none",
         };
 
         if (AssetsSourceDir(s) is { } dir)
@@ -109,7 +123,7 @@ public sealed class ShellProvisioner : IAppProvisioner
 
         // Hash the recipe too, not just its inputs — see PodmanProvisioner.DesiredMarker
         // for the bug this prevents (a fixed script no-opping on hosts carrying the old marker).
-        parts.Add(Sha(BuildDeploy(s, "<marker>", "<markerPath>")));
+        parts.Add(Sha(BuildDeploy(s, "<marker>", "<markerPath>", password is { Length: > 0 } ? "<password>" : null)));
 
         return Sha(string.Join('|', parts))[..12];
     }
@@ -128,7 +142,8 @@ public sealed class ShellProvisioner : IAppProvisioner
                 "no config.authorizedKeys[] declared — the shell host is reached by ssh and would " +
                 "be unreachable. Declare at least one public key.");
 
-        var marker = DesiredMarker(s);
+        var password = ctx.Secrets.Get(PasswordSecretKey);
+        var marker = DesiredMarker(s, password);
         var markerPath = $"/home/{user}/.homelab-managed";
 
         var cur = await ctx.Exec.InContainerAsync(node, ctid, $"cat {markerPath} 2>/dev/null || true");
@@ -144,7 +159,7 @@ public sealed class ShellProvisioner : IAppProvisioner
         // apt on a cold CT is minutes of silence otherwise (#369).
         ctx.Report($"installing {Packages(s).Count} package(s) and configuring the tmux server for '{user}'");
 
-        var res = await ctx.Exec.InContainerAsync(node, ctid, BuildDeploy(s, marker, markerPath));
+        var res = await ctx.Exec.InContainerAsync(node, ctid, BuildDeploy(s, marker, markerPath, password));
         if (!res.Ok) return ApplyResult.Failed($"shell host setup failed: {res.Stderr}");
 
         return ApplyResult.Applied(string.Join("; ", new[]
@@ -157,7 +172,7 @@ public sealed class ShellProvisioner : IAppProvisioner
     // ── the deploy script ───────────────────────────────────────────────────────────
     //
     // One `pct exec` covering the whole host. `set -e` throughout, marker stamped last.
-    internal static string BuildDeploy(Shape s, string marker, string markerPath)
+    internal static string BuildDeploy(Shape s, string marker, string markerPath, string? password = null)
     {
         var user = User(s);
         var session = Session(s);
@@ -194,6 +209,23 @@ public sealed class ShellProvisioner : IAppProvisioner
         sb.Append("HOMELAB_KEYS\n");
         sb.Append($"chown {user}:{user} {home}/.ssh/authorized_keys\n");
         sb.Append($"chmod 600 {home}/.ssh/authorized_keys\n");
+
+        // 4b. The login password, only when one is supplied.
+        //
+        //     Pangolin's SSH resource serves a browser terminal, and after the SSO gate it asks
+        //     for the HOST's credentials — username+password, or an uploaded private key. On a
+        //     borrowed machine there is no key file to upload, so without a password the browser
+        //     path is unusable, which was the main reason for choosing that route (#406).
+        //
+        //     Fed through a heredoc rather than an argument so the value never appears in the
+        //     node's process table. Absent → the account is left password-LOCKED (useradd's
+        //     default), i.e. key-only, rather than being unlocked with something guessable.
+        if (password is { Length: > 0 })
+        {
+            sb.Append("chpasswd <<'HOMELAB_PW'\n");
+            sb.Append($"{user}:{password}\n");
+            sb.Append("HOMELAB_PW\n");
+        }
 
         // 5. tmux.conf from the staging dir.
         if (assets.Contains(TmuxConfName))
