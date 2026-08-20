@@ -220,6 +220,63 @@ public sealed class ShellProvisionerTests : IDisposable
         }
     }
 
+    // ---- the login password (#440, browser terminal) ----------------------
+
+    [Fact]
+    public void Deploy_SetsThePasswordViaStdin_NotAnArgument()
+    {
+        // Pangolin's browser terminal asks for HOST credentials after the SSO gate. On a
+        // borrowed machine there is no key file to upload, so a password is what makes that
+        // path usable. Fed through a heredoc so the value never lands in the node's process
+        // table.
+        var script = ShellProvisioner.BuildDeploy(ShellShape(), "m", "/p", "s3cret-value");
+
+        Assert.Contains("chpasswd <<'HOMELAB_PW'", script, StringComparison.Ordinal);
+        Assert.Contains("csimon:s3cret-value", script, StringComparison.Ordinal);
+        // Never as an argument to chpasswd, and never echoed.
+        Assert.DoesNotContain("chpasswd csimon", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("echo s3cret-value", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deploy_LeavesTheAccountPasswordLocked_WhenNoPasswordIsSupplied()
+    {
+        // useradd leaves the account password-locked, i.e. key-only. Absent secret must keep it
+        // that way rather than unlocking it with something weak.
+        var script = ShellProvisioner.BuildDeploy(ShellShape(), "m", "/p", null);
+
+        Assert.DoesNotContain("chpasswd", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("passwd", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Marker_ChangesWhenThePasswordIsAddedOrRotated()
+    {
+        // The silent-no-op trap, guarded. The password lives in secrets.env rather than the
+        // shape, so a marker over shape inputs alone would not move when the secret is ADDED to
+        // an already-provisioned host, nor when it is ROTATED — converge would report success
+        // having set nothing.
+        var shape = ShellShape();
+
+        var none = ShellProvisioner.DesiredMarker(shape, null);
+        var first = ShellProvisioner.DesiredMarker(shape, "pw-one");
+        var rotated = ShellProvisioner.DesiredMarker(shape, "pw-two");
+
+        Assert.NotEqual(none, first);
+        Assert.NotEqual(first, rotated);
+        // ...and stable for the same value.
+        Assert.Equal(first, ShellProvisioner.DesiredMarker(shape, "pw-one"));
+    }
+
+    [Fact]
+    public void Marker_DoesNotEmbedThePasswordItself()
+    {
+        // It is hashed, not carried — the marker is written to a file on the CT.
+        var marker = ShellProvisioner.DesiredMarker(ShellShape(), "very-secret-value");
+
+        Assert.DoesNotContain("very-secret-value", marker, StringComparison.Ordinal);
+    }
+
     // ---- the boot unit (#408) ---------------------------------------------
 
     [Fact]
