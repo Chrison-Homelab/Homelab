@@ -140,3 +140,13 @@ apps:
   shell:
     script: debian
     provisioner: shell
+
+  # Newt — Pangolin's WireGuard site connector (#441). Gives a stack its own Pangolin SITE, so
+  # the stack's exposure travels with the stack (the per-stack model, #442). Plain base Debian
+  # (script: debian) + the `newt` provisioner, which installs the release BINARY as a root
+  # systemd service — deliberately NOT a container: Pangolin SSH resources require Newt as root
+  # on the host and upstream does not support the containerized form for SSH mode (a narrow,
+  # documented exception to ADR-0009). See stacks/DevOps/newt.lxc.yaml.
+  newt:
+    script: debian
+    provisioner: newt

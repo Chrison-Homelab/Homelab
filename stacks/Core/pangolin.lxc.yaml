@@ -102,6 +102,27 @@ spec:
     # ManagedComment-stamped (so #195's prune leaves hand-managed records alone). Update if the
     # WAN IP changes. The UniFi :443 port-forward itself is still hand-managed (gated on #102).
     publicIp: 118.67.199.127
+
+    # GERBIL ENDPOINT — where Newt connectors are told to send WireGuard. Deliberately the
+    # INTERNAL address, not publicIp.
+    #
+    # publicIp is the correct default for a remote site, and it is what the code falls back to
+    # (#444, which fixed this pointing at the Cloudflare-proxied dashboard — WireGuard UDP does
+    # not survive Cloudflare's proxy). But every site we have is on this LAN, and the gateway
+    # does NOT hairpin: from CT 3005, `curl https://118.67.199.127` fails outright while
+    # `https://10.10.0.13` answers. So a LAN connector handed the public IP cannot reach the
+    # edge sitting one subnet away — the websocket control plane connects over :443 through
+    # Cloudflare, then WireGuard times out and Newt logs "all 5 ping attempts failed".
+    #
+    # The alternative was enabling NAT loopback on the UniFi gateway. Rejected: it makes every
+    # LAN connector's data path leave and re-enter the network to reach a host it can already
+    # see, to work around an addressing choice rather than a requirement.
+    #
+    # ⚠ CONSEQUENCE: while this is set, a genuinely REMOTE site cannot connect — it would be
+    #   handed a private IP. That is fine today (all sites are on-LAN) and it resolves itself at
+    #   the VPS graduation (ADR-0007 decision #4 / #137): Gerbil moves off-site, this becomes the
+    #   VPS's public address, and the home connectors dial outward with no hairpin involved.
+    gerbilEndpoint: 10.10.0.13
     letsEncryptEmail: csimon@chrison.dev
     leStaging: false                             # flip true to use the LE STAGING CA while iterating
     # GERBIL — WireGuard server, ON (#406). This is the upstream-recommended topology:
