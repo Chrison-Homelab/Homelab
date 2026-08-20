@@ -718,6 +718,68 @@ public sealed class ConvergeCoreTests
     }
 
     [Fact]
+    public void Pangolin_Marker_TracksTheDeployRecipe_NotOnlyItsOutputs()
+    {
+        // The marker must move when the RECIPE changes, not just its inputs. Without this a
+        // corrected deploy script silently no-ops on every host carrying the old marker — which
+        // is exactly how the missing `docker compose restart` could not be shipped: the fix was
+        // right, the marker did not move, converge reported NOCHANGE.
+        //
+        // Asserted structurally: the marker must depend on the generated script, so a shape
+        // whose only difference shows up IN the script still moves it.
+        var s = PangolinWildcardShape();
+        var script = PangolinProvisioner.BuildDockerDeploy(s, "<marker>",
+            PangolinProvisioner.DashboardHost(s), PangolinProvisioner.DashboardUrl(s),
+            "chrison.dev", "<cfToken>");
+
+        // The restart is part of the recipe, so it is inside what the marker hashes.
+        Assert.Contains("docker compose restart", script, StringComparison.Ordinal);
+
+        var before = PangolinProvisioner.DesiredMarker(s);
+        var after = PangolinWildcardShape();
+        after.Spec.Config["gerbilEndpoint"] = "10.10.0.13";
+        Assert.NotEqual(before, PangolinProvisioner.DesiredMarker(after));
+    }
+
+    [Fact]
+    public void Pangolin_GerbilCompose_AdvertisesThePortItActuallyListensOn()
+    {
+        // gerbil's -listen defaults to ":3003". Advertising :3004 made every Pangolin→gerbil
+        // peer call fail with ECONNREFUSED, so Newt never received a wg config and the tunnel
+        // never formed — while the site still reported online, because the websocket control
+        // plane was healthy. The two ports must agree.
+        var s = PangolinWildcardShape();
+        s.Spec.Config["includeGerbil"] = true;
+        var compose = PangolinProvisioner.BuildComposeYaml(s);
+
+        Assert.Contains("--reachableAt=http://gerbil:3003", compose, StringComparison.Ordinal);
+        Assert.DoesNotContain("gerbil:3004", compose, StringComparison.Ordinal);
+        // remoteConfig supersedes the deprecated reportBandwidthTo.
+        Assert.Contains("--remoteConfig=", compose, StringComparison.Ordinal);
+        Assert.DoesNotContain("--reportBandwidthTo", compose, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Pangolin_DockerDeploy_RestartsAfterRenderingConfig()
+    {
+        // `docker compose up -d` only recreates a service whose DEFINITION changed. config.yml
+        // and the Traefik configs are bind-mounted FILES, so a config-only change lands on disk
+        // while the running process keeps serving the old value — and converge reports APPLIED.
+        // Seen live: base_endpoint rendered to a new value with every container still `Up 3 days`.
+        var s = PangolinWildcardShape();
+        var script = PangolinProvisioner.BuildDockerDeploy(s, "m", "pangolin.chrison.dev",
+            "https://pangolin.chrison.dev", "chrison.dev", "cf-token");
+
+        var up = script.IndexOf("docker compose up -d", StringComparison.Ordinal);
+        var restart = script.IndexOf("docker compose restart", StringComparison.Ordinal);
+        var marker = script.IndexOf("printf '%s' 'm'", StringComparison.Ordinal);
+
+        Assert.True(up > 0, "the deploy must bring the stack up");
+        Assert.True(restart > up, "the restart must follow `up -d`, so rendered config is re-read");
+        Assert.True(marker > restart, "the marker must be stamped only after the restart");
+    }
+
+    [Fact]
     public void Pangolin_Marker_ChangesWhenGerbilIsTurnedOn()
     {
         // Regression guard (#406). The marker enumerated `gerbilImage` but NOT `includeGerbil`

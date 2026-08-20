@@ -65,6 +65,7 @@ public sealed class ProvisionerRegistry
         new PangolinProvisioner(),
         new PodmanProvisioner(),
         new ShellProvisioner(),
+        new NewtProvisioner(),
         new QbittorrentProvisioner(),
         new ProwlarrProvisioner(),
         new SonarrProvisioner(),
@@ -681,7 +682,20 @@ public sealed class PangolinProvisioner : IAppProvisioner
             // reported NOCHANGE. "Hash the rendered artefacts" only works if it is ALL of them.
             // The marker placeholder keeps this deterministic: config.yml embeds the marker, so
             // hashing the real value would be circular.
-            Sha(string.Join("\n", BuildConfigLines(s, "<marker>", DashboardHost(s), DashboardUrl(s), BaseDomain(s)))));
+            Sha(string.Join("\n", BuildConfigLines(s, "<marker>", DashboardHost(s), DashboardUrl(s), BaseDomain(s)))),
+            // ...and the generated DEPLOY SCRIPT, which is the last hole in this marker.
+            //
+            // Hashing rendered artefacts catches a change to the artefacts. It does NOT catch a
+            // change to the RECIPE — so fixing a bug in BuildDockerDeploy no-ops on every host
+            // carrying the old marker, which is how the missing `docker compose restart` could
+            // not be deployed: the fix was correct, the marker did not move, converge said
+            // NOCHANGE. Third instance of this class in one sitting (#437, then config.yml, then
+            // this), so hash the recipe as PodmanProvisioner has always done.
+            //
+            // The script embeds the base64 of compose/config/traefik, so this subsumes the
+            // artefact hashes above; they are kept because a marker is cheap and a silent no-op
+            // is not. Placeholders keep it deterministic.
+            Sha(BuildDockerDeploy(s, "<marker>", DashboardHost(s), DashboardUrl(s), BaseDomain(s), "<cfToken>")));
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..12].ToLowerInvariant();
     }
 
@@ -1296,6 +1310,18 @@ public sealed class PangolinProvisioner : IAppProvisioner
         sb.Append($"echo {tStatic} | base64 -d > config/traefik/traefik_config.yml\n");
         sb.Append($"echo {tDynamic} | base64 -d > config/traefik/dynamic_config.yml\n");
         sb.Append("docker compose up -d\n");
+        // ...then RESTART, because `up -d` is not enough. It only recreates a service whose
+        // DEFINITION changed, and config.yml / traefik_config.yml are bind-mounted files — so a
+        // config-only change (a new gerbil.base_endpoint, say) lands on disk while the running
+        // process keeps serving the old value from memory, and converge reports APPLIED.
+        // Observed exactly that: base_endpoint rendered to 10.10.0.13 while every container
+        // still showed `Up 3 days` and Newt was handed the previous endpoint. The native
+        // (non-Docker) path has always done `systemctl restart pangolin gerbil` for this reason;
+        // the Docker path was missing its equivalent.
+        //
+        // Blunt on purpose — all three read rendered config, and the whole deploy is
+        // marker-gated, so this only runs when something actually changed.
+        sb.Append("docker compose restart\n");
         // Mark-on-SUCCESS: only reached if everything above (incl. compose up) exited 0 under
         // `set -e`. A partial failure leaves no marker → next converge re-runs the deploy.
         sb.Append($"printf '%s' '{marker}' > /opt/pangolin/.homelab-managed");
@@ -1393,10 +1419,19 @@ public sealed class PangolinProvisioner : IAppProvisioner
                 "      pangolin:",
                 "        condition: service_healthy",
                 "    command:",
-                "      - --reachableAt=http://gerbil:3004",
+                // reachableAt MUST match where gerbil actually listens. This advertised :3004
+                // while gerbil's -listen defaults to ":3003", so Pangolin's peer add/delete
+                // calls hit a closed port: "Error making POST request (can Pangolin see Gerbil
+                // HTTP API?) ... connect ECONNREFUSED 172.18.0.3:3004". Newt then waits forever
+                // on newt/wg/get-config, never receives a tunnel config, and every ping fails —
+                // while the site still reports online, because the websocket control plane is
+                // fine. Latent since gerbil support was written; only reachable once gerbil was
+                // actually switched on (#432).
+                "      - --reachableAt=http://gerbil:3003",
                 "      - --generateAndSaveKeyTo=/var/config/key",
+                // remoteConfig supersedes reportBandwidthTo, which gerbil marks DEPRECATED in
+                // its own --help. Passing both is redundant, so pass the one that is current.
                 "      - --remoteConfig=http://pangolin:3001/api/v1/gerbil/get-config",
-                "      - --reportBandwidthTo=http://pangolin:3001/api/v1/gerbil/receive-bandwidth",
                 "    volumes:",
                 "      - ./config/:/var/config",
                 "    cap_add:",
