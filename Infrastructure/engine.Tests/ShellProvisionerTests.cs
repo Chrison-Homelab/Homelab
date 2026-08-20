@@ -277,6 +277,97 @@ public sealed class ShellProvisionerTests : IDisposable
         Assert.DoesNotContain("very-secret-value", marker, StringComparison.Ordinal);
     }
 
+    // ---- the toolchain (#421) ---------------------------------------------
+
+    [Fact]
+    public void Brewfile_NeverContainsTmux()
+    {
+        // The hazard this guards. tmux's client and server must be the SAME version, and
+        // brew's bin comes FIRST on PATH — so a brew tmux would make an interactive
+        // `tmux attach` run a different binary than the systemd-started server and fail with
+        // "protocol version mismatch", breaking the one thing this host exists to provide.
+        var brewfile = File.ReadAllText(FindRepoFile(Path.Combine("stacks", "DevOps", "shell-assets", "Brewfile")));
+
+        Assert.DoesNotContain("brew \"tmux\"", brewfile, StringComparison.Ordinal);
+        Assert.DoesNotContain("brew 'tmux'", brewfile, StringComparison.Ordinal);
+        // ...and the reason is written down where someone would go to add it.
+        Assert.Contains("protocol version mismatch", brewfile, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deploy_InstallsHomebrewNonInteractivelyAsTheUser()
+    {
+        var shape = ShellShape(("Brewfile", "brew \"dotnet\"\n"));
+        shape.Spec.Config["homebrew"] = true;
+        var script = ShellProvisioner.BuildDeploy(shape, "m", "/p");
+
+        // NONINTERACTIVE, or the installer's "press RETURN" prompt hangs forever under pct exec.
+        Assert.Contains("NONINTERACTIVE=1", script, StringComparison.Ordinal);
+        // As the login user — the installer refuses to run as root.
+        Assert.Contains("runuser -l csimon", script, StringComparison.Ordinal);
+        // Guarded, so a re-converge does not reinstall brew.
+        Assert.Contains($"if [ ! -x {ShellProvisioner.BrewBin} ]", script, StringComparison.Ordinal);
+        // Declarative: the Brewfile is what is applied.
+        Assert.Contains("brew bundle --file=/opt/homelab-shell/Brewfile", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deploy_WiresBrewOntoPathViaProfileD_NotBashrc()
+    {
+        // Regression guard. Debian's stock .bashrc RETURNS immediately for a non-interactive
+        // shell, so an appended line never runs for `bash -lc` or `ssh host 'cmd'` — brew
+        // installed fine and then reported "command not found". profile.d is read by every
+        // login shell, interactive or not.
+        var shape = ShellShape(("Brewfile", "brew \"dotnet\"\n"));
+        shape.Spec.Config["homebrew"] = true;
+        var script = ShellProvisioner.BuildDeploy(shape, "m", "/p");
+
+        Assert.Contains("/etc/profile.d/homebrew.sh", script, StringComparison.Ordinal);
+        Assert.DoesNotContain(".bashrc", script, StringComparison.Ordinal);
+        // Whole-file write, so it is idempotent without needing a grep guard.
+        Assert.Contains("cat > /etc/profile.d/homebrew.sh", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deploy_VerifiesTheClaudeSigningKeyBeforeTrustingTheRepo()
+    {
+        var shape = ShellShape();
+        shape.Spec.Config["claudeCode"] = true;
+        var script = ShellProvisioner.BuildDeploy(shape, "m", "/p");
+
+        // Fail closed on a mismatch rather than trusting whatever the CDN served.
+        Assert.Contains(ShellProvisioner.ClaudeKeyFingerprint, script, StringComparison.Ordinal);
+        Assert.Contains("gpg --show-keys", script, StringComparison.Ordinal);
+        Assert.Contains("refusing to trust the repo", script, StringComparison.Ordinal);
+        // The fingerprint check must come BEFORE the repo is registered and apt is told to use it.
+        var check = script.IndexOf("gpg --show-keys", StringComparison.Ordinal);
+        var register = script.IndexOf("sources.list.d/claude-code.list", StringComparison.Ordinal);
+        Assert.True(check < register, "the key must be verified before the repo is registered");
+    }
+
+    [Fact]
+    public void Deploy_OmitsTheToolchain_WhenNotEnabled()
+    {
+        var script = ShellProvisioner.BuildDeploy(ShellShape(), "m", "/p");
+
+        Assert.DoesNotContain("brew", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("claude-code", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deploy_PutsTheToolchainAfterTheTerminalIsWorking()
+    {
+        // brew's first run can take minutes. If it fails, packages/config/session/boot unit are
+        // already in place and no marker is stamped, so the next converge retries just this.
+        var shape = ShellShape(("tmux.conf", "set -g mouse on\n"), ("Brewfile", "brew \"dotnet\"\n"));
+        shape.Spec.Config["homebrew"] = true;
+        var script = ShellProvisioner.BuildDeploy(shape, "m", "/p");
+
+        var unit = script.IndexOf("systemctl --user enable tmux-main.service", StringComparison.Ordinal);
+        var brew = script.IndexOf("NONINTERACTIVE=1", StringComparison.Ordinal);
+        Assert.True(unit > 0 && brew > unit, "the toolchain must come after the boot unit");
+    }
+
     // ---- the boot unit (#408) ---------------------------------------------
 
     [Fact]
@@ -390,5 +481,19 @@ public sealed class ShellProvisionerTests : IDisposable
 
         Assert.Equal(ShellProvisioner.DefaultUser, ShellProvisioner.User(shape));
         Assert.Equal(ShellProvisioner.DefaultSession, ShellProvisioner.Session(shape));
+    }
+
+    // Walk up from the test assembly to a repo-relative file — the test binary does not sit at
+    // the repo root.
+    private static string FindRepoFile(string relative)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(dir.FullName, relative);
+            if (File.Exists(candidate)) return candidate;
+            dir = dir.Parent;
+        }
+        throw new FileNotFoundException($"Could not locate {relative} by walking up from {AppContext.BaseDirectory}");
     }
 }
