@@ -937,12 +937,22 @@ public sealed class PangolinProvisioner : IAppProvisioner
             return (null, false, $"pangolin: domain '{baseDomain}' not found in org '{org}'");
 
         // local site (create if missing — targets the Pangolin host's own services, no Newt)
+        // ...plus every site BY NAME, so a resource can bind to one explicitly with `site:`.
+        // That is the thin slice of multi-site support the SSH path needs (#440): a Pangolin
+        // SSH resource works only on a NEWT site, never on the local one, so it cannot ride
+        // the single local site every HTTP resource uses. The full per-stack model is #442.
         int? siteId = null;
+        var sitesByName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var (sok, sroot) = await pg.CallAsync("GET", $"/org/{org}/sites", null, ct);
         if (sok)
             foreach (var st in DataArray(sroot, "sites"))
-                if (st.TryGetProperty("type", out var t) && t.GetString() == "local" && st.TryGetProperty("siteId", out var si))
+            {
+                if (!st.TryGetProperty("siteId", out var si)) continue;
+                if (st.TryGetProperty("name", out var sn) && sn.GetString() is { Length: > 0 } sns)
+                    sitesByName[sns] = si.GetInt32();
+                if (st.TryGetProperty("type", out var t) && t.GetString() == "local")
                     siteId = si.GetInt32();
+            }
         if (siteId is null)
         {
             var (cok, croot) = await pg.CallAsync("PUT", $"/org/{org}/site", "{\"name\":\"local\",\"type\":\"local\"}", ct);
@@ -988,10 +998,39 @@ public sealed class PangolinProvisioner : IAppProvisioner
             }
             var fqdn = $"{pgSub}.{rDomain}";
             var name = rd["name"]?.ToString() ?? sub;
+            // `mode` selects the resource type. Default http keeps every existing entry as-is;
+            // `ssh` is the protocol-aware SSH resource, which serves a BROWSER TERMINAL behind
+            // the Pangolin auth layer (as opposed to a raw TCP resource, which bypasses auth
+            // entirely). Pangolin defaults its pamMode/authDaemonMode/authDaemonPort.
+            var mode = rd["mode"]?.ToString() is { Length: > 0 } md ? md : "http";
+            var isSsh = string.Equals(mode, "ssh", StringComparison.OrdinalIgnoreCase);
+
             var tgt = rd["target"] as System.Collections.IDictionary;
             var tip = tgt?["ip"]?.ToString() ?? "localhost";
-            var tmethod = tgt?["method"]?.ToString() ?? "http";
-            var tport = int.TryParse(tgt?["port"]?.ToString(), out var pp) ? pp : 80;
+            // An SSH target carries no method — Pangolin stores null, and sending "http" makes
+            // the comparison below drift forever.
+            var tmethod = isSsh ? null : (tgt?["method"]?.ToString() ?? "http");
+            var tport = int.TryParse(tgt?["port"]?.ToString(), out var pp) ? pp : (isSsh ? 22 : 80);
+
+            // Which site the target hangs off. Omitted → the local site, so nothing existing
+            // moves. Named → resolved from the live list; an unknown name fails THAT resource
+            // loudly rather than silently planting it on the local site, which for an SSH
+            // resource would produce a route that can never work.
+            var rSiteId = siteId;
+            if (rd["site"]?.ToString() is { Length: > 0 } wantSite)
+            {
+                if (!sitesByName.TryGetValue(wantSite, out var found))
+                {
+                    notes.Add($"{sub}: site '{wantSite}' not found in Pangolin — declare its connector first (see #441)");
+                    continue;
+                }
+                rSiteId = found;
+            }
+            else if (isSsh)
+            {
+                notes.Add($"{sub}: mode ssh requires an explicit `site:` — SSH resources work only on a Newt site, never the local one");
+                continue;
+            }
             // sso gate: default ON — admin UIs must sit behind Pangolin auth (badger). The
             // integration-API create defaults sso to null (OPEN), so we MUST set it explicitly
             // or the resource is born publicly reachable. A resource may opt out (sso: false)
@@ -1002,7 +1041,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
             {
                 // ── EXISTS: reconcile rather than skip (#309) ──────────────────────────
                 var (tmsg, tchanged, tfail) = await ReconcileTargetAsync(
-                    pg, live, siteId.Value, tip, tmethod, tport, fqdn, ct);
+                    pg, live, rSiteId!.Value, tip, tmethod, tport, fqdn, ct);
                 if (tfail is not null) return (null, false, tfail);
                 if (tmsg is not null) notes.Add(tmsg);
                 if (tchanged) retargeted++;
@@ -1022,13 +1061,17 @@ public sealed class PangolinProvisioner : IAppProvisioner
             }
 
             // ── ABSENT: create ────────────────────────────────────────────────────────
-            var (rok, rroot) = await pg.CallAsync("PUT", $"/org/{org}/resource",
-                JsonSerializer.Serialize(new { name, subdomain = pgSub, http = true, protocol = "tcp", domainId }), ct);
+            var createBody = isSsh
+                // An SSH resource is created by MODE. It carries no `http`/`protocol` — sending
+                // them makes Pangolin treat it as an HTTP resource and the terminal never appears.
+                ? JsonSerializer.Serialize(new { name, subdomain = pgSub, mode = "ssh", domainId })
+                : JsonSerializer.Serialize(new { name, subdomain = pgSub, http = true, protocol = "tcp", domainId });
+            var (rok, rroot) = await pg.CallAsync("PUT", $"/org/{org}/resource", createBody, ct);
             if (!rok || !Data(rroot).TryGetProperty("resourceId", out var rid))
                 return (null, false, $"pangolin: failed to create resource {fqdn}");
             var resourceId = rid.GetInt32();
             await pg.CallAsync("PUT", $"/resource/{resourceId}/target",
-                JsonSerializer.Serialize(new { siteId, ip = tip, method = tmethod, port = tport, enabled = true }), ct);
+                JsonSerializer.Serialize(new { siteId = rSiteId, ip = tip, method = tmethod, port = tport, enabled = true }), ct);
             // ssl: public-wildcard → Traefik terminates TLS (true); cloudflared → CF does (false).
             // sso: gate the resource behind Pangolin auth unless it explicitly opts out.
             await pg.CallAsync("POST", $"/resource/{resourceId}", JsonSerializer.Serialize(new { ssl = publicWildcard, sso }), ct);
@@ -1059,7 +1102,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
     // in CLAUDE.md exists to prevent — so that case reports and skips instead.
     private static async Task<(string? msg, bool changed, string? failed)> ReconcileTargetAsync(
         PangolinClient pg, LiveResource live, int siteId,
-        string ip, string method, int port, string fqdn, CancellationToken ct)
+        string ip, string? method, int port, string fqdn, CancellationToken ct)
     {
         if (live.TargetCount > 1)
             return ($"{fqdn}: {live.TargetCount} targets live (load-balanced?) — left alone, reconcile by hand", false, null);
@@ -1084,8 +1127,10 @@ public sealed class PangolinProvisioner : IAppProvisioner
         var liveMethod = t.TryGetProperty("method", out var mv) ? mv.GetString() ?? "" : "";
         var liveEnabled = Truthy(t, "enabled");
 
+        // method is null for an SSH target and Pangolin stores it as null, so compare against
+        // "" rather than letting a null-vs-"" mismatch look like permanent drift.
         if (string.Equals(liveIp, ip, StringComparison.OrdinalIgnoreCase) && livePort == port
-            && string.Equals(liveMethod, method, StringComparison.OrdinalIgnoreCase) && liveEnabled)
+            && string.Equals(liveMethod, method ?? "", StringComparison.OrdinalIgnoreCase) && liveEnabled)
             return (null, false, null);
 
         // siteId is REQUIRED on this call even when unchanged — omitting it 400s with

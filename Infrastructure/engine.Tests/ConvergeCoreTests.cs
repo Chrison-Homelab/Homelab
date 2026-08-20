@@ -742,6 +742,32 @@ public sealed class ConvergeCoreTests
     }
 
     [Fact]
+    public void Pangolin_SshResource_IsDeclaredWithModeAndAnExplicitSite()
+    {
+        // The shape-level contract for #440. An SSH resource must carry mode: ssh and an
+        // explicit site — Pangolin SSH resources work ONLY on a Newt site, never the `local`
+        // one every HTTP resource uses, so a missing site would produce a route that can never
+        // work. Targeted by IP because Newt resolves via 9.9.9.9 and cannot see internal names.
+        var stackDir = Path.GetDirectoryName(FindRepoFile(Path.Combine("stacks", "Core", "pangolin.lxc.yaml")))!;
+        var shape = ShapeLoader.LoadStack(stackDir).Members.Single(m => m.Metadata.Name == "pangolin");
+        var resources = (System.Collections.IEnumerable)shape.Spec.Config["resources"]!;
+
+        System.Collections.IDictionary? ssh = null;
+        foreach (var r in resources)
+            if (r is System.Collections.IDictionary d
+                && string.Equals(d["mode"]?.ToString(), "ssh", StringComparison.OrdinalIgnoreCase))
+                ssh = d;
+
+        Assert.NotNull(ssh);
+        Assert.Equal("DevOps", ssh!["site"]?.ToString());
+        Assert.Equal("shell", ssh["subdomain"]?.ToString());
+        var target = (System.Collections.IDictionary)ssh["target"]!;
+        Assert.Equal("22", target["port"]?.ToString());
+        // An IP, not a name — the connector cannot resolve *.internal.
+        Assert.DoesNotContain("internal", target["ip"]?.ToString() ?? "", StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Pangolin_GerbilCompose_AdvertisesThePortItActuallyListensOn()
     {
         // gerbil's -listen defaults to ":3003". Advertising :3004 made every Pangolin→gerbil
@@ -1054,5 +1080,19 @@ public sealed class ConvergeCoreTests
         var zones = hosts.Select(CloudflaredProvisioner.ZoneNameOf)
                          .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(z => z).ToArray();
         Assert.Equal(new[] { "chrison.dev", "tao-simon.family" }, zones);
+    }
+
+    // Walk up from the test assembly to a repo-relative file, the same way AppCatalogueTests
+    // locates the catalogue — the test binary does not sit at the repo root.
+    private static string FindRepoFile(string relative)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(dir.FullName, relative);
+            if (File.Exists(candidate)) return candidate;
+            dir = dir.Parent;
+        }
+        throw new FileNotFoundException($"Could not locate {relative} by walking up from {AppContext.BaseDirectory}");
     }
 }
