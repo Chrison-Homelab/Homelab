@@ -616,16 +616,24 @@ public sealed class PangolinProvisioner : IAppProvisioner
     //     Server returned non-OK status: 400
     //     {"message":"Validation error: ... expected string, received undefined
     //                 at \"publicKey\"","status":400}
-    // Pangolin never learns the peer exists, so newt waits on newt/wg/get-config forever
-    // and no wg interface is ever created. Gerbil 1.3.0 is the release that added it
-    // ("Include public key in hole punch message to Pangolin"); 1.4.2 is the newest gerbil
-    // that existed when ee-1.19.4 shipped, which is what upstream would have paired.
+    // Pangolin never learns the peer exists, so newt waits on newt/wg/get-config forever.
+    // Gerbil 1.3.0 is the release that added it ("Include public key in hole punch message
+    // to Pangolin").
     //
     // The failure is SILENT until something forces re-registration — an existing peer keeps
     // working across the bump, so a stack update looks clean and the site only dies on its
     // next reconnect, potentially days later (#455).
-    internal const string DefaultImage = "fosrl/pangolin:ee-1.19.4";
-    internal const string DefaultGerbilImage = "fosrl/gerbil:1.4.2";
+    //
+    // NEWT COUNTS AS PART OF THIS SET, even though it is pinned in the DevOps stack rather
+    // than here (stacks/DevOps/newt.lxc.yaml). Holding pangolin at ee-1.19.4 while newt ran
+    // 1.16.0 broke the other half: pangolin 1.21.0 added same-network detection for clients
+    // and sites and says outright that it "requires updated clients and sites", while newt
+    // 1.15.0 added the connector half ("scrape and send local endpoints to accept local
+    // network connections from clients"). Running the client half against a server that has
+    // neither left newt unable to build its clients interface — pangolin handed it a bare
+    // `100.90.128.0` with no CIDR prefix (#457).
+    internal const string DefaultImage = "fosrl/pangolin:ee-1.21.1";
+    internal const string DefaultGerbilImage = "fosrl/gerbil:1.5.0";
     internal const string DefaultTraefikImage = "traefik:v3.6";
     internal const string DefaultBadgerVersion = "v1.2.0";
     internal const string PublicWildcard = "public-wildcard";

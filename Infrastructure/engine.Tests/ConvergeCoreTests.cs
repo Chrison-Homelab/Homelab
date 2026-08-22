@@ -910,8 +910,14 @@ public sealed class ConvergeCoreTests
     public void Pangolin_ComposeYaml_PinsEeImage_TraefikPublishesPorts_NoGerbilByDefault()
     {
         var compose = PangolinProvisioner.BuildComposeYaml(PangolinWildcardShape());
-        Assert.Contains("image: fosrl/pangolin:ee-1.19.4", compose);
-        Assert.Contains("image: traefik:v3.6", compose);
+        // Assert the pin reaches the compose, not the specific version — otherwise every
+        // deliberate bump fails a test that was only ever checking that it IS pinned.
+        Assert.Contains($"image: {PangolinProvisioner.DefaultImage}", compose);
+        Assert.Contains($"image: {PangolinProvisioner.DefaultTraefikImage}", compose);
+        // The durable invariant: it must be the ENTERPRISE image. EE is what carries
+        // OIDC/RBAC; the OSS image cannot activate a license (#168), so a silent drop to a
+        // non-ee tag would take SSO down for every gated resource.
+        Assert.Contains("fosrl/pangolin:ee-", compose, StringComparison.Ordinal);
         Assert.Contains("127.0.0.1:3003:3003", compose);   // integration API on CT-localhost (resource reconcile)
         Assert.Contains("- 443:443", compose);          // traefik publishes :443 itself
         Assert.Contains("http://localhost:3001/api/v1/", compose); // pangolin healthcheck

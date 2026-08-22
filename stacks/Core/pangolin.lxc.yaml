@@ -147,16 +147,22 @@ spec:
 
     # Image/version pins (the pieces confirmed live during rollout). Defaults live in
     # PangolinProvisioner; override here if a bump is needed:
-    # image: fosrl/pangolin:ee-1.19.4
-    # gerbilImage: fosrl/gerbil:1.4.2
+    # image: fosrl/pangolin:ee-1.21.1
+    # gerbilImage: fosrl/gerbil:1.5.0
     # traefikImage: traefik:v3.6
     # badgerVersion: v1.2.0
     #
-    # ⚠ `image` and `gerbilImage` are ONE decision, not two. Upstream ships no compatibility
-    # matrix, and a mismatch is silent: an already-registered WireGuard peer survives the
-    # bump, so the stack looks healthy and every site connector dies on its next reconnect
-    # instead — which can be days later, with no obvious link back to the update. Bumping
-    # pangolin from ee-1.18 to ee-1.19.4 while gerbil stayed on 1.1.0 did exactly that (#455).
+    # ⚠ pangolin + gerbil + NEWT are ONE decision, not three. Upstream ships no compatibility
+    # matrix — its installer just takes the newest tag of each at build time — and a mismatch
+    # is silent in both directions:
+    #   * gerbil BEHIND pangolin — an already-registered WireGuard peer survives the bump, so
+    #     the stack looks healthy and each site connector dies on its next reconnect instead,
+    #     possibly days later with no obvious link to the update (#455).
+    #   * newt AHEAD of pangolin — newt speaks a protocol the server has not shipped yet.
+    #     pangolin 1.21.0's same-network detection "requires updated clients and sites", and
+    #     newt 1.15.0 added the connector half; newt 1.16.0 against ee-1.19.4 could not build
+    #     its clients interface at all (#457).
+    # Newt is pinned in ../DevOps/newt.lxc.yaml, NOT here — check it when bumping these.
 
     flags:
       allowRawResources: true        # enables raw TCP/UDP resources (e.g. SSH)
