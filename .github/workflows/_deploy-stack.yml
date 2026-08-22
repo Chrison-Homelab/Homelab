@@ -78,6 +78,15 @@ jobs:
       # NOT the runner, which has no secrets.env and reads these env names instead.
       AUTHENTIK_SECRET_KEY: ${{ secrets.AUTHENTIK_SECRET_KEY }}
       AUTHENTIK_PG_PASSWORD: ${{ secrets.AUTHENTIK_PG_PASSWORD }}
+      # UniFi, for the DHCP-reservation reconciler (#416, #446). Without these every declared
+      # reservation reports `reservation SKIPPED: ... no UniFi credentials` and the run still
+      # goes GREEN — so the shapes look reconciled while the controller has never heard of
+      # them. Only the API key is secret; the rest are the same literals secrets.env carries.
+      # The controller is addressed by IP on purpose: it IS the DNS server.
+      UNIFI_API_KEY: ${{ secrets.UNIFI_API_KEY }}
+      UNIFI_LOCAL_HOST: '192.168.178.1'
+      UNIFI_BASE_URL: 'https://192.168.178.1/proxy/network/integration'
+      UNIFI_VERIFY_TLS: 'false'
       # NB: SSH to nodes for the community-scripts create path is provided by the
       # runner host (proven by the BL-013 smoke deploy), not a GH secret.
       # The runner has no DNS for node SHORT names (those live in each node's
