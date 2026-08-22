@@ -786,6 +786,41 @@ public sealed class ConvergeCoreTests
     }
 
     [Fact]
+    public void Pangolin_GerbilImage_IsNewEnoughToRegisterPeersWithPangolin()
+    {
+        // Gerbil registers each WireGuard peer with Pangolin, and since gerbil 1.3.0
+        // ("Include public key in hole punch message to Pangolin") that call carries a
+        // publicKey. Pangolin ee-1.19.4 REQUIRES it and 400s without it, so an older gerbil
+        // silently orphans every site connector — the peer is added to WireGuard locally,
+        // Pangolin never learns it exists, and newt waits on newt/wg/get-config forever.
+        //
+        // Nothing upstream couples the two versions: the installer injects whatever the
+        // latest gerbil tag is at build time. So this test is the coupling — it fails if a
+        // future edit drops the gerbil pin back below the publicKey release (#455).
+        var version = PangolinProvisioner.DefaultGerbilImage.Split(':')[^1];
+        Assert.True(Version.Parse(version) >= new Version(1, 3, 0),
+            $"gerbil {version} predates the publicKey hole-punch field (1.3.0); "
+            + "Pangolin will reject every peer registration with a 400.");
+
+        // And the pin must actually reach the compose file, not just the constant.
+        var s = PangolinWildcardShape();
+        s.Spec.Config["includeGerbil"] = true;
+        Assert.Contains($"image: {PangolinProvisioner.DefaultGerbilImage}",
+            PangolinProvisioner.BuildComposeYaml(s), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Pangolin_GerbilImage_IsOverridableForABumpWithoutAnEngineChange()
+    {
+        var s = PangolinWildcardShape();
+        s.Spec.Config["includeGerbil"] = true;
+        s.Spec.Config["gerbilImage"] = "fosrl/gerbil:9.9.9";
+
+        Assert.Contains("image: fosrl/gerbil:9.9.9",
+            PangolinProvisioner.BuildComposeYaml(s), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Pangolin_DockerDeploy_RestartsAfterRenderingConfig()
     {
         // `docker compose up -d` only recreates a service whose DEFINITION changed. config.yml
