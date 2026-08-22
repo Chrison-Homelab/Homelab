@@ -26,11 +26,9 @@
 # Pangolin resource is a deliberate follow-up once this is up and onboarded — and when it is
 # added it must NOT be SSO-gated, or the gate depends on the thing behind it.
 #
-# NO RESERVATION YET, for the same practical reason every other host here lacks one on day
-# one: a reservation pins the lease a CT already holds, and this one does not exist yet.
-# Add `network.reservation` with the assigned address plus
-# `identity.homelab.chrison.internal` (a ROLE name, like monitoring./media., so swapping the
-# product later does not rename the host) once it has booted.
+# RESERVED AT 10.10.221.211 as identity.homelab.chrison.internal — the lease it took on
+# first boot, pinned afterwards, which is the only order that works: a reservation pins an
+# address a CT already holds.
 #
 # Validate against ../../Infrastructure/schema/shape.schema.json.
 
@@ -51,7 +49,14 @@ spec:
   disk: 20               # GB — Postgres + /data (media, certs, custom templates)
 
   # source/os/unprivileged/storage/timezone/onboot and the VLAN-1010 DHCP network are all
-  # inherited from ../Core/stack.yaml.
+  # inherited from ../Core/stack.yaml — this only pins the lease it was given on first boot.
+  #
+  # A ROLE NAME, not a product name, matching monitoring./media.: everything that delegates
+  # auth will hard-code this, so swapping the IdP later must not mean renaming the host.
+  network:
+    reservation:
+      fixedIp: 10.10.221.211
+      localDnsRecord: identity.homelab.chrison.internal
 
   # ── Post-create wiring applied by the `podman` converge provisioner.
   config:
