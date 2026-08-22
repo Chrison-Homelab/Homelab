@@ -1,0 +1,67 @@
+# Authentik's Postgres — the whole of Authentik's state.
+#
+# VERSION 16, matching upstream's own compose. Not a free choice: Authentik tests against
+# what it ships, and this database holds every account, client registration and encrypted
+# secret. Bump the major only alongside an upstream change that calls for it.
+#
+# DEBIAN, NOT ALPINE, which is the one place this deviates from upstream's compose. The two
+# differ in the uid postgres drops to — 999 on debian, 70 on alpine — and 999 is the
+# convention already proven here by krautwatch-db and youtarr-db. Introducing a second uid
+# convention for no functional gain is how the fixed-uid mistakes on the monitoring host
+# happened. Postgres itself is identical either way.
+#
+# FIXED-UID CASE: the image starts as root and the entrypoint drops to postgres (uid 999),
+# so `UserNS=keep-id:uid=999,gid=999` makes the host `podman` user appear as 999 inside and
+# the data dir must be owned by `podman` on the host — which the ExecStartPre mkdir does.
+#
+# No `:U` on the volume. It chowns RECURSIVELY on every start, and that cost grows with the
+# database forever.
+#
+# ⚠ MOUNT PATH IS THE PRE-18 CONVENTION. Postgres 18 moved PGDATA to a version-specific
+# directory and REFUSES to start with a mount at the old path — the trap krautwatch-db hit.
+# That does not apply at 16: `/var/lib/postgresql/data` is correct here, and is what
+# upstream's compose uses. Do not "fix" this to match the krautwatch quadlet.
+
+[Unit]
+Description=Authentik Postgres
+Documentation=https://docs.goauthentik.io/install-config/install/docker-compose
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/library/postgres:16
+ContainerName=authentik-postgresql
+Network=authentik.network
+
+Secret=authentik_pg_password,type=env,target=POSTGRES_PASSWORD
+Environment=POSTGRES_USER=authentik
+# The stock image only creates the database named here. Without it the server comes up
+# healthy with no `authentik` database at all, and the app fails against a database server
+# that looks entirely fine.
+Environment=POSTGRES_DB=authentik
+Environment=TZ=Pacific/Auckland
+
+Volume=/home/podman/authentik/database:/var/lib/postgresql/data
+UserNS=keep-id:uid=999,gid=999
+
+# pg_isready needs no password and no awkward quoting, so it is expressible here.
+#
+# Deliberately NO HealthOnFailure. An unhealthy app should be restarted; a database should
+# be looked at. Bouncing Postgres automatically on a transient blip risks more than it fixes,
+# and both consumers already retry.
+HealthCmd=pg_isready -U authentik -d authentik
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=5
+HealthStartPeriod=30s
+
+[Service]
+# Podman does not create missing bind-mount source dirs.
+ExecStartPre=/usr/bin/mkdir -p /home/podman/authentik/database
+Restart=always
+RestartSec=10
+# Bounded so a wedged unit cannot hold the converge's blocking `systemctl start` for long.
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

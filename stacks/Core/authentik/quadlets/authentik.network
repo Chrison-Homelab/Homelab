@@ -1,0 +1,15 @@
+# Shared network for the Authentik stack — REQUIRED, not optional.
+#
+# Compose gives every service a default network with service-name DNS for free; quadlets do
+# not. Without this, `AUTHENTIK_POSTGRESQL__HOST=authentik-postgresql` does not resolve and
+# both server and worker fail to reach the database — which presents as an app that boots
+# and then dies on migrations, not as a networking error.
+#
+# Every ContainerName= in this directory is therefore load-bearing: rename authentik-postgresql
+# and the two consumers break without the network itself failing.
+#
+# Rootless podman runs aardvark-dns on a user-defined network, which is what provides the
+# resolution. Same pattern as the Media (CT 5114) and monitoring (CT 4001) hosts.
+
+[Network]
+NetworkName=authentik

@@ -1,0 +1,60 @@
+# Authentik worker — background tasks: outpost management, email, certificate rotation,
+# blueprint application. The UI comes up without it and then quietly fails to do anything
+# asynchronous, so a "working" login page is not evidence this unit is healthy.
+#
+# Same image and same /data as the server, differing only by `Exec=worker`.
+#
+# NOT RUN AS ROOT, which is where this departs from upstream's compose. They set
+# `user: root` for one reason: mounting /var/run/docker.sock so the worker can manage
+# container-based outposts. We deliberately mount no socket — this is rootless podman, and
+# the embedded outpost (which is what the proxy provider uses) needs neither. Running the
+# worker as the image's own uid 1000 instead keeps it unprivileged and lets it share /data
+# with the server under the same keep-id mapping.
+#
+# If container-based outposts (LDAP / RADIUS / RAC) are ever wanted, they are their own
+# quadlets talking to the server over the API — NOT a reason to hand this unit a socket.
+
+[Unit]
+Description=Authentik worker
+Documentation=https://docs.goauthentik.io/install-config/install/docker-compose
+After=network-online.target
+Wants=network-online.target
+Requires=authentik-postgresql.service
+After=authentik-postgresql.service
+
+[Container]
+Image=ghcr.io/goauthentik/server:2026.8.0
+ContainerName=authentik-worker
+Network=authentik.network
+Exec=worker
+
+Secret=authentik_secret_key,type=env,target=AUTHENTIK_SECRET_KEY
+Secret=authentik_pg_password,type=env,target=AUTHENTIK_POSTGRESQL__PASSWORD
+Environment=AUTHENTIK_POSTGRESQL__HOST=authentik-postgresql
+Environment=AUTHENTIK_POSTGRESQL__NAME=authentik
+Environment=AUTHENTIK_POSTGRESQL__USER=authentik
+Environment=TZ=Pacific/Auckland
+
+# /data is SHARED with the server — same host path, same keep-id mapping, deliberately.
+# /certs is the worker's own: it writes rotated certificates there.
+Volume=/home/podman/authentik/data:/data
+Volume=/home/podman/authentik/certs:/certs
+Volume=/home/podman/authentik/custom-templates:/templates
+UserNS=keep-id:uid=1000,gid=1000
+
+ShmSize=512m
+
+HealthCmd=ak healthcheck
+HealthInterval=30s
+HealthTimeout=10s
+HealthRetries=5
+HealthStartPeriod=120s
+
+[Service]
+ExecStartPre=/usr/bin/mkdir -p /home/podman/authentik/data /home/podman/authentik/certs /home/podman/authentik/custom-templates
+Restart=always
+RestartSec=10
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target
