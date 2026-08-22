@@ -23,7 +23,34 @@ Requires=authentik-postgresql.service
 After=authentik-postgresql.service
 
 [Container]
-Image=ghcr.io/goauthentik/server:2026.8.0
+# authentik 2026.8.0
+# ⚠ PINNED BY DIGEST, NOT BY TAG — and the tag genuinely does not work here.
+#
+# ghcr.io/goauthentik/server:2026.8.0 is a NESTED OCI index: the top-level index's per-arch
+# entries are themselves `application/vnd.oci.image.index.v1+json`, not manifests. Podman
+# 5.4.2 (what Debian 13 ships) resolves the platform entry, finds another index, and gives up:
+#
+#   Error: copying system image from manifest list: Unexpectedly received a manifest list
+#          instead of a manifest for a single image
+#
+# which presents as a unit that crash-loops on pull with status=125 and never starts. There is
+# no Docker Hub mirror to fall back to.
+#
+# The digest below is the linux/amd64 SINGLE-ARCH manifest INSIDE that nested index —
+# verified pulled on CT 2014. Every node here is amd64, so arch-pinning costs nothing today.
+#
+# TO BUMP THE VERSION, resolve the new inner digest rather than editing a tag:
+#   tag=2026.9.0; repo=goauthentik/server
+#   tok=$(curl -s "https://ghcr.io/token?scope=repository:$repo:pull" | jq -r .token)
+#   amd=$(curl -s -H "Authorization: Bearer $tok" -H "Accept: application/vnd.oci.image.index.v1+json" \
+#         "https://ghcr.io/v2/$repo/manifests/$tag" \
+#         | jq -r '.manifests[] | select(.platform.architecture=="amd64" and .platform.os=="linux") | .digest')
+#   curl -s -H "Authorization: Bearer $tok" -H "Accept: application/vnd.oci.image.index.v1+json" \
+#        "https://ghcr.io/v2/$repo/manifests/$amd" \
+#        | jq -r '.manifests[] | select(.mediaType|test("image.manifest")) | .digest'
+#
+# Revisit if podman ever gains nested-index support; a plain tag is easier to read.
+Image=ghcr.io/goauthentik/server@sha256:21000cebe8e51eca0620034096586d675cedec8925ac750f7f8966d86eeb0da0
 ContainerName=authentik-worker
 Network=authentik.network
 Exec=worker
