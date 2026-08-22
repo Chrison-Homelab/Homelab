@@ -68,6 +68,34 @@ spec:
       # (Old native CT 2012 stays alive as rollback until retired.)
       - hostname: pangolin.chrison.dev
         service: "http://10.10.0.13:80"         # CT 2013 (Docker EE) static IP (Homelab VLAN)
+
+      # ── Authentik — the homelab IdP (#469, CT 2014 / hpe-01) ──────────────────────
+      # APEX, NOT A ZONE. Core services are fronted at `<name>.chrison.dev` rather than
+      # buried under `*.lab` — pangolin, pdm and proxmox already are, and identity is the
+      # same class of thing: a front door you reach directly, not an app behind one.
+      #
+      # ⚠ public: true IS LOAD-BEARING — WITHOUT IT THIS HOSTNAME BECOMES UNREACHABLE FROM
+      #   OUTSIDE THE HOUSE. The Core shape sets `access.bypass` but deliberately no
+      #   `access.allow` (the other three apps are hand-made). For a host that already has
+      #   an Access app that means "reconcile only the bypass policy" — but for a NEW host
+      #   it means converge CREATES an app and gives it a bypass-IP policy and nothing else.
+      #   An Access app whose only policy is a bypass denies every request that does not
+      #   match it, so remote logins would fail closed while converge reported success.
+      #
+      # Un-gated is also the right answer on the merits, not just the safe one. Authentik IS
+      # the auth layer; putting CF Access in front of it repeats the mistake we already ruled
+      # out for Pangolin SSO — gating the IdP behind something that can itself fail, so an
+      # outage in the gate locks you out of the tool you need to fix the gate. Same reason
+      # this is NOT a Pangolin resource. Authentik carries its own login, MFA and brute-force
+      # policies and is built to face the internet; that is the gate.
+      #
+      # Origin by internal NAME, not IP (CLAUDE.md): 10.10.221.211 is a UniFi reservation and
+      # the CT resolves identity.homelab.chrison.internal against the gateway at 10.10.0.1,
+      # so a re-address stays a DHCP edit. :9000 is Authentik's plain HTTP listener — :9443 is
+      # its self-signed TLS, which we deliberately do not publish.
+      - hostname: identity.chrison.dev
+        service: "http://identity.homelab.chrison.internal:9000"
+        public: true
       # REMOVED 2026-08-02 (#321): traefik.chrison.dev pointed at 10.10.0.12, the OLD native
       # Pangolin CT 2012. That origin no longer exists, so the hostname served a public 502.
       # Superseded by traefik.lab.chrison.dev, which Pangolin serves on its own :443 (302 at

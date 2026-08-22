@@ -21,10 +21,22 @@
 # predates that. Expect ~50% more Postgres connections as a result, which is upstream's own
 # stated trade.
 #
-# NOT EXPOSED PUBLICLY YET, on purpose. A freshly-built Authentik has an un-onboarded admin
-# until the initial setup flow is completed; publishing it before that is an open door. The
-# Pangolin resource is a deliberate follow-up once this is up and onboarded — and when it is
-# added it must NOT be SSO-gated, or the gate depends on the thing behind it.
+# PUBLIC AT https://identity.chrison.dev — via the CORE CLOUDFLARE TUNNEL, not Pangolin.
+# (Held back until the initial setup flow was completed, since a freshly-built Authentik has
+# an un-onboarded admin and publishing that is an open door. Onboarded 2026-08-23.)
+#
+# Apex, not `*.lab` — core services are front doors you reach directly, the same treatment
+# pangolin/pdm/proxmox already get. The ingress entry lives in cloudflared-hpe-01.lxc.yaml.
+#
+# ⚠ DELIBERATELY UN-GATED — no Pangolin SSO, no CF Access. Both were considered and both
+# are the same mistake: the IdP would depend on a gate that can itself fail, and repairing
+# that gate needs the IdP. Authentik's own login, MFA and brute-force policies ARE the gate;
+# it is built to face the internet. The ingress entry carries `public: true` to say so, and
+# that flag is load-bearing — see the comment there before removing it.
+#
+# The internal name keeps working for LAN and break-glass, but the OIDC issuer is the public
+# URL: relying parties must be given https://identity.chrison.dev, never the .internal name,
+# or issuer validation fails.
 #
 # RESERVED AT 10.10.221.211 as identity.homelab.chrison.internal — the lease it took on
 # first boot, pinned afterwards, which is the only order that works: a reservation pins an
