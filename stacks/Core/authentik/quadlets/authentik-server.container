@@ -1,0 +1,70 @@
+# Authentik server — the web UI and the OIDC/SAML endpoints everything else will talk to.
+#
+# Same image as the worker; the two differ only by the argument. The image entrypoint is
+# `dumb-init -- ak`, so `Exec=server` appends to it rather than replacing it.
+#
+# NO REDIS. Authentik removed it in 2025.10 — caching, the embedded outpost and WebSockets
+# all moved to Postgres. Any guide showing a redis service predates that, and adding one
+# back does nothing except cost memory.
+#
+# FIXED-UID CASE: the image declares User=1000. Conveniently the host `podman` user is also
+# uid 1000, so `keep-id:uid=1000,gid=1000` lines the two up and /data is writable. The same
+# mapping is on the worker, which is what lets both share /data.
+#
+# PUBLISHES :9000 (HTTP) ONLY. :9443 is Authentik's own TLS, which we do not want — TLS is
+# terminated at Traefik/Pangolin, and publishing a second, separately-certificated port
+# invites something to be pointed at the wrong one.
+#
+# ⚠ SECRET KEY. AUTHENTIK_SECRET_KEY signs sessions and encrypts stored values. Rotating it
+# logs everyone out; LOSING it is worse than losing the database, because encrypted columns
+# cannot be read back without it. It lives in Bitwarden and reaches here as a podman secret.
+
+[Unit]
+Description=Authentik server
+Documentation=https://docs.goauthentik.io/install-config/install/docker-compose
+After=network-online.target
+Wants=network-online.target
+# Migrations run at start and need the database actually accepting connections, not merely
+# started — hence the healthcheck on the postgres unit.
+Requires=authentik-postgresql.service
+After=authentik-postgresql.service
+
+[Container]
+Image=ghcr.io/goauthentik/server:2026.8.0
+ContainerName=authentik-server
+Network=authentik.network
+Exec=server
+
+Secret=authentik_secret_key,type=env,target=AUTHENTIK_SECRET_KEY
+Secret=authentik_pg_password,type=env,target=AUTHENTIK_POSTGRESQL__PASSWORD
+# Must match ContainerName= on the postgres unit — resolved by aardvark-dns on the shared
+# network, not by anything in this file.
+Environment=AUTHENTIK_POSTGRESQL__HOST=authentik-postgresql
+Environment=AUTHENTIK_POSTGRESQL__NAME=authentik
+Environment=AUTHENTIK_POSTGRESQL__USER=authentik
+Environment=TZ=Pacific/Auckland
+
+PublishPort=9000:9000
+
+Volume=/home/podman/authentik/data:/data
+Volume=/home/podman/authentik/custom-templates:/templates
+UserNS=keep-id:uid=1000,gid=1000
+
+# Upstream sets shm_size: 512mb on both server and worker.
+ShmSize=512m
+
+HealthCmd=ak healthcheck
+HealthInterval=30s
+HealthTimeout=10s
+HealthRetries=5
+# Generous: a first boot runs the full migration set before the app answers.
+HealthStartPeriod=120s
+
+[Service]
+ExecStartPre=/usr/bin/mkdir -p /home/podman/authentik/data /home/podman/authentik/custom-templates
+Restart=always
+RestartSec=10
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

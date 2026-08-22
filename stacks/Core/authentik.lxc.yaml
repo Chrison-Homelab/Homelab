@@ -1,0 +1,70 @@
+# Authentik — the homelab's identity provider (#469; decision recorded on #245).
+#
+# THE central IdP. Upstream providers (Google/Microsoft/Apple/GitHub/Plex/…) terminate
+# HERE and nowhere else (#467), and applications delegate to it rather than keeping their
+# own logins (#468). Pangolin becomes a downstream client like any other app.
+#
+# WHY AUTHENTIK, briefly — the long version is on #245. Pocket ID and Authelia were ruled
+# out because neither can act as an OIDC Relying Party, so neither can broker upstream
+# providers at all. Against Zitadel it won on BREAK-GLASS: `ak create_recovery_key` recovers
+# a lockout you did not plan for, where Zitadel needs a System API keypair provisioned in
+# advance. For a single-operator lab whose IdP gates the admin UIs you would need to repair
+# the IdP, "recoverable only if you anticipated it" is the wrong risk.
+#
+# ⚠ ON HPE-01, DELIBERATELY NOT NUC-01. Pangolin (CT 2013) is on nuc-01. Putting identity
+# beside ingress means one node failure removes both the front door AND the ability to log
+# in and fix it. hpe-01 is also the always-on sentinel and the stronger box (i5-6500T vs
+# the nuc's i3-4010U).
+#
+# THREE CONTAINERS, NOT FOUR. Authentik removed Redis in 2025.10 — caching, the embedded
+# outpost and WebSockets all moved to Postgres. Anything online describing a redis service
+# predates that. Expect ~50% more Postgres connections as a result, which is upstream's own
+# stated trade.
+#
+# NOT EXPOSED PUBLICLY YET, on purpose. A freshly-built Authentik has an un-onboarded admin
+# until the initial setup flow is completed; publishing it before that is an open door. The
+# Pangolin resource is a deliberate follow-up once this is up and onboarded — and when it is
+# added it must NOT be SSO-gated, or the gate depends on the thing behind it.
+#
+# NO RESERVATION YET, for the same practical reason every other host here lacks one on day
+# one: a reservation pins the lease a CT already holds, and this one does not exist yet.
+# Add `network.reservation` with the assigned address plus
+# `identity.homelab.chrison.internal` (a ROLE name, like monitoring./media., so swapping the
+# product later does not rename the host) once it has booted.
+#
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: authentik
+  stack: Core
+  tags: [identity, sso, oidc, podman, quadlet, adr-0009]
+
+spec:
+  app: podman            # community-scripts ct/podman.sh + the `podman` provisioner
+  ctid: 2014             # in-block (Core owns 2010–2099); 2014 verified free
+  node: hpe-01           # NOT nuc-01 — see the header
+  cores: 2
+  memory: 4096           # MB — server + worker each ask for 512 MB of /dev/shm, plus Postgres
+  disk: 20               # GB — Postgres + /data (media, certs, custom templates)
+
+  # source/os/unprivileged/storage/timezone/onboot and the VLAN-1010 DHCP network are all
+  # inherited from ../Core/stack.yaml.
+
+  # ── Post-create wiring applied by the `podman` converge provisioner.
+  config:
+    user: podman
+    quadlets: authentik/quadlets
+
+    # podman secrets seeded from secrets.env, add-only. Namespaced `authentik_*` because a
+    # Core host may grow more of them later.
+    #
+    # AUTHENTIK_SECRET_KEY signs sessions and tokens. Rotating it invalidates every active
+    # session; LOSING it is worse than losing the database, because encrypted values in the
+    # database cannot be read back without it. It belongs in Bitwarden before first boot,
+    # not after.
+    secrets:
+      authentik_secret_key: AUTHENTIK_SECRET_KEY
+      authentik_pg_password: AUTHENTIK_PG_PASSWORD
