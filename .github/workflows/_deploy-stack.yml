@@ -71,6 +71,13 @@ jobs:
       # shelfmark (#186 follow-up): Hardcover metadata-provider API token the provisioner
       # writes into /etc/shelfmark/.env. From the BW hardcover.app item.
       HARDCOVER_API_KEY: ${{ secrets.HARDCOVER_API_KEY }}
+      # Authentik, the IdP on Core CT 2014 (#469). Seeded as podman secrets by the provisioner,
+      # which FAILS the member rather than creating an empty secret the units would silently
+      # mis-consume — the same guard PODMAN_USER_PASSWORD above documents, and the same way
+      # this was found: adding the keys to secrets.env.template covers a local converge but
+      # NOT the runner, which has no secrets.env and reads these env names instead.
+      AUTHENTIK_SECRET_KEY: ${{ secrets.AUTHENTIK_SECRET_KEY }}
+      AUTHENTIK_PG_PASSWORD: ${{ secrets.AUTHENTIK_PG_PASSWORD }}
       # NB: SSH to nodes for the community-scripts create path is provided by the
       # runner host (proven by the BL-013 smoke deploy), not a GH secret.
       # The runner has no DNS for node SHORT names (those live in each node's
