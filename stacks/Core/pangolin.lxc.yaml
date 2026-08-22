@@ -196,29 +196,28 @@ spec:
         sso: true
         target: { ip: 192.168.179.1, port: 8080, method: http }
       # Home Assistant (SmartHome stack) — replaces the raw :8123 UniFi port-forward with
-      # SSO-gated ingress. sso REQUIRED (it controls the whole smart home). HA-side
-      # prerequisite: add 10.10.0.13 (Traefik) to `trusted_proxies` + use_x_forwarded_for in
-      # HA's http config, or HA rejects the proxied request. Retire the :8123 port-forward
-      # once verified.
+      # SSO-gated ingress. sso REQUIRED (it controls the whole smart home).
       #
-      # Targeted BY NAME (#339): the record is attached to HA's DHCP reservation, so when the
-      # VM finally leaves the legacy subnet this entry does not change — the reservation moves
-      # and DNS follows. Resolvable from CT 2013 (verified). Same pattern as Pulse below.
-      # ⚠ The reservation is keyed on net0's MAC (02:1F:98:8B:6F:6A); if net0 is retired in
-      # favour of net2 (VLAN 1010), the reservation must be re-keyed to BC:24:11:3C:03:54 or
-      # this name stops resolving.
-      - name: Home Assistant
-        subdomain: homeassistant
-        zone: lab
-        sso: true
-        target: { ip: homeassistant.homelab.chrison.internal, port: 8123, method: http }
-      # Home Assistant on CT 6005 — the container replacement (#250). Deliberately a SECOND,
-      # separate resource on the new `iot` zone rather than a re-point of the entry above:
-      # that one targets `homeassistant.homelab.chrison.internal`, which still resolves to the
-      # LIVE HAOS VM. Editing it would move the house's external HA access onto an
-      # unconfigured instance — that is the cutover, and the cutover is a deliberate event.
+      # ⚠ HA-SIDE PREREQUISITE, and it is not just the YAML. HA must have
+      # `use_x_forwarded_for: true` + 10.10.0.13 in `trusted_proxies`, or it answers every
+      # proxied request with a bare "400: Bad Request". Setting that in configuration.yaml is
+      # NOT sufficient on current HA: it snapshots the http config into `.storage/http`
+      # ("Using stable HTTP config" at boot, `yaml_migration_done: true`) and serves from the
+      # snapshot, so a later YAML edit is parsed, validated and then ignored. Change it where
+      # HA now owns it, not only in the file.
       #
-      # At cutover the entry above is removed and this one carries the surface.
+      # Targeted BY NAME (#339) — resolvable from CT 2013 (verified). Same pattern as Pulse
+      # below.
+      # Home Assistant on CT 6005 — the container replacement (#250), and now the ONLY
+      # external HA surface. The cutover this block always described is done: the `lab`-zone
+      # twin was removed here, because both names resolve to CT 6005 (10.10.0.21) since the
+      # HAOS VM was retired, so the second resource was a duplicate front door rather than a
+      # rollback path.
+      #
+      # ⚠ Removing it here only stops converge RE-CREATING it — the reconciler is add-only
+      # (it counts created/retargeted/re-gated, it never prunes), so the existing Pangolin
+      # resource must also be deleted once by hand. Deleting it in the UI while it was still
+      # declared here is why it kept coming back.
       - name: Home Assistant (CT 6005)
         subdomain: homeassistant
         zone: iot
