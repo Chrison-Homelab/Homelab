@@ -148,8 +148,15 @@ spec:
     # Image/version pins (the pieces confirmed live during rollout). Defaults live in
     # PangolinProvisioner; override here if a bump is needed:
     # image: fosrl/pangolin:ee-1.19.4
+    # gerbilImage: fosrl/gerbil:1.4.2
     # traefikImage: traefik:v3.6
     # badgerVersion: v1.2.0
+    #
+    # ⚠ `image` and `gerbilImage` are ONE decision, not two. Upstream ships no compatibility
+    # matrix, and a mismatch is silent: an already-registered WireGuard peer survives the
+    # bump, so the stack looks healthy and every site connector dies on its next reconnect
+    # instead — which can be days later, with no obvious link back to the update. Bumping
+    # pangolin from ee-1.18 to ee-1.19.4 while gerbil stayed on 1.1.0 did exactly that (#455).
 
     flags:
       allowRawResources: true        # enables raw TCP/UDP resources (e.g. SSH)

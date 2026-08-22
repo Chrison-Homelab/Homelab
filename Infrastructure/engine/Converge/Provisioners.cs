@@ -604,8 +604,28 @@ public sealed class PangolinProvisioner : IAppProvisioner
 
     // Docker EE defaults (public-wildcard mode). The image/version pins are the pieces
     // to confirm during the live rollout (Phase 3) — all overridable via spec.config.
+    //
+    // ⚠ GERBIL AND PANGOLIN MUST BE BUMPED TOGETHER. Upstream publishes no compatibility
+    // matrix — its installer Makefile injects whatever the LATEST gerbil tag is at build
+    // time — so the pairing is only ever "the two that shipped around the same date", and
+    // nothing in either project complains when they drift.
+    //
+    // Gerbil 1.1.0 (2025-08) against pangolin ee-1.19.4 (2026-06) broke every site
+    // connector: gerbil adds the WireGuard peer locally, then registers it with Pangolin
+    // WITHOUT a publicKey, which the newer API rejects —
+    //     Server returned non-OK status: 400
+    //     {"message":"Validation error: ... expected string, received undefined
+    //                 at \"publicKey\"","status":400}
+    // Pangolin never learns the peer exists, so newt waits on newt/wg/get-config forever
+    // and no wg interface is ever created. Gerbil 1.3.0 is the release that added it
+    // ("Include public key in hole punch message to Pangolin"); 1.4.2 is the newest gerbil
+    // that existed when ee-1.19.4 shipped, which is what upstream would have paired.
+    //
+    // The failure is SILENT until something forces re-registration — an existing peer keeps
+    // working across the bump, so a stack update looks clean and the site only dies on its
+    // next reconnect, potentially days later (#455).
     internal const string DefaultImage = "fosrl/pangolin:ee-1.19.4";
-    internal const string DefaultGerbilImage = "fosrl/gerbil:1.1.0";
+    internal const string DefaultGerbilImage = "fosrl/gerbil:1.4.2";
     internal const string DefaultTraefikImage = "traefik:v3.6";
     internal const string DefaultBadgerVersion = "v1.2.0";
     internal const string PublicWildcard = "public-wildcard";
