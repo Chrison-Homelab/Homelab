@@ -69,6 +69,8 @@ Secret=authentik_pangolin_client_secret,type=env,target=AUTHENTIK_PANGOLIN_CLIEN
 # being copied between two UIs.
 Secret=authentik_pulse_client_id,type=env,target=AUTHENTIK_PULSE_CLIENT_ID
 Secret=authentik_pulse_client_secret,type=env,target=AUTHENTIK_PULSE_CLIENT_SECRET
+Secret=authentik_grafana_client_id,type=env,target=AUTHENTIK_GRAFANA_CLIENT_ID
+Secret=authentik_grafana_client_secret,type=env,target=AUTHENTIK_GRAFANA_CLIENT_SECRET
 Environment=AUTHENTIK_POSTGRESQL__HOST=authentik-postgresql
 Environment=AUTHENTIK_POSTGRESQL__NAME=authentik
 Environment=AUTHENTIK_POSTGRESQL__USER=authentik

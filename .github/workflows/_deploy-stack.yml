@@ -82,6 +82,8 @@ jobs:
       AUTHENTIK_PANGOLIN_CLIENT_SECRET: ${{ secrets.AUTHENTIK_PANGOLIN_CLIENT_SECRET }}
       AUTHENTIK_PULSE_CLIENT_ID: ${{ secrets.AUTHENTIK_PULSE_CLIENT_ID }}
       AUTHENTIK_PULSE_CLIENT_SECRET: ${{ secrets.AUTHENTIK_PULSE_CLIENT_SECRET }}
+      AUTHENTIK_GRAFANA_CLIENT_ID: ${{ secrets.AUTHENTIK_GRAFANA_CLIENT_ID }}
+      AUTHENTIK_GRAFANA_CLIENT_SECRET: ${{ secrets.AUTHENTIK_GRAFANA_CLIENT_SECRET }}
       # monitoring stack (#485). These four were never here because monitoring had no
       # workflow to need them — every apply ran from a laptop that already had secrets.env,
       # so nothing ever noticed. Adding deploy-monitoring.yml made the runner the first

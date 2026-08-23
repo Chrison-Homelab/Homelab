@@ -23,6 +23,39 @@ Secret=grafana_admin_password,type=env,target=GF_SECURITY_ADMIN_PASSWORD
 # contact point, so the webhook id never lands in a file under git.
 Secret=ha_alert_webhook_url,type=env,target=HA_ALERT_WEBHOOK_URL
 
+# ── SSO against the homelab IdP (#485) ────────────────────────────────────────────────
+# ROOT_URL MUST MATCH HOW THE BROWSER REACHES GRAFANA, because Grafana builds its OAuth
+# redirect from it. Get it wrong and the flow fails at the callback with a redirect_uri
+# mismatch that names neither value. LAN name, plain http, port 3000: there is no Pangolin
+# resource for Grafana and this change does not add one — exposing it publicly is a separate
+# decision, not a side effect of giving it SSO.
+Environment=GF_SERVER_ROOT_URL=http://monitoring.homelab.chrison.internal:3000
+Environment=GF_AUTH_GENERIC_OAUTH_ENABLED=true
+Environment=GF_AUTH_GENERIC_OAUTH_NAME=authentik
+Environment=GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP=true
+Environment="GF_AUTH_GENERIC_OAUTH_SCOPES=openid profile email"
+Environment=GF_AUTH_GENERIC_OAUTH_AUTH_URL=https://identity.chrison.dev/application/o/authorize/
+Environment=GF_AUTH_GENERIC_OAUTH_TOKEN_URL=https://identity.chrison.dev/application/o/token/
+Environment=GF_AUTH_GENERIC_OAUTH_API_URL=https://identity.chrison.dev/application/o/userinfo/
+Secret=authentik_grafana_client_id,type=env,target=GF_AUTH_GENERIC_OAUTH_CLIENT_ID
+Secret=authentik_grafana_client_secret,type=env,target=GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET
+
+# THE GATE AND THE ROLE IN ONE EXPRESSION, which is more than Pulse can do. JMESPath over the
+# claims; `a && b` yields b when a is truthy and `x || y` yields y when x is falsy, so this
+# resolves to Admin for either group and to `false` for everyone else. STRICT then turns that
+# `false` into a refused login rather than a default role — without it, an unlisted user would
+# be signed up as a Viewer and the group binding would decide nothing.
+#
+# ⚠ QUOTED. systemd splits an unquoted Environment= on whitespace, which would truncate this
+# to `contains(groups,` — verified the hard way on Pulse, where the same mistake silently
+# removed the profile scope and with it the entire access gate.
+Environment="GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(groups, 'homelab-admins') && 'Admin' || contains(groups, 'monitoring-admins') && 'Admin'"
+Environment=GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT=true
+
+# GF_AUTH_DISABLE_LOGIN_FORM IS DELIBERATELY UNSET. GF_SECURITY_ADMIN_PASSWORD stays a working
+# break-glass login: authentik's recovery path is unproven by choice, and Grafana is part of
+# how you would diagnose an outage. #485's rule is add the SSO path, never remove the local one.
+
 Volume=/home/podman/monitoring/data/grafana:/var/lib/grafana
 Volume=/home/podman/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
 Volume=/home/podman/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro

@@ -136,3 +136,5 @@ spec:
       # blueprint file, silently undoing every unrelated change in it.
       authentik_pulse_client_id: AUTHENTIK_PULSE_CLIENT_ID
       authentik_pulse_client_secret: AUTHENTIK_PULSE_CLIENT_SECRET
+      authentik_grafana_client_id: AUTHENTIK_GRAFANA_CLIENT_ID
+      authentik_grafana_client_secret: AUTHENTIK_GRAFANA_CLIENT_SECRET
