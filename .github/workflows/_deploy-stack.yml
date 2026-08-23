@@ -82,6 +82,19 @@ jobs:
       AUTHENTIK_PANGOLIN_CLIENT_SECRET: ${{ secrets.AUTHENTIK_PANGOLIN_CLIENT_SECRET }}
       AUTHENTIK_PULSE_CLIENT_ID: ${{ secrets.AUTHENTIK_PULSE_CLIENT_ID }}
       AUTHENTIK_PULSE_CLIENT_SECRET: ${{ secrets.AUTHENTIK_PULSE_CLIENT_SECRET }}
+      # monitoring stack (#485). These four were never here because monitoring had no
+      # workflow to need them — every apply ran from a laptop that already had secrets.env,
+      # so nothing ever noticed. Adding deploy-monitoring.yml made the runner the first
+      # environment to converge that stack, and it failed on the first one it reached:
+      #   FAILED: podman secret 'grafana_admin_password' needs GF_SECURITY_ADMIN_PASSWORD
+      #           in secrets.env (absent/empty)
+      # Note the seeding is add-only but still HARD-FAILS on an absent source value, even
+      # when the podman secret already exists on the host — so a missing passthrough breaks
+      # the whole stack's converge, not just the one unit that uses it.
+      GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.GF_SECURITY_ADMIN_PASSWORD }}
+      RADARR_API_KEY: ${{ secrets.RADARR_API_KEY }}
+      SONARR_API_KEY: ${{ secrets.SONARR_API_KEY }}
+      PROWLARR_API_KEY: ${{ secrets.PROWLARR_API_KEY }}
       # UniFi, for the DHCP-reservation reconciler (#416, #446). Without these every declared
       # reservation reports `reservation SKIPPED: ... no UniFi credentials` and the run still
       # goes GREEN — so the shapes look reconciled while the controller has never heard of
