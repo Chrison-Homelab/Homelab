@@ -230,3 +230,48 @@ behaviour.
 The agent runs as root on DSM and that is not our choice: upstream **refuses**
 `--least-privilege` on appliance platforms (Synology, QNAP, TrueNAS, Unraid) rather than
 silently falling back, because their service managers and vendor tooling assume it.
+
+### Static smartctl for the NAS
+
+**Disk health does not work on DSM as shipped.** DSM 7.1.1 carries smartctl **6.5** (2021).
+The agent collects S.M.A.R.T. by running
+
+```
+smartctl -n standby,3 -i -A -H --json=o /dev/sdX
+```
+
+and JSON output only arrived in smartmontools **7.0** — 6.5 ignores `--json`, prints its
+banner and exits, so the agent parses nothing and every disk reads `health=UNKNOWN,
+temperature=0`. Not a device-type problem: the agent already retries each disk with
+`-d sat` itself, so forcing sat through a wrapper changes nothing.
+
+`build-static-smartctl.sh` builds smartctl 7.5 from the official upstream tarball inside a
+throwaway Alpine container, verifying the publisher's MD5 *before* it compiles anything.
+Static on purpose — DSM 7.1 is glibc ~2.20 on kernel 3.10, so a dynamically linked build
+from any current distro will not load there. The build is reproducible: repeated runs
+produce the same `sha256`.
+
+```bash
+./src/Synology/build-static-smartctl.sh          # → ./smartctl-7
+./src/Synology/build-static-smartctl.sh --help   # copy-to-NAS commands
+```
+
+Copy it over (`scp` fails on DSM without a home directory, and `/tmp` is `noexec`, so it
+must be moved into place before it will run):
+
+```bash
+NAS=homelab@nas.homelab.chrison.internal
+cat smartctl-7 | ssh "$NAS" 'cat > /tmp/smartctl-7'
+ssh -t "$NAS" 'sudo sh -c "mv /tmp/smartctl-7 /usr/local/bin/smartctl-7 \
+                           && chown root:root /usr/local/bin/smartctl-7 \
+                           && chmod 755 /usr/local/bin/smartctl-7"'
+```
+
+`install-pulse-agent.sh` then finds it and writes a systemd drop-in setting
+`PULSE_SMARTCTL_PATH`. A **drop-in**, not an inline edit of `pulse-agent.service` — the
+upstream installer rewrites that unit on every run and would silently discard an edit.
+DSM's own `/usr/bin/smartctl` is left exactly as shipped. Override the location with
+`--smartctl-path`; a missing binary is a warning, not a failure.
+
+> `/dev/synoboot` (shown as "Diskstation") stays `UNKNOWN` — it is the DSM boot flash, not
+> a S.M.A.R.T.-capable disk. Harmless, and it raises no alert.
