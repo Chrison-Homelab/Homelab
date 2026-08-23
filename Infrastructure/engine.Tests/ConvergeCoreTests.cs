@@ -1267,6 +1267,50 @@ public sealed class ConvergeCoreTests
         Assert.False(ShapeValidator.IsAssetPayload("stacks/Core/pangolin.lxc.yaml"));
     }
 
+    [Fact]
+    public void Pangolin_IdpDrifted_IsNotFooledByTheListingPayload()
+    {
+        // THE BUG THIS LOCKS DOWN. GET /idp returns only {idpId, name, type, variant,
+        // orgCount, autoProvision, tags} — no authUrl, tokenUrl, scopes or claim paths. The
+        // first version of the reconciler compared the declared values against THAT, so every
+        // absent field read as "" != desired, drift was true on every run, an update fired,
+        // and the update 403s on an org-scoped key — failing the whole apply and taking the
+        // resource reconcile down with it, on a Pangolin whose IdP was already correct.
+        //
+        // The listing shape is asserted here so a future change that starts diffing against it
+        // again fails loudly instead of in production.
+        var idp = Assert.Single(IdpsFrom(AuthentikIdpEntry()));
+        var listing = JsonDocument.Parse("""
+            {"idpId":1,"name":"Authentik","type":"oidc","variant":"oidc","orgCount":1,
+             "autoProvision":true,"tags":null}
+            """).RootElement;
+
+        Assert.False(listing.TryGetProperty("authUrl", out _));
+        Assert.False(listing.TryGetProperty("scopes", out _));
+        // Against the listing everything looks drifted — which is precisely why the listing
+        // must never be the comparison source.
+        Assert.True(PangolinProvisioner.IdpDrifted(listing, idp));
+    }
+
+    [Fact]
+    public void Pangolin_IdpDrifted_ComparesCleanlyAgainstTheDetailPayload()
+    {
+        // The same IdP, read from the per-IdP endpoint that actually carries the fields,
+        // compares equal. That endpoint is root-scoped, so with an org key the reconciler
+        // reports "drift NOT checked" rather than guessing — but when a root key IS present
+        // this is the comparison it makes.
+        var idp = Assert.Single(IdpsFrom(AuthentikIdpEntry()));
+        var detail = JsonDocument.Parse("""
+            {"idpId":1,"name":"Authentik",
+             "authUrl":"https://identity.chrison.dev/application/o/authorize/",
+             "tokenUrl":"https://identity.chrison.dev/application/o/token/",
+             "identifierPath":"sub","emailPath":"email","namePath":"preferred_username",
+             "scopes":"openid profile email","autoProvision":true}
+            """).RootElement;
+
+        Assert.False(PangolinProvisioner.IdpDrifted(detail, idp));
+    }
+
     private static IReadOnlyList<PangolinProvisioner.DeclaredIdp> IdpsFrom(Dictionary<object, object> entry)
     {
         var s = PangolinWildcardShape();
