@@ -108,3 +108,7 @@ spec:
       # blueprint via `!Env`, so both ends of the relationship come from one source.
       authentik_pulse_client_id: AUTHENTIK_PULSE_CLIENT_ID
       authentik_pulse_client_secret: AUTHENTIK_PULSE_CLIENT_SECRET
+      # unpoller polls the controller with the same key the *Sharp CLIs use — read-only.
+      unifi_api_key: UNIFI_API_KEY
+      # Grafana's alert contact point posts here (HA automation webhook).
+      ha_alert_webhook_url: HA_ALERT_WEBHOOK_URL

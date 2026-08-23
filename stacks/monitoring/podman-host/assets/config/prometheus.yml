@@ -34,6 +34,13 @@ scrape_configs:
         labels: { app: sonarr }
       - targets: ['exportarr-prowlarr:9710']
         labels: { app: prowlarr }
+  # UniFi gear via unpoller — gateway, switches and APs. One target: unpoller polls the
+  # controller itself and exposes every device, radio, port and client as labelled series,
+  # so there is nothing per-device to enumerate here (unlike the SNMP job above).
+  - job_name: 'unifi'
+    static_configs:
+      - targets: ['unpoller:9130']
+
   # PowerOrchestrator metrics, re-exported by the OTel collector (#191).
   - job_name: 'otel-collector'
     static_configs:
