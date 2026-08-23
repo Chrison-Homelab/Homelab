@@ -433,6 +433,14 @@ public sealed class ShellProvisionerTests : IDisposable
         // NOT guarded on the directory existing: it does not exist until the first global tool is
         // installed, and guarding on it makes that first install appear to have done nothing.
         Assert.DoesNotContain("[ -d \"$HOME/.dotnet/tools\" ]", script, StringComparison.Ordinal);
+
+        // And DOTNET_ROOT, which is not optional when the SDK comes from brew: the -g shims do not
+        // know brew's opt/ prefix, so every installed tool died with "You must install .NET to run
+        // this application" on a box that plainly had .NET. Guarded on the path, unlike the PATH
+        // entry above, because pointing DOTNET_ROOT at nothing actively breaks a system dotnet.
+        Assert.Contains("export DOTNET_ROOT=\"/home/linuxbrew/.linuxbrew/opt/dotnet/libexec\"",
+                        script, StringComparison.Ordinal);
+        Assert.Contains("[ -d /home/linuxbrew/.linuxbrew/opt/dotnet/libexec ]", script, StringComparison.Ordinal);
     }
 
     [Fact]
