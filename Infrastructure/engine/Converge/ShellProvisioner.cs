@@ -386,6 +386,12 @@ public sealed class ShellProvisioner : IAppProvisioner
             // .bashrc is skipped for non-interactive shells, which is every scripted invocation.
             sb.Append("cat > /etc/profile.d/dotnet-tools.sh <<'HOMELAB_DOTNET_ENV'\n");
             sb.Append("# MANAGED BY converge (ShellProvisioner) — edit the shape, not this file.\n");
+            // DOTNET_ROOT is not optional when the SDK comes from Homebrew. brew installs it under
+            // its own opt/ prefix, which the `dotnet tool install -g` shims do not know about — so
+            // the tool installs cleanly and then every invocation dies with "You must install .NET
+            // to run this application" on a box that plainly has .NET. brew's own formula caveat
+            // says to export this; nothing reads a caveat, so converge does it.
+            sb.Append($"[ -d {BrewPrefix}/opt/dotnet/libexec ] && export DOTNET_ROOT=\"{BrewPrefix}/opt/dotnet/libexec\"\n");
             // NOT guarded on the directory existing. It does not exist until the first
             // `dotnet tool install -g` runs, and guarding on it makes that first install appear
             // to do nothing — the tool lands and stays unfindable until the next login. A PATH

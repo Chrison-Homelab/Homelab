@@ -32,7 +32,17 @@ setup that is NOT in this repo** — most notably **Cloudflare** (account + the
 ## Proxmox access: prefer the `proxmoxsharp` CLI
 
 For Proxmox read/discovery tasks, **use our own `proxmoxsharp` CLI first** (our
-dogfooded client, `vendor/ProxmoxSharp` → installed via `dotnet tool install -g Chrison.ProxmoxSharp.Cli`).
+dogfooded client, `vendor/ProxmoxSharp` → installed via
+`dotnet tool install -g Chrison.ProxmoxSharp.Cli --prerelease`).
+
+> **`--prerelease` is required, not optional.** All three CLIs are on nuget.org, but
+> `proxmoxsharp` and `synosharp` have only ever published `-preview.N` versions (the
+> `publish.yml` workflow makes a stable build on a `v*` tag and a prerelease on every
+> push to `main`, and no `v*` tag has been cut since the CLIs were added). Without the
+> flag `dotnet tool install` considers stable versions only and reports
+> `chrison.proxmoxsharp.cli is not found in NuGet feeds` — which reads as "never
+> published" rather than "no stable version". `unifisharp` has a stable 0.1.0 and so
+> installs without the flag.
 The `pve` MCP is a **fallback** (use it if the CLI is unavailable or for an
 endpoint the CLI doesn't expose yet).
 
