@@ -1329,6 +1329,22 @@ public sealed class ConvergeCoreTests
     }
 
     [Fact]
+    public void Verify_OnANoChangeRunAsksTheWeakerQuestionRatherThanNone()
+    {
+        // A no-change run cannot assert "applied by this run" — it applied nothing. Feeding
+        // epoch makes the freshness clause vacuously true, leaving "is it successful right
+        // now", which is the strongest thing that path can honestly claim. Skipping the check
+        // entirely was the original hole: a blueprint rejected on the run that shipped it
+        // stays rejected, and every later converge reports a contented NOCHANGE forever.
+        const string run = "psql -c \"select 1 where status <> 'successful' or last_applied < '{{since}}'\"";
+
+        var rendered = PodmanProvisioner.RenderVerify(run, PodmanProvisioner.EpochSince);
+
+        Assert.Contains("last_applied < '1970-01-01 00:00:00'", rendered, StringComparison.Ordinal);
+        Assert.Contains("status <> 'successful'", rendered, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Verify_StepsCarryTheirOwnRetryBudget()
     {
         var s = Lxc("authentik", "2014");
