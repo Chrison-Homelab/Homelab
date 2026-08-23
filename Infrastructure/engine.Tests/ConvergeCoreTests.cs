@@ -1311,6 +1311,75 @@ public sealed class ConvergeCoreTests
         Assert.False(PangolinProvisioner.IdpDrifted(detail, idp));
     }
 
+    // ── verify steps (#485) ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Verify_SubstitutesSinceSoAStaleSuccessCannotPass()
+    {
+        // The token is what separates "applied by this run" from "was already successful".
+        // A blueprint that failed today but succeeded yesterday still carries
+        // status='successful', so a check without the timestamp reads as a pass — the exact
+        // stale-read this mechanism exists to stop.
+        const string run = "psql -c \"select 1 where last_applied < '{{since}}'\"";
+
+        var rendered = PodmanProvisioner.RenderVerify(run, "2026-08-23 07:15:35");
+
+        Assert.Contains("last_applied < '2026-08-23 07:15:35'", rendered, StringComparison.Ordinal);
+        Assert.DoesNotContain("{{since}}", rendered, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Verify_StepsCarryTheirOwnRetryBudget()
+    {
+        var s = Lxc("authentik", "2014");
+        s.Spec.Config["verify"] = new List<object>
+        {
+            new Dictionary<object, object>
+            {
+                ["name"] = "blueprints applied", ["run"] = "psql -c 'select 1'",
+                ["retries"] = 18, ["intervalSeconds"] = 10,
+            },
+        };
+
+        var step = Assert.Single(PodmanProvisioner.VerifySteps(s));
+
+        Assert.Equal("blueprints applied", step.Name);
+        Assert.Equal(18, step.Retries);
+        Assert.Equal(10, step.IntervalSeconds);
+    }
+
+    [Fact]
+    public void Verify_DefaultsAreGenerousBecauseTheThingBeingCheckedIsAsynchronous()
+    {
+        // authentik discovers blueprints on a timer and a first apply waits on migrations, so
+        // a single immediate check would fail a converge that is merely early.
+        var s = Lxc("authentik", "2014");
+        s.Spec.Config["verify"] = new List<object>
+        {
+            new Dictionary<object, object> { ["run"] = "true" },
+        };
+
+        var step = Assert.Single(PodmanProvisioner.VerifySteps(s));
+
+        Assert.True(step.Retries * step.IntervalSeconds >= 60,
+            "a verify step's default budget must tolerate an asynchronous consumer");
+    }
+
+    [Fact]
+    public void Verify_AnEntryWithNoCommandIsDroppedRatherThanRunAsAnEmptyPass()
+    {
+        // A half-written entry must not become a check that trivially succeeds — that would be
+        // worse than no check, because the plan would claim verification happened.
+        var s = Lxc("authentik", "2014");
+        s.Spec.Config["verify"] = new List<object>
+        {
+            new Dictionary<object, object> { ["name"] = "forgot the command" },
+            new Dictionary<object, object> { ["name"] = "real", ["run"] = "psql -c 'select 1'" },
+        };
+
+        Assert.Equal("real", Assert.Single(PodmanProvisioner.VerifySteps(s)).Name);
+    }
+
     private static IReadOnlyList<PangolinProvisioner.DeclaredIdp> IdpsFrom(Dictionary<object, object> entry)
     {
         var s = PangolinWildcardShape();

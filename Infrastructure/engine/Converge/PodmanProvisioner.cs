@@ -164,6 +164,13 @@ public sealed class PodmanProvisioner : IAppProvisioner
         var (hostMsg, hostFailed) = await EnsureHostConfigAsync(s, ctx, node, ctid);
         if (hostFailed is not null) return ApplyResult.Failed(hostFailed);
 
+        // Stamp the CT's clock BEFORE anything ships, so a verify step can tell "applied by
+        // this converge" from "was already in that state". Read from the container rather
+        // than the engine host: the comparison is against timestamps the container itself
+        // writes, and the two clocks are not the same clock.
+        var sinceRes = await ctx.Exec.InContainerAsync(node, ctid, "date -u '+%Y-%m-%d %H:%M:%S'");
+        var since = sinceRes.Ok ? sinceRes.Stdout.Trim() : "";
+
         // Assets BEFORE the deploy script: units must never start before the configs they
         // mount exist. Chunked into separate commands — see AssetChunkBytes for why.
         var (assetMsg, assetFailed) = await PushAssetsAsync(s, ctx, node, ctid, user);
@@ -215,12 +222,91 @@ public sealed class PodmanProvisioner : IAppProvisioner
         var res = await ctx.Exec.InContainerAsync(node, ctid, script);
         if (!res.Ok) return ApplyResult.Failed($"podman host setup failed: {res.Stderr}");
 
+        // Delivery is not effect. Everything above proves files landed and units started;
+        // a verify step proves the thing that consumes them actually accepted them.
+        var (verifyMsg, verifyFailed) = await RunVerifyAsync(s, ctx, node, ctid, user, since);
+        if (verifyFailed is not null) return ApplyResult.Failed(verifyFailed);
+
         var what = files.Count == 0
             ? "prepared rootless podman host (no quadlets declared)"
             : $"prepared rootless podman host + deployed {files.Count} quadlet(s): {string.Join(", ", UnitNames(files))}";
         return ApplyResult.Applied(
-            string.Join("; ", new[] { hostMsg, assetMsg, $"{what} (marker {marker})" }.Where(x => x is not null)));
+            string.Join("; ", new[] { hostMsg, assetMsg, $"{what} (marker {marker})", verifyMsg }.Where(x => x is not null)));
     }
+
+    // ── verify: prove the effect, not just the delivery (#485) ──────────────────────
+    //
+    // WHY THIS EXISTS. A podman converge reported success while authentik had REJECTED the
+    // blueprint it had just been handed: `Apply summary — 1 applied, 0 failed` and
+    // `blueprint status = error` were true at the same moment. Rendering a config file and
+    // starting a unit says nothing about whether the process that reads that file accepted
+    // it, and for anything applied asynchronously — blueprints, dashboard provisioning,
+    // scrape configs — the answer arrives seconds after converge has already exited.
+    //
+    // A verify step is a command run in the CT after the units are up. EMPTY STDOUT MEANS
+    // GOOD; any output is the reason it is not. That inversion is deliberate: the natural way
+    // to write these is a query for what is WRONG, and a query for what is wrong returns
+    // nothing when nothing is.
+    //
+    // `{{since}}` is substituted with the CT's clock from before anything shipped, which is
+    // what lets a check distinguish "applied by this run" from "was already fine". Without it
+    // a status left over from an earlier converge reads as a pass, which is the same
+    // stale-read failure the mechanism is meant to catch.
+    internal readonly record struct VerifyStep(string Name, string Run, int Retries, int IntervalSeconds);
+
+    internal static IReadOnlyList<VerifyStep> VerifySteps(Shape s)
+    {
+        var list = new List<VerifyStep>();
+        if (!(s.Spec.Config.TryGetValue("verify", out var v) && v is IEnumerable<object> items)) return list;
+        foreach (var it in items)
+        {
+            if (it is not System.Collections.IDictionary d) continue;
+            string? Str(string k) => d[k]?.ToString() is { Length: > 0 } x ? x : null;
+            static int Int(System.Collections.IDictionary dd, string k, int dflt) =>
+                dd[k] is { } raw && int.TryParse(raw.ToString(), out var n) && n > 0 ? n : dflt;
+            if (Str("run") is not { } run) continue;
+            list.Add(new VerifyStep(Str("name") ?? "verify", run, Int(d, "retries", 12), Int(d, "intervalSeconds", 10)));
+        }
+        return list;
+    }
+
+    // Substitution is done here rather than in the shape so the token cannot be forgotten in
+    // a way that silently degrades the check into a stale-read.
+    internal static string RenderVerify(string run, string since) => run.Replace("{{since}}", since);
+
+    private static async Task<(string? Msg, string? Failed)> RunVerifyAsync(
+        Shape s, ConvergeContext ctx, string node, string ctid, string user, string since)
+    {
+        var steps = VerifySteps(s);
+        if (steps.Count == 0) return (null, null);
+
+        foreach (var step in steps)
+        {
+            var cmd = StandaloneUserCmd(user, RenderVerify(step.Run, since));
+            string last = "";
+            var ok = false;
+            for (var attempt = 1; attempt <= step.Retries; attempt++)
+            {
+                var r = await ctx.Exec.InContainerAsync(node, ctid, cmd);
+                last = (r.Stdout + r.Stderr).Trim();
+                // A command that cannot run at all is not a pass. Treated the same as output:
+                // it becomes the reason, rather than being swallowed as "nothing to report".
+                if (r.Ok && last.Length == 0) { ok = true; break; }
+                if (attempt < step.Retries)
+                {
+                    ctx.Report($"verify '{step.Name}': not satisfied yet (attempt {attempt}/{step.Retries})");
+                    await Task.Delay(TimeSpan.FromSeconds(step.IntervalSeconds));
+                }
+            }
+            if (!ok)
+                return (null, $"verify '{step.Name}' failed after {step.Retries} attempt(s): {Truncate(last)}");
+            ctx.Report($"verify '{step.Name}': ok");
+        }
+        return ($"{steps.Count} verify step(s) passed", null);
+    }
+
+    private static string Truncate(string s) =>
+        s.Length <= 400 ? (s.Length == 0 ? "(no output, command failed)" : s) : s[..400] + "…";
 
     // ── assets: chunked push (#303) ─────────────────────────────────────────────────
     // One command per chunk so no single `pct exec` command line can overflow. Ensures the

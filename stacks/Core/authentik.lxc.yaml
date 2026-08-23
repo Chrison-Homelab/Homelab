@@ -90,6 +90,30 @@ spec:
     assets: authentik/assets
     assetsTarget: /home/podman/authentik-blueprints
 
+    # ⚠ PROVE THE BLUEPRINT WAS ACCEPTED, because shipping it is not the same as applying it.
+    # Converge renders the file and reports success; authentik discovers and applies it
+    # SECONDS LATER on its own schedule, and validates it as a whole — so one bad entry
+    # rejects everything in the file. That is not hypothetical: a null `client_id` once
+    # rejected eight group renames, four new groups, ten bindings and eight deletions at once,
+    # while the deploy summary read `1 applied, 0 failed`. The live estate silently kept its
+    # previous state and nothing in the pipeline noticed.
+    #
+    # EMPTY OUTPUT MEANS GOOD — the query asks what is WRONG, so it returns nothing when
+    # nothing is. `{{since}}` is the CT's clock from before the assets shipped, which is what
+    # separates "applied by this run" from "was already successful": without it, a blueprint
+    # that failed today but succeeded yesterday would still read as a pass.
+    #
+    # Reads Postgres directly rather than authentik's API because the API needs a token we
+    # deliberately do not provision — the whole point of this stack is that credentials are
+    # not minted for convenience.
+    verify:
+      - name: authentik blueprints applied
+        run: podman exec authentik-postgresql psql -U authentik -d authentik -t -A -c "select name, status, last_applied from authentik_blueprints_blueprintinstance where path like 'custom/%' and (status <> 'successful' or last_applied < '{{since}}')"
+        # Discovery is on a timer, and a first apply after a container restart waits for
+        # migrations — three minutes of headroom, checked every ten seconds.
+        retries: 18
+        intervalSeconds: 10
+
     # podman secrets seeded from secrets.env, add-only. Namespaced `authentik_*` because a
     # Core host may grow more of them later.
     #
