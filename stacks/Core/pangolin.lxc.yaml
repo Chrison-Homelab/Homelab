@@ -295,29 +295,43 @@ spec:
       - { name: Audiobookshelf, subdomain: audiobookshelf, zone: arr, sso: false, target: { ip: 10.10.182.200, port: 13378, method: http } }
       - { name: Shelfmark,      subdomain: shelfmark,      zone: arr, target: { ip: 10.10.142.183, port: 8084,  method: http } }
 
-      # ── Shell host SSH (#440) — the browser terminal. Visit the FQDN, complete Pangolin
-      #    auth, then upload a key in the form and get a terminal. That is the point: no
-      #    client on a borrowed machine, which is what #406 chose this route for.
+      # ── Shell host browser terminal (#479) — REPLACES the `mode: ssh` resource from #440.
       #
-      #    `mode: ssh` makes this the PROTOCOL-AWARE SSH resource, not a raw TCP resource on
-      #    port 22. The difference is the auth layer: a raw resource bypasses Pangolin auth
-      #    entirely and would leave the shell host behind SSH keys alone. This one puts the
-      #    Pangolin gate first.
+      #    This is now an ordinary HTTP resource pointing at Zellij's own web client, served by
+      #    CT 3003 on :8082. The reason for the swap is not the UI: Pangolin's SSH resource asks
+      #    for the HOST's credentials after the SSO gate, so it required an OS password on the
+      #    account. Zellij's does not, so SHELL_USER_PASSWORD is retired and that box is
+      #    key-only again. Losing an unlocked account on an internet-reachable host is worth
+      #    more than the single-login flow it cost.
       #
-      #    `site: DevOps` is REQUIRED and not decoration — Pangolin SSH resources work only on
-      #    a NEWT site, never the `local` one every entry above uses. That is the connector
-      #    from #441 (CT 3005).
+      #    ⚠ method: https, and it MUST be. Zellij refuses to bind a non-loopback address
+      #      without a certificate and offers no insecure override, so the target speaks TLS
+      #      with a self-signed cert. Traefik reaches it anyway because its static config sets
+      #      `serversTransport: insecureSkipVerify: true` — which is correct here rather than
+      #      lazy: `.internal` is not a real TLD, so no CA can issue for that name and an
+      #      internal CA was ruled out deliberately (Infrastructure/unifi/network.yaml).
       #
-      #    ⚠ Targeted by IP, not by name, unlike Home Assistant above. Newt resolves through
-      #      DNS 9.9.9.9 (per its own startup log), so `shell.devops.chrison.internal` does not
-      #      resolve from the connector. The IP is safe to pin because CT 3003 holds a UniFi
-      #      DHCP reservation for it — the same reservation that carries its internal name.
+      #    ⚠ sso: true is NOT optional. Zellij's web server has no rate limiting and its docs
+      #      state it assumes authenticated users are trusted. The Pangolin gate (and behind it
+      #      Authentik over OIDC) is what makes exposing a shell defensible. Zellij then asks
+      #      for its own token — two logins, accepted knowingly, because it has no OIDC and no
+      #      forward-auth header to inject (zellij-org/zellij#4393 is open).
+      #
+      #    ⚠ Targeted by IP, not by name, for the same reason the SSH resource was: Newt resolves
+      #      through DNS 9.9.9.9 per its own startup log, so shell.devops.chrison.internal does
+      #      not resolve from the connector. Safe to pin — CT 3003 holds a UniFi reservation for
+      #      this address, and the same reservation carries that internal name.
+      #
+      #    ⚠ REPLACING, not adding: the reconciler is add-only, so removing the old `Shell host`
+      #      SSH resource here only stops it being re-created. It must be deleted ONCE by hand in
+      #      Pangolin, or two front doors to the same shell stay open. Same footgun as the
+      #      lab-zone Home Assistant twin above.
       - name: Shell host
         subdomain: shell
         zone: lab
-        mode: ssh
+        sso: true
         site: DevOps
-        target: { ip: 10.10.135.221, port: 22 }
+        target: { ip: 10.10.135.221, port: 8082, method: https }
 
   # No `secrets:` block (avoids deriver fail-fast). The provisioner reads what it needs
   # straight from the gitignored secrets.env via ctx.Secrets:

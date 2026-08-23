@@ -75,6 +75,28 @@ public sealed class ShellProvisioner : IAppProvisioner
     // a hijacked CDN is exactly what a fingerprint check is for.
     internal const string ClaudeKeyFingerprint = "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE";
 
+    // ── Zellij web client (#479) ────────────────────────────────────────────────────
+    // A browser terminal served by the host itself, behind the Pangolin/Authentik SSO gate.
+    // This is what lets the OS password go away: Pangolin's `mode: ssh` resource asks for the
+    // HOST's credentials after the gate, so it needed one; a web resource does not.
+    internal const string ZellijConfName = "zellij.kdl";
+    internal const int ZellijWebPort = 8082;
+    // Under the user's own config dir because `zellij web` runs AS the user and reads both.
+    // The paths are fixed rather than templated, which is why zellij.kdl can be a static asset:
+    // the only other host-specific value would be the bind address, and that is 0.0.0.0.
+    internal const string ZellijCertName = "web-cert.pem";
+    internal const string ZellijKeyName = "web-key.pem";
+    // Ten years. This certificate is never validated by anything — Traefik reaches the target
+    // with `insecureSkipVerify: true` (it has to: `.internal` is not a real TLD, so no CA can
+    // issue for this name and an internal CA was ruled out deliberately). It exists solely
+    // because zellij REFUSES to bind a non-loopback address without one: "Cannot bind to
+    // non-loopback IP: 0.0.0.0 without an SSL certificate." An expiry would therefore be a
+    // scheduled outage protecting nothing.
+    internal const int ZellijCertDays = 3650;
+    // Written 0600 by the create step. NOT read back by converge and NOT in the marker — it is
+    // generated state, like the Newt site secret, so re-running must not churn it.
+    internal const string ZellijTokenFile = ".web-token";
+
     // Assets are small (a config and a terminfo source), but the ceiling that killed the
     // monitoring converge on CT 4001 is a property of the pct exec command line, not of
     // the payload — so chunk on the same terms rather than assuming these stay small.
@@ -122,6 +144,26 @@ public sealed class ShellProvisioner : IAppProvisioner
 
         yield return $"install + enable ~{user}/.config/systemd/user/{UnitName(session)} → tmux session " +
                      $"'{session}' returns after a reboot (#408); retires the old system unit if present";
+
+        if (ZellijWeb(s))
+        {
+            if (!assets.Contains(ZellijConfName))
+                yield return $"zellijWeb requested but NO {ZellijConfName} asset — the web server exits " +
+                             "within a second without a config file, so this is skipped";
+            else
+            {
+                yield return $"install {ZellijConfName} → ~{user}/.config/zellij/config.kdl (MANDATORY: " +
+                             "`zellij web` logs \"Failed to find default config file path\" and exits without it)";
+                yield return $"generate a {ZellijCertDays}-day self-signed cert if absent → " +
+                             $"~{user}/.config/zellij/{ZellijCertName} (zellij refuses a non-loopback bind without one)";
+                yield return $"install + enable ~{user}/.config/systemd/user/{ZellijUnitName} (Type=simple — " +
+                             "zellij web runs in the FOREGROUND despite the docs, so forking hangs in activating)";
+                yield return $"VERIFY a listener on :{ZellijWebPort} — this host has produced three " +
+                             "\"reported success, was not running\" bugs, so prove it rather than trust the exit code";
+                yield return $"create a login token if none exists → ~{user}/.config/zellij/{ZellijTokenFile} " +
+                             "(0600; shown once by zellij and unrecoverable, so it is captured, not echoed)";
+            }
+        }
     }
 
     // Stable marker over every managed input.
@@ -250,6 +292,60 @@ public sealed class ShellProvisioner : IAppProvisioner
             sb.Append("chpasswd <<'HOMELAB_PW'\n");
             sb.Append($"{user}:{password}\n");
             sb.Append("HOMELAB_PW\n");
+        }
+        else
+        {
+            //  NO PASSWORD DECLARED → make key-only actually true, not merely incidental.
+            //
+            //  An account with no password is not the same as a host that refuses passwords:
+            //  Debian ships `PasswordAuthentication yes`, so sshd would still offer password
+            //  auth for every other account on the box. With the browser terminal serving the
+            //  no-key-on-a-borrowed-machine case (#479), nothing needs it at all.
+            //
+            //  A drop-in rather than an edit of sshd_config: idempotent because it is a whole
+            //  file, and it survives an sshd package upgrade rewriting the main config.
+            //
+            //  ⚠ Locking ourselves out is not a risk here — converge reaches this CT through
+            //    `pct exec` from the node, never over ssh, and the declared authorizedKeys are
+            //    written earlier in this same script.
+            sb.Append("install -d -m 0755 /etc/ssh/sshd_config.d\n");
+            sb.Append("cat > /etc/ssh/sshd_config.d/10-homelab-keyonly.conf <<'HOMELAB_SSHD'\n");
+            sb.Append("# MANAGED BY converge (ShellProvisioner) — edit the shape, not this file.\n");
+            sb.Append("# Declare SHELL_USER_PASSWORD in secrets.env to go back to password auth.\n");
+            sb.Append("PasswordAuthentication no\n");
+            sb.Append("KbdInteractiveAuthentication no\n");
+            sb.Append("HOMELAB_SSHD\n");
+            sb.Append("chmod 0644 /etc/ssh/sshd_config.d/10-homelab-keyonly.conf\n");
+            //  Validate before reloading: a bad sshd config that is merely written is harmless,
+            //  one that is reloaded takes the daemon down.
+            //  ⚠ `sshd -t` needs /run/sshd to exist or it fails with "Missing privilege
+            //    separation directory" — nothing to do with the config being valid. Without this
+            //    mkdir the validation always "failed", so the reload was always skipped and the
+            //    guard silently protected nothing: a genuinely broken config would have looked
+            //    identical. The drop-in still took effect here because Debian socket-activates
+            //    sshd and each connection re-reads config, which is exactly the kind of accident
+            //    that hides a broken guard.
+            sb.Append("mkdir -p /run/sshd\n");
+            sb.Append("sshd -t || { echo 'sshd config INVALID after writing the key-only drop-in'; exit 1; }\n");
+            //  ⚠ DO NOT reload when sshd is socket-activated, which it is on Debian 13.
+            //    `systemctl reload ssh` sends SIGHUP, the daemon tries to re-bind :22, and
+            //    ssh.socket already holds it — "fatal: Cannot bind any address", exit 255,
+            //    ssh.service failed. Observed here: SSH kept working only because the next
+            //    connection socket-activated a fresh instance, which masks the fault rather
+            //    than avoiding it. And no reload is NEEDED in that mode: each connection spawns
+            //    an sshd that parses config fresh, so the drop-in applies immediately.
+            //
+            //    A plain (non-socket) sshd is the opposite — its per-connection children inherit
+            //    already-parsed config, so that one does need the reload. Hence the condition
+            //    rather than picking one and hoping.
+            sb.Append("if systemctl is-active --quiet ssh.socket; then\n");
+            sb.Append("  :  # socket-activated: new connections read the drop-in already\n");
+            sb.Append("else\n");
+            sb.Append("  systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true\n");
+            sb.Append("fi\n");
+            //  And take the password off the account itself, so a host provisioned WITH one and
+            //  re-converged without it is actually locked rather than keeping the old value.
+            sb.Append($"passwd -l {user} >/dev/null 2>&1 || true\n");
         }
 
         // 5. tmux.conf from the staging dir.
@@ -415,6 +511,70 @@ public sealed class ShellProvisioner : IAppProvisioner
             sb.Append("apt-get install -y -qq claude-code\n");
         }
 
+        // 9b. Zellij web client (#479) — the browser terminal, and the reason the OS password
+        //     can go away. Ordered AFTER brew, because the binary comes from the Brewfile.
+        if (ZellijWeb(s) && assets.Contains(ZellijConfName))
+        {
+            var zdir = $"{home}/.config/zellij";
+            var cert = $"{zdir}/{ZellijCertName}";
+            var key = $"{zdir}/{ZellijKeyName}";
+            var zellij = $"{BrewPrefix}/bin/zellij";
+
+            sb.Append($"install -d -o {user} -g {user} -m 700 {zdir}\n");
+
+            //  The config file is NOT optional. `zellij` itself runs on built-in defaults, but
+            //  `zellij web` logs "Failed to find default config file path" and exits ~1s after
+            //  printing "Web Server started on ...", so it looks like it came up and nothing
+            //  listens. Installed to the canonical name the server actually looks for.
+            sb.Append($"install -o {user} -g {user} -m 600 {StagingDir}/{ZellijConfName} {zdir}/config.kdl\n");
+            //  zellij wants ABSOLUTE paths for the cert and key, so the asset carries a __HOME__
+            //  placeholder rather than a hardcoded /home/csimon that would break if the shape's
+            //  `user:` ever changed. One substitution, done here so the asset stays readable.
+            sb.Append($"sed -i 's|__HOME__|{home}|g' {zdir}/config.kdl\n");
+
+            //  Self-signed cert, generated ONLY if absent — regenerating every converge would
+            //  churn a credential for no reason and invalidate any pinned copy. -nodes because
+            //  the server starts unattended and cannot be asked for a passphrase.
+            sb.Append($"if [ ! -s {cert} ] || [ ! -s {key} ]; then\n");
+            sb.Append($"  openssl req -x509 -newkey rsa:2048 -nodes -days {ZellijCertDays} \\\n");
+            sb.Append($"    -subj '/CN={ZellijCertCn}' -addext 'subjectAltName=DNS:{ZellijCertCn},DNS:localhost,IP:127.0.0.1' \\\n");
+            sb.Append($"    -keyout {key} -out {cert} >/dev/null 2>&1\n");
+            sb.Append($"  chown {user}:{user} {cert} {key}\n");
+            //  0600 on the key: the web server runs as the user and nothing else needs it.
+            sb.Append($"  chmod 600 {key}; chmod 644 {cert}\n");
+            sb.Append("fi\n");
+
+            sb.Append($"cat > {home}/.config/systemd/user/{ZellijUnitName} <<'HOMELAB_ZWEB'\n");
+            sb.Append(BuildZellijWebUnit());
+            sb.Append("HOMELAB_ZWEB\n");
+            sb.Append($"chown {user}:{user} {home}/.config/systemd/user/{ZellijUnitName}\n");
+            sb.Append(AsUser(user, $"systemctl --user daemon-reload && " +
+                                   $"systemctl --user enable --now {ZellijUnitName}"));
+            //  Restart rather than trust `enable --now`: on a re-converge the unit is already
+            //  running with the OLD config or the OLD cert, and `--now` on an active unit is a
+            //  no-op. Same bug class as the bind-mounted compose configs that never reloaded.
+            sb.Append(AsUser(user, $"systemctl --user restart {ZellijUnitName}"));
+
+            //  PROVE the listener. `zellij web` prints "Web Server started" and then dies on a
+            //  missing config, so the exit code and the log line both lie. Three bugs on this
+            //  host have been exactly this shape (#408 and two marker bugs), so the converge
+            //  fails here rather than reporting a web terminal that is not there.
+            sb.Append($"for i in $(seq 1 20); do ss -tln | grep -q ':{ZellijWebPort} ' && break; sleep 1; done\n");
+            sb.Append($"ss -tln | grep -q ':{ZellijWebPort} ' || " +
+                      $"{{ echo 'zellij web: NOTHING LISTENING on :{ZellijWebPort} after 20s'; " +
+                      $"journalctl --user-unit {ZellijUnitName} -n 20 --no-pager 2>/dev/null || true; exit 1; }}\n");
+
+            //  A login token is required — auth is mandatory and there is no OIDC (#479), so
+            //  this is the second factor behind the Pangolin/Authentik gate. zellij displays it
+            //  ONCE and hashes it, so it cannot be re-read: created only when none exists, and
+            //  captured to a 0600 file for the operator to move into Bitwarden. Never echoed to
+            //  the converge log, which is not a secret channel.
+            sb.Append(AsUser(user, $"{zellij} web --list-tokens 2>/dev/null | grep -q . || " +
+                                   $"{zellij} web --create-token > {zdir}/{ZellijTokenFile}"));
+            sb.Append($"chown {user}:{user} {zdir}/{ZellijTokenFile} 2>/dev/null || true\n");
+            sb.Append($"chmod 600 {zdir}/{ZellijTokenFile} 2>/dev/null || true\n");
+        }
+
         // 10. Marker LAST — anything above failing means no marker, means a re-run.
         sb.Append($"printf '%s' '{marker}' > {markerPath}\n");
         sb.Append($"chown {user}:{user} {markerPath}");
@@ -423,6 +583,38 @@ public sealed class ShellProvisioner : IAppProvisioner
     }
 
     internal static string UnitName(string session) => $"tmux-{session}.service";
+
+    internal const string ZellijUnitName = "zellij-web.service";
+    // The name the cert is issued for. Matches the host's UniFi local-DNS record so a human
+    // hitting it directly on the LAN sees a coherent (if untrusted) certificate; Traefik does
+    // not validate it either way.
+    internal const string ZellijCertCn = "shell.devops.chrison.internal";
+
+    // Type=simple, and that is the interesting part. The docs imply `zellij web` backgrounds
+    // itself — `--daemonize` exists, and upstream zellij-org/zellij#4378 asks for foreground to
+    // become the DEFAULT, which reads as though it is not. It already is: without `-d` the
+    // process stays in the foreground, so Type=forking sits in `activating` until the start
+    // timeout expires while the server is in fact up. Measured both ways on CT 3003.
+    //
+    // No User= — this is a user unit and systemd rejects the directive in one.
+    // No ExecStart flags: ip/port/cert/key all come from config.kdl, so the CONFIG is the single
+    // source of truth and a unit that disagreed with it could not silently win.
+    internal static string BuildZellijWebUnit() => $"""
+        [Unit]
+        Description=Zellij web client (browser terminal) — homelab shell host
+        Documentation=https://github.com/Chrison-Homelab/Homelab/issues/479
+        After=network-online.target
+
+        [Service]
+        Type=simple
+        ExecStart={BrewPrefix}/bin/zellij web
+        Restart=on-failure
+        RestartSec=5
+
+        [Install]
+        WantedBy=default.target
+
+        """;
 
     // A systemd USER unit — installed to ~/.config/systemd/user, enabled under linger.
     // No User= line: the user manager already runs as the user, and setting it in a user unit
@@ -530,6 +722,7 @@ public sealed class ShellProvisioner : IAppProvisioner
 
     // ── config accessors ────────────────────────────────────────────────────────────
 
+    internal static bool ZellijWeb(Shape s) => Flag(s, "zellijWeb");
     internal static bool Homebrew(Shape s) => Flag(s, "homebrew");
     internal static bool ClaudeCode(Shape s) => Flag(s, "claudeCode");
 

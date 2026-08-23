@@ -742,28 +742,42 @@ public sealed class ConvergeCoreTests
     }
 
     [Fact]
-    public void Pangolin_SshResource_IsDeclaredWithModeAndAnExplicitSite()
+    public void Pangolin_ShellResource_IsAnHttpsWebTerminalNotAnSshResource()
     {
-        // The shape-level contract for #440. An SSH resource must carry mode: ssh and an
-        // explicit site — Pangolin SSH resources work ONLY on a Newt site, never the `local`
-        // one every HTTP resource uses, so a missing site would produce a route that can never
-        // work. Targeted by IP because Newt resolves via 9.9.9.9 and cannot see internal names.
+        // Supersedes the #440 contract (mode: ssh on port 22). #479 replaced that front door with
+        // Zellij's own web client, and the reason was not the UI: Pangolin's SSH resource asks for
+        // the HOST's credentials after the SSO gate, so it forced an OS password onto the account.
+        // A web resource needs none, so SHELL_USER_PASSWORD is retired and the box is key-only.
+        //
+        // This test is the guard against quietly regressing to the SSH resource and re-introducing
+        // that password: no resource in the shape may carry mode: ssh.
         var stackDir = Path.GetDirectoryName(FindRepoFile(Path.Combine("stacks", "Core", "pangolin.lxc.yaml")))!;
         var shape = ShapeLoader.LoadStack(stackDir).Members.Single(m => m.Metadata.Name == "pangolin");
         var resources = (System.Collections.IEnumerable)shape.Spec.Config["resources"]!;
 
-        System.Collections.IDictionary? ssh = null;
+        System.Collections.IDictionary? shell = null;
         foreach (var r in resources)
-            if (r is System.Collections.IDictionary d
-                && string.Equals(d["mode"]?.ToString(), "ssh", StringComparison.OrdinalIgnoreCase))
-                ssh = d;
+        {
+            if (r is not System.Collections.IDictionary d) continue;
+            Assert.NotEqual("ssh", d["mode"]?.ToString()?.ToLowerInvariant());
+            if (string.Equals(d["subdomain"]?.ToString(), "shell", StringComparison.OrdinalIgnoreCase))
+                shell = d;
+        }
 
-        Assert.NotNull(ssh);
-        Assert.Equal("DevOps", ssh!["site"]?.ToString());
-        Assert.Equal("shell", ssh["subdomain"]?.ToString());
-        var target = (System.Collections.IDictionary)ssh["target"]!;
-        Assert.Equal("22", target["port"]?.ToString());
-        // An IP, not a name — the connector cannot resolve *.internal.
+        Assert.NotNull(shell);
+        // Still on the DevOps Newt site — that part of #441 survives the swap.
+        Assert.Equal("DevOps", shell!["site"]?.ToString());
+        // sso is NOT optional: zellij's web server has no rate limiting and its docs state it
+        // assumes authenticated users are trusted, so the Pangolin/Authentik gate is what makes
+        // exposing a shell defensible at all.
+        Assert.Equal("True", shell["sso"]?.ToString(), ignoreCase: true);
+
+        var target = (System.Collections.IDictionary)shell["target"]!;
+        Assert.Equal("8082", target["port"]?.ToString());
+        // https, and it must be: zellij refuses a non-loopback bind without a certificate and
+        // offers no insecure override, so the target genuinely speaks TLS.
+        Assert.Equal("https", target["method"]?.ToString());
+        // An IP, not a name — the connector resolves via 9.9.9.9 and cannot see *.internal.
         Assert.DoesNotContain("internal", target["ip"]?.ToString() ?? "", StringComparison.Ordinal);
     }
 

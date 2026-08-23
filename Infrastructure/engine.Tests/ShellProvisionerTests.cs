@@ -241,12 +241,15 @@ public sealed class ShellProvisionerTests : IDisposable
     [Fact]
     public void Deploy_LeavesTheAccountPasswordLocked_WhenNoPasswordIsSupplied()
     {
-        // useradd leaves the account password-locked, i.e. key-only. Absent secret must keep it
-        // that way rather than unlocking it with something weak.
+        // Absent secret must never unlock the account with something weak. Originally this also
+        // asserted the script contained no "passwd" at all, resting on useradd's default — which
+        // was true but weaker than it looked: it only held for a host that had NEVER been given a
+        // password, and said nothing about one being re-converged after the secret was withdrawn
+        // (exactly what #479 does). It now asserts the lock explicitly.
         var script = ShellProvisioner.BuildDeploy(ShellShape(), "m", "/p", null);
 
         Assert.DoesNotContain("chpasswd", script, StringComparison.Ordinal);
-        Assert.DoesNotContain("passwd", script, StringComparison.Ordinal);
+        Assert.Contains("passwd -l csimon", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -441,6 +444,121 @@ public sealed class ShellProvisionerTests : IDisposable
         Assert.Contains("export DOTNET_ROOT=\"/home/linuxbrew/.linuxbrew/opt/dotnet/libexec\"",
                         script, StringComparison.Ordinal);
         Assert.Contains("[ -d /home/linuxbrew/.linuxbrew/opt/dotnet/libexec ]", script, StringComparison.Ordinal);
+    }
+
+    // ---- Zellij web client (#479) -----------------------------------------
+
+    private Shape ZellijShape()
+    {
+        var shape = ShellShape(("tmux.conf", "set -g mouse on\n"),
+                               ("Brewfile", "brew \"zellij\"\n"),
+                               ("zellij.kdl", "web_server_cert \"__HOME__/.config/zellij/web-cert.pem\"\n"));
+        shape.Spec.Config["homebrew"] = true;
+        shape.Spec.Config["zellijWeb"] = true;
+        return shape;
+    }
+
+    [Fact]
+    public void ZellijWebUnit_IsSimpleNotForking()
+    {
+        // The MIRROR IMAGE of the tmux unit, and getting it backwards costs a start timeout.
+        // tmux daemonises, so it needs Type=forking. `zellij web` does NOT without `-d`: it
+        // stays in the foreground, so Type=forking sits in `activating` until systemd gives up
+        // while the server is actually running. Both were measured on CT 3003.
+        var unit = ShellProvisioner.BuildZellijWebUnit();
+
+        Assert.Contains("Type=simple", unit, StringComparison.Ordinal);
+        Assert.DoesNotContain("Type=forking", unit, StringComparison.Ordinal);
+        // No User= — user units reject it.
+        Assert.DoesNotContain("User=", unit, StringComparison.Ordinal);
+        // No ip/port/cert/key flags: config.kdl is the single source of truth, so a unit cannot
+        // silently disagree with it.
+        Assert.Contains("ExecStart=/home/linuxbrew/.linuxbrew/bin/zellij web\n", unit, StringComparison.Ordinal);
+        Assert.DoesNotContain("--ip", unit, StringComparison.Ordinal);
+        Assert.DoesNotContain("--port", unit, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deploy_ProvesTheZellijListenerRatherThanTrustingTheExitCode()
+    {
+        // `zellij web` prints "Web Server started on ..." and THEN exits if no config file
+        // exists, so both the log line and the exit code lie. This host has produced three
+        // reported-success-but-not-running bugs; the converge must fail here instead.
+        var script = ShellProvisioner.BuildDeploy(ZellijShape(), "m", "/p");
+
+        Assert.Contains("ss -tln | grep -q ':8082 '", script, StringComparison.Ordinal);
+        Assert.Contains("NOTHING LISTENING on :8082", script, StringComparison.Ordinal);
+        Assert.Contains("exit 1", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deploy_InstallsTheZellijConfigAndSubstitutesHome()
+    {
+        // The config file existing is load-bearing, and zellij wants ABSOLUTE cert paths — hence
+        // the __HOME__ placeholder rather than a hardcoded /home/csimon in the asset.
+        var script = ShellProvisioner.BuildDeploy(ZellijShape(), "m", "/p");
+
+        Assert.Contains("/opt/homelab-shell/zellij.kdl /home/csimon/.config/zellij/config.kdl",
+                        script, StringComparison.Ordinal);
+        Assert.Contains("sed -i 's|__HOME__|/home/csimon|g'", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deploy_GeneratesTheCertOnlyWhenAbsent()
+    {
+        // Regenerating a credential on every converge would churn it for no reason and break
+        // anything holding a copy. Guarded on the files being absent or empty.
+        var script = ShellProvisioner.BuildDeploy(ZellijShape(), "m", "/p");
+
+        Assert.Contains("if [ ! -s /home/csimon/.config/zellij/web-cert.pem ]", script, StringComparison.Ordinal);
+        Assert.Contains("openssl req -x509", script, StringComparison.Ordinal);
+        // Unattended start: the server cannot be asked for a passphrase.
+        Assert.Contains("-nodes", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deploy_WithNoPassword_MakesTheHostRefusePasswordAuth()
+    {
+        // An account with no password is NOT a host that refuses passwords — Debian ships
+        // PasswordAuthentication yes, so sshd would still offer it for every other account.
+        // With the browser terminal covering the borrowed-machine case, nothing needs it (#479).
+        var script = ShellProvisioner.BuildDeploy(ZellijShape(), "m", "/p", password: null);
+
+        Assert.Contains("PasswordAuthentication no", script, StringComparison.Ordinal);
+        Assert.Contains("KbdInteractiveAuthentication no", script, StringComparison.Ordinal);
+        Assert.Contains("passwd -l csimon", script, StringComparison.Ordinal);
+        // sshd -t needs /run/sshd or it fails for reasons unrelated to the config, which made the
+        // validate-then-reload guard protect nothing.
+        Assert.Contains("mkdir -p /run/sshd", script, StringComparison.Ordinal);
+        // And the reload MUST be skipped when socket-activated: SIGHUP makes sshd re-bind :22,
+        // ssh.socket already holds it, and the service dies with "Cannot bind any address".
+        Assert.Contains("if systemctl is-active --quiet ssh.socket; then", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deploy_WithAPassword_LeavesSshPasswordAuthAlone()
+    {
+        // The hardening is the ABSENCE of the secret read as an instruction, so declaring one
+        // must reverse it rather than leaving a host that refuses the password it just set.
+        var script = ShellProvisioner.BuildDeploy(ZellijShape(), "m", "/p", password: "s3cret");
+
+        Assert.DoesNotContain("PasswordAuthentication no", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("passwd -l csimon", script, StringComparison.Ordinal);
+        Assert.Contains("chpasswd", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deploy_WithoutTheZellijAsset_SkipsTheWebServerEntirely()
+    {
+        // zellijWeb with no config asset would install a unit for a server that exits on start.
+        // Better to do nothing and say so in the plan than to leave a crash-looping unit.
+        var shape = ShellShape(("tmux.conf", "set -g mouse on\n"));
+        shape.Spec.Config["zellijWeb"] = true;
+        var script = ShellProvisioner.BuildDeploy(shape, "m", "/p");
+
+        Assert.DoesNotContain("zellij-web.service", script, StringComparison.Ordinal);
+        Assert.Contains("NO zellij.kdl asset", string.Join("\n", new ShellProvisioner().PlanSteps(shape)),
+                        StringComparison.Ordinal);
     }
 
     [Fact]
