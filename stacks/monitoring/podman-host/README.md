@@ -24,6 +24,7 @@ Replaces the Docker host **CT 4000**. ADR-0009 Phase 2b ([#303](https://github.c
 | `loki.container` | `loki` | `datasources.yml` → `http://loki:3100` (uid 10001) |
 | `pulse.container` | `pulse` | — (uid 1000) |
 | `exportarr-{radarr,sonarr,prowlarr}` | same | scraped at `exportarr-<app>:{9708,9709,9710}` |
+| `unpoller.container` | `unpoller` | scraped at `unpoller:9130` (stateless — no data dir, no `UserNS`) |
 
 **Every `ContainerName=` here is load-bearing.** Compose gave `prometheus` and `snmp_exporter` no
 `container_name:` at all — they resolved by *service* name — so renaming either silently breaks a

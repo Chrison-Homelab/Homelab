@@ -19,6 +19,9 @@ UserNS=keep-id:uid=472,gid=472
 
 Environment=GF_SECURITY_ADMIN_USER=admin
 Secret=grafana_admin_password,type=env,target=GF_SECURITY_ADMIN_PASSWORD
+# Alert delivery. Grafana expands $HA_ALERT_WEBHOOK_URL inside the provisioned
+# contact point, so the webhook id never lands in a file under git.
+Secret=ha_alert_webhook_url,type=env,target=HA_ALERT_WEBHOOK_URL
 
 Volume=/home/podman/monitoring/data/grafana:/var/lib/grafana
 Volume=/home/podman/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro

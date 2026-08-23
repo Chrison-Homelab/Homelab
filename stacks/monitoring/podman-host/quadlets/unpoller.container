@@ -1,0 +1,53 @@
+# unpoller — UniFi telemetry for Prometheus. Metrics on :9130 (not published; Prometheus
+# scrapes it by container name over monitoring.network, like snmp_exporter and exportarr).
+#
+# Pulse does not monitor UniFi (Proxmox / Docker / Kubernetes / TrueNAS / vSphere only), so
+# the network gear lands here in Prometheus + Grafana alongside the Synology SNMP job.
+#
+# NO UserNS and NO Volume: unpoller is stateless — it polls the controller and exposes the
+# result. Nothing to persist, so none of the fixed-uid handling the other containers need
+# applies here.
+#
+# AUTH: the classic UniFi API (/proxy/network/api/s/default/...) via X-API-KEY, using the
+# same UNIFI_API_KEY the *Sharp CLIs use — verified working against this controller, so
+# there is no second credential to mint and no local UniFi admin account to create.
+# Read-only by nature: unpoller only ever GETs.
+
+[Unit]
+Description=unpoller (UniFi telemetry)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=ghcr.io/unpoller/unpoller:latest
+ContainerName=unpoller
+Network=monitoring.network
+
+# By NAME, like everything else here. The record resolves to 10.10.0.1 — the gateway's
+# address on VLAN 1010, the same VLAN as this host — so polling never crosses into the
+# legacy 192.168.178.0/23 network the way the old UNIFI_LOCAL_HOST address does.
+#
+# The controller does serve this record, so resolution and target share a fate: if UniFi
+# is down, the name stops resolving. That costs nothing here — a controller that is down
+# has no telemetry to give either way, and unpoller simply retries. (The write path in
+# secrets.env.template still uses an IP for a different reason: it has to work while you
+# are fixing a controller that is already broken.)
+Environment=UP_UNIFI_DEFAULT_URL=https://unifi.homelab.chrison.internal
+# UniFi OS proxies the Network app on 443 — :8443 is the old self-hosted-controller port
+# and must NOT be used here.
+Environment=UP_UNIFI_DEFAULT_VERIFY_SSL=false
+Environment=UP_UNIFI_DEFAULT_SAVE_SITES=true
+Environment=UP_UNIFI_DEFAULT_SAVE_DPI=false
+Environment=UP_PROMETHEUS_HTTP_LISTEN=0.0.0.0:9130
+Environment=UP_PROMETHEUS_NAMESPACE=unpoller
+Environment=UP_INFLUXDB_DISABLE=true
+Secret=unifi_api_key,type=env,target=UP_UNIFI_DEFAULT_API_KEY
+
+AutoUpdate=registry
+
+[Service]
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

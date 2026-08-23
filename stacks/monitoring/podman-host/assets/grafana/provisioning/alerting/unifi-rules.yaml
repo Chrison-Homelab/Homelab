@@ -1,0 +1,391 @@
+# UniFi alert rules (Grafana unified alerting), routed to Home Assistant.
+#
+# Each rule is the standard three-node chain: an instant Prometheus query (A), reduced to
+# its last value (B), compared against a threshold (C). C is the alert condition.
+#
+# noDataState is OK almost everywhere on purpose. These series are absent for legitimate
+# reasons — a model that reports no temperature, no device having vanished — and treating
+# absence as failure would make the whole set cry wolf. The ONE exception is the collector
+# rule: if unpoller is not being scraped then every other rule here is blind, and that must
+# be loud rather than silent.
+#
+# Thresholds are set against the measured baseline of THIS network, not vendor defaults —
+# see each rule's description for what normal looks like here.
+apiVersion: 1
+groups:
+- orgId: 1
+  name: UniFi
+  folder: Homelab
+  interval: 1m
+  rules:
+  - uid: unifi-collector-down
+    title: UniFi collector is down
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: up{job="unifi"}
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: reduce
+        expression: A
+        reducer: last
+        settings:
+          mode: dropNN
+    - refId: C
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: lt
+            params:
+            - 1
+    noDataState: Alerting
+    execErrState: Error
+    for: 10m
+    labels:
+      severity: critical
+      stack: unifi
+    annotations:
+      summary: Prometheus cannot scrape unpoller
+      description: 'unpoller on CT 4001 is not being scraped, so ALL other UniFi alerts below are blind.
+        Either unpoller is down or it cannot reach the controller at unifi.homelab.chrison.internal. Check:
+        systemctl --user status unpoller.'
+    isPaused: false
+  - uid: unifi-device-vanished
+    title: UniFi device dropped off the controller
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: count by (name) (unpoller_device_uptime_seconds offset 1h) unless count by (name) (unpoller_device_uptime_seconds)
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: reduce
+        expression: A
+        reducer: last
+        settings:
+          mode: dropNN
+    - refId: C
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    noDataState: OK
+    execErrState: Error
+    for: 15m
+    labels:
+      severity: critical
+      stack: unifi
+    annotations:
+      summary: '{{ $labels.name }} was adopted an hour ago and is gone now'
+      description: "unpoller only emits series for devices the controller currently sees, so an offline\
+        \ device produces NO metrics rather than a zero \u2014 which is why this compares against an hour\
+        \ ago instead of testing a value. Note this catches devices that drop from here on; gear already\
+        \ offline before the rule existed (the two USW Flex Minis, #307) never appears in either side\
+        \ and will not fire."
+    isPaused: false
+  - uid: unifi-site-disconnected
+    title: UniFi reports disconnected devices
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: sum(unpoller_site_disconnected)
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: reduce
+        expression: A
+        reducer: last
+        settings:
+          mode: dropNN
+    - refId: C
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    noDataState: OK
+    execErrState: Error
+    for: 15m
+    labels:
+      severity: warning
+      stack: unifi
+    annotations:
+      summary: The controller is reporting {{ $value }} disconnected device(s)
+      description: Site-level count straight from the controller, covering adopted-but-unreachable gear.
+        Complements the vanished-device rule, which only sees series disappear.
+    isPaused: false
+  - uid: unifi-channel-utilization
+    title: Wi-Fi channel saturated
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: unpoller_device_radio_channel_utilization_total_ratio
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: reduce
+        expression: A
+        reducer: last
+        settings:
+          mode: dropNN
+    - refId: C
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0.7
+    noDataState: OK
+    execErrState: Error
+    for: 20m
+    labels:
+      severity: warning
+      stack: unifi
+    annotations:
+      summary: '{{ $labels.name }} {{ $labels.band }} GHz airtime is {{ $value }}'
+      description: 'Sustained airtime above 70% means clients are queueing for the medium and throughput
+        collapses regardless of signal strength. 2.4 GHz sits around 0.2-0.5 normally here; the co-channel
+        overlap between Lounge and Master Bedroom is tracked in #331, and fixing the channel plan is the
+        real remedy.'
+    isPaused: false
+  - uid: unifi-poe-budget
+    title: PoE budget under pressure
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: sum(unpoller_device_port_poe_watts)
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: reduce
+        expression: A
+        reducer: last
+        settings:
+          mode: dropNN
+    - refId: C
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 180
+    noDataState: OK
+    execErrState: Error
+    for: 15m
+    labels:
+      severity: warning
+      stack: unifi
+    annotations:
+      summary: Switch PoE draw is {{ $value }} W
+      description: The US-24-PoE-250W has a 250 W budget; 180 W is the point to look before ports start
+        being denied power. Normal draw here is well under 20 W, so this firing means something substantial
+        was plugged in.
+    isPaused: false
+  - uid: unifi-wan-latency
+    title: WAN latency is high
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: unpoller_site_latency_seconds{subsystem="www"}
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: reduce
+        expression: A
+        reducer: last
+        settings:
+          mode: dropNN
+    - refId: C
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0.15
+    noDataState: OK
+    execErrState: Error
+    for: 15m
+    labels:
+      severity: warning
+      stack: unifi
+    annotations:
+      summary: WAN latency is {{ $value }} s
+      description: Controller's own internet health check. Baseline here is about 0.002 s, so 0.15 s sustained
+        is a genuine upstream problem rather than jitter.
+    isPaused: false
+  - uid: unifi-device-temperature
+    title: UniFi device running hot
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: unpoller_device_temperature_celsius
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: reduce
+        expression: A
+        reducer: last
+        settings:
+          mode: dropNN
+    - refId: C
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 80
+    noDataState: OK
+    execErrState: Error
+    for: 15m
+    labels:
+      severity: warning
+      stack: unifi
+    annotations:
+      summary: '{{ $labels.name }} is at {{ $value }} C'
+      description: Not all models report temperature; those that do not simply never evaluate, which is
+        why noDataState is OK rather than Alerting.
+    isPaused: false
