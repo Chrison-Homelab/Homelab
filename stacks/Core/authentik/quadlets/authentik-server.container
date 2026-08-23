@@ -70,6 +70,12 @@ Secret=authentik_pg_password,type=env,target=AUTHENTIK_POSTGRESQL__PASSWORD
 # this avoids.
 Secret=authentik_pangolin_client_id,type=env,target=AUTHENTIK_PANGOLIN_CLIENT_ID
 Secret=authentik_pangolin_client_secret,type=env,target=AUTHENTIK_PANGOLIN_CLIENT_SECRET
+# Pulse's pair, for the same reason: the blueprint declaring the Pulse provider is applied in
+# this container, so `!Env AUTHENTIK_PULSE_CLIENT_ID` reads it from here. Every future Tier-1
+# app (#485) adds two more lines to this list — that is the cost of the credentials never
+# being copied between two UIs.
+Secret=authentik_pulse_client_id,type=env,target=AUTHENTIK_PULSE_CLIENT_ID
+Secret=authentik_pulse_client_secret,type=env,target=AUTHENTIK_PULSE_CLIENT_SECRET
 # Must match ContainerName= on the postgres unit — resolved by aardvark-dns on the shared
 # network, not by anything in this file.
 Environment=AUTHENTIK_POSTGRESQL__HOST=authentik-postgresql

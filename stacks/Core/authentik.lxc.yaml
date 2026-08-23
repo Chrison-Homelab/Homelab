@@ -105,3 +105,10 @@ spec:
       # copy-paste between two UIs.
       authentik_pangolin_client_id: AUTHENTIK_PANGOLIN_CLIENT_ID
       authentik_pangolin_client_secret: AUTHENTIK_PANGOLIN_CLIENT_SECRET
+      # ⚠ EVERY CLIENT'S CREDENTIALS BELONG HERE TOO, not only on the host that runs the
+      # client. The blueprint that DECLARES an OAuth2 provider is applied inside this
+      # container, and `!Env` reads this container's environment — so a client whose secrets
+      # live only with its consumer resolves to null here and authentik rejects the ENTIRE
+      # blueprint file, silently undoing every unrelated change in it.
+      authentik_pulse_client_id: AUTHENTIK_PULSE_CLIENT_ID
+      authentik_pulse_client_secret: AUTHENTIK_PULSE_CLIENT_SECRET
