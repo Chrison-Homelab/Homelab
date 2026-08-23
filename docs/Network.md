@@ -75,3 +75,67 @@ them; they are kept out of version control).
 - All internal VLANs use `*.chrison.internal` domains (except Consumer/legacy).
 - Switches and APs are inventoried in [Devices.md](Devices.md); two USW Flex Mini
   switches currently report offline (BL-006).
+
+## Monitoring
+
+UniFi gear is collected by **unpoller** on the monitoring podman host (CT 4001) and scraped
+by Prometheus as job `unifi`. Grafana dashboard: **UniFi Network** (`unifi-network`, Homelab
+folder).
+
+Pulse does *not* cover UniFi — it monitors Proxmox, Docker, Kubernetes, TrueNAS and vSphere —
+so the network gear lives in Prometheus/Grafana alongside the Synology SNMP job.
+
+### How it authenticates
+
+unpoller polls the controller's **classic** API (`/proxy/network/api/s/default/...`) with
+`X-API-KEY`, using the same `UNIFI_API_KEY` the `*Sharp` CLIs use — so there is no second
+credential to mint and no local UniFi admin account to create. It only ever issues GETs.
+
+The controller is addressed as `unifi.homelab.chrison.internal`, which resolves to
+**10.10.0.1** — the gateway's address on the Homelab VLAN (1010), the same VLAN as CT 4001.
+Polling therefore stays on-VLAN and never crosses into the legacy `192.168.178.0/23` range
+that `UNIFI_LOCAL_HOST` still uses. (That legacy address is kept deliberately for the *write*
+path, which has to work while you are fixing a controller that is already broken.)
+
+### What it covers
+
+Per-device CPU / memory / temperature / uptime, per-switch-port PoE draw, per-radio channel
+utilization and client counts, per-SSID average client signal, WAN throughput and link speed,
+and site-level latency, client count and internet drops.
+
+### Alerting
+
+Seven rules in the `UniFi` group (Grafana unified alerting, provisioned under
+`assets/grafana/provisioning/alerting/`), delivered to **Home Assistant** via a webhook
+contact point → the HA automation *"Grafana alerts → notification"*.
+
+| Rule | Fires when | Severity |
+|---|---|---|
+| UniFi collector is down | `up{job="unifi"} < 1` for 10m | critical |
+| UniFi device dropped off the controller | a device present 1h ago is gone for 15m | critical |
+| UniFi reports disconnected devices | `unpoller_site_disconnected > 0` for 15m | warning |
+| Wi-Fi channel saturated | radio airtime > 70% for 20m | warning |
+| PoE budget under pressure | switch PoE draw > 180 W for 15m | warning |
+| WAN latency is high | WWW latency > 150 ms for 15m | warning |
+| UniFi device running hot | device temperature > 80 °C for 15m | warning |
+
+Two things worth knowing about these:
+
+- **An offline device emits no metrics at all**, rather than a zero — unpoller only reports
+  what the controller currently sees. That is why the "dropped off" rule compares against
+  `offset 1h` instead of testing a value. It catches gear that fails *from now on*; anything
+  already offline before the rule existed (the two USW Flex Minis, [#307]) appears on neither
+  side of the comparison and will never fire. The site-level `disconnected` rule is the
+  complement for adopted-but-unreachable gear.
+- **Thresholds are set against this network's measured baseline**, not vendor defaults. WWW
+  latency sits near 2 ms, 2.4 GHz airtime runs 0.2–0.5, and PoE draw is well under 20 W of the
+  switch's 250 W budget. The channel-utilization rule is deliberately above today's worst
+  reading, so fixing the channel plan ([#331]) is the remedy rather than muting the alert.
+
+`noDataState` is `OK` on every rule except the collector one: absent series are normal here
+(a model that reports no temperature, no device having vanished), and treating absence as
+failure would make the whole set cry wolf. If unpoller stops being scraped, though, every
+other rule goes blind — so that one is `Alerting`.
+
+[#307]: https://github.com/Chrison-Homelab/Homelab/issues/307
+[#331]: https://github.com/Chrison-Homelab/Homelab/issues/331
