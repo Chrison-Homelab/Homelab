@@ -33,6 +33,22 @@ metadata:
 
 entries:
   # ── Groups ────────────────────────────────────────────────────────────────────────
+  # TWO AXES, deliberately. `Family`/`Guests` say WHO SOMEONE IS; the `<Stack> Admins`
+  # groups say WHAT THEY ADMINISTER, one per stack, so access can be granted a stack at a
+  # time instead of all-or-nothing.
+  #
+  # NO GROUP HIERARCHY, even though authentik has one. Its parentage resolves UPWARD — a
+  # member of a child group inherits the parent's access — so making the stack groups
+  # children of `Homelab Admins` would give whoever administers Media the Core stack too,
+  # which is the exact opposite of the point. `Homelab Admins` is instead the superset by
+  # being BOUND TO EVERY APPLICATION alongside that application's own stack group. Costs one
+  # extra binding per app and cannot silently over-grant.
+  #
+  # ONLY STACKS THAT HAVE A LOGIN GET A GROUP. Azure, BuildLab, Gaming, Photos, ShopDemo,
+  # ErpForFactoryGames and Komodo are dormant or have no authenticated surface; empty groups
+  # are just noise in an access model whose whole value is being readable. Add one when the
+  # stack gains something to log in to.
+  #
   # NOT `is_superuser`. That flag is Authentik's OWN admin rights (the built-in "authentik
   # Admins" group has it) and is unrelated to what these groups are for, which is deciding
   # who reaches which homelab application. Granting it here would hand anyone in Family the
@@ -43,7 +59,7 @@ entries:
     attrs:
       is_superuser: false
       attributes:
-        homelab.chrison.dev/purpose: Infrastructure — Proxmox, PDM, Pangolin, identity, Pulse, shell, power, Traefik
+        homelab.chrison.dev/purpose: Superset — bound to every application alongside its own stack group
 
   - model: authentik_core.group
     id: grp-media-admins
@@ -51,7 +67,44 @@ entries:
     attrs:
       is_superuser: false
       attributes:
+        homelab.chrison.dev/stack: Media
         homelab.chrison.dev/purpose: The arr fleet — Sonarr, Radarr, Prowlarr, Bazarr, qBittorrent, Tracearr, Youtarr, Shelfmark
+
+  - model: authentik_core.group
+    id: grp-core-admins
+    identifiers: { name: Core Admins }
+    attrs:
+      is_superuser: false
+      attributes:
+        homelab.chrison.dev/stack: Core
+        homelab.chrison.dev/purpose: Ingress and identity — Pangolin, authentik, Traefik, and the Proxmox/PDM break-glass surface
+
+  - model: authentik_core.group
+    id: grp-monitoring-admins
+    identifiers: { name: Monitoring Admins }
+    attrs:
+      is_superuser: false
+      attributes:
+        homelab.chrison.dev/stack: monitoring
+        homelab.chrison.dev/purpose: Pulse, Grafana, Prometheus
+
+  - model: authentik_core.group
+    id: grp-smarthome-admins
+    identifiers: { name: SmartHome Admins }
+    attrs:
+      is_superuser: false
+      attributes:
+        homelab.chrison.dev/stack: SmartHome
+        homelab.chrison.dev/purpose: Home Assistant and ESPHome — administration, as distinct from Family's day-to-day use
+
+  - model: authentik_core.group
+    id: grp-devops-admins
+    identifiers: { name: DevOps Admins }
+    attrs:
+      is_superuser: false
+      attributes:
+        homelab.chrison.dev/stack: DevOps
+        homelab.chrison.dev/purpose: Forgejo and the shell host
 
   - model: authentik_core.group
     id: grp-family
@@ -123,22 +176,87 @@ entries:
       policy_engine_mode: any
 
   # ── Who may authenticate to Pangolin ──────────────────────────────────────────────
-  # All four groups, deliberately. Pangolin is the front door for household apps as well as
-  # admin ones, so restricting this to admins would mean Family could never reach anything
-  # through the gate. What each group can actually SEE is Pangolin's resource↔role matrix,
-  # which is the layer that stays closed until opened one resource at a time.
+  # EVERY group, deliberately — Pangolin is not a per-stack application, it is the front
+  # door in front of all of them. Someone in Family who cannot authenticate here reaches no
+  # household app either. What each group can actually SEE is Pangolin's resource↔role
+  # matrix, which is the layer that stays closed until opened one resource at a time.
+  #
+  # Listed one by one rather than expressed as "any group": authentik has no such binding,
+  # and an expression policy that approximated one would be a piece of code in the deny path.
+  # Eight explicit lines are duller and cannot go subtly wrong.
   - model: authentik_policies.policybinding
     identifiers: { target: !KeyOf pangolin-app, group: !KeyOf grp-homelab-admins }
     attrs: { order: 0, enabled: true }
   - model: authentik_policies.policybinding
-    identifiers: { target: !KeyOf pangolin-app, group: !KeyOf grp-media-admins }
+    identifiers: { target: !KeyOf pangolin-app, group: !KeyOf grp-core-admins }
     attrs: { order: 1, enabled: true }
   - model: authentik_policies.policybinding
-    identifiers: { target: !KeyOf pangolin-app, group: !KeyOf grp-family }
+    identifiers: { target: !KeyOf pangolin-app, group: !KeyOf grp-media-admins }
     attrs: { order: 2, enabled: true }
   - model: authentik_policies.policybinding
-    identifiers: { target: !KeyOf pangolin-app, group: !KeyOf grp-guests }
+    identifiers: { target: !KeyOf pangolin-app, group: !KeyOf grp-monitoring-admins }
     attrs: { order: 3, enabled: true }
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf pangolin-app, group: !KeyOf grp-smarthome-admins }
+    attrs: { order: 4, enabled: true }
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf pangolin-app, group: !KeyOf grp-devops-admins }
+    attrs: { order: 5, enabled: true }
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf pangolin-app, group: !KeyOf grp-family }
+    attrs: { order: 6, enabled: true }
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf pangolin-app, group: !KeyOf grp-guests }
+    attrs: { order: 7, enabled: true }
+
+  # ── Pulse: OAuth2/OIDC provider ───────────────────────────────────────────────────
+  # First Tier-1 migration off a local login (#485). Pulse is configured entirely from
+  # OIDC_* environment variables, which authentik never sees — the only contract between the
+  # two is this provider plus the client id/secret pair in Secrets Manager.
+  - model: authentik_providers_oauth2.oauth2provider
+    id: pulse-provider
+    identifiers: { name: Pulse }
+    attrs:
+      client_type: confidential
+      client_id: !Env AUTHENTIK_PULSE_CLIENT_ID
+      client_secret: !Env AUTHENTIK_PULSE_CLIENT_SECRET
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      include_claims_in_id_token: true
+      # See the Pangolin provider: an empty grant_types allow-list permits NOTHING and fails
+      # with a message that names no cause. It is not optional on 2026.8.
+      grant_types:
+        - authorization_code
+        - refresh_token
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+      # STRICT, unlike Pangolin's. Pulse's env-configured provider uses one fixed callback
+      # (`/api/oidc/callback`) rather than a generated per-provider id, so there is nothing to
+      # wildcard and a strict match is the tighter choice.
+      redirect_uris:
+        - matching_mode: strict
+          url: https://pulse.lab.chrison.dev/api/oidc/callback
+
+  - model: authentik_core.application
+    id: pulse-app
+    identifiers: { slug: pulse }
+    attrs:
+      name: Pulse
+      provider: !KeyOf pulse-provider
+      meta_launch_url: https://pulse.lab.chrison.dev
+      meta_description: Proxmox / Docker monitoring.
+      policy_engine_mode: any
+
+  # Its own stack group, plus the superset. This is the shape every Tier-1 app should take.
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf pulse-app, group: !KeyOf grp-homelab-admins }
+    attrs: { order: 0, enabled: true }
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf pulse-app, group: !KeyOf grp-monitoring-admins }
+    attrs: { order: 1, enabled: true }
 
   # ── Who is actually in a group ────────────────────────────────────────────────────
   # Without this the whole model is inert: the four bindings above admit only members of

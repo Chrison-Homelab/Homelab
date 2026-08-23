@@ -28,6 +28,42 @@ AutoUpdate=registry
 # are required; the agent flag alone looks like it works and returns an empty inventory.
 Environment=PULSE_ENABLE_PROXMOX_GUEST_DOCKER_INVENTORY=true
 
+# ── SSO against the homelab IdP (#485, first Tier-1 migration) ────────────────────────
+# Configured ENTIRELY from environment, which is the point: setting an OIDC_* variable
+# LOCKS the matching field in Settings → Security → Single Sign-On, so the deployed config
+# cannot drift away from this file by someone clicking in the UI.
+#
+# ⚠ THE CALLBACK PATH IS NOT THE OBVIOUS ONE. A provider created through Pulse's UI gets
+#   `/api/oidc/<uuid>/callback`, with the uuid minted at creation. The env-configured
+#   provider instead uses the bare `/api/oidc/callback`, described upstream as "a v5
+#   compatibility path that only serves the legacy env-configured provider". The redirect
+#   URI registered in authentik matches THAT, strictly. Worth re-checking on a major Pulse
+#   bump, because a compatibility path is a thing that eventually goes away.
+#
+# ⚠ GROUP→ROLE MAPPING IS A PRO FEATURE and is deliberately NOT used here.
+#   OIDC_GROUP_ROLE_MAPPINGS exists but needs a Pro licence. What DOES work on Community —
+#   and is what actually matters — is OIDC_ALLOWED_GROUPS, which refuses the login outright
+#   unless the user is in one of these groups. So the groups gate access; they just cannot
+#   yet distinguish an admin from a viewer once someone is in.
+#
+# LOCAL LOGIN STAYS VISIBLE. `PULSE_AUTH_HIDE_LOCAL_LOGIN` is deliberately unset: authentik's
+# break-glass is unproven by choice, so the local admin is the only recovery path if SSO
+# breaks, and hiding it would leave nothing to fall back to on the monitoring host — the
+# thing you would use to find out WHY it broke.
+Environment=OIDC_ENABLED=true
+Environment=OIDC_ISSUER_URL=https://identity.chrison.dev/application/o/pulse/
+Environment=OIDC_REDIRECT_URL=https://pulse.lab.chrison.dev/api/oidc/callback
+Environment=OIDC_SCOPES=openid profile email
+Environment=OIDC_USERNAME_CLAIM=preferred_username
+Environment=OIDC_EMAIL_CLAIM=email
+# The groups claim comes from authentik's stock `profile` scope — no custom property
+# mapping. ALLOWED_GROUPS is the whole access decision on Community, so it must name the
+# stack group AND the superset, exactly as the authentik-side bindings do.
+Environment=OIDC_GROUPS_CLAIM=groups
+Environment=OIDC_ALLOWED_GROUPS=Homelab Admins,Monitoring Admins
+Secret=authentik_pulse_client_id,type=env,target=OIDC_CLIENT_ID
+Secret=authentik_pulse_client_secret,type=env,target=OIDC_CLIENT_SECRET
+
 [Service]
 ExecStartPre=/usr/bin/mkdir -p /home/podman/monitoring/data/pulse
 Restart=always
