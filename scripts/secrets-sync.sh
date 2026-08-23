@@ -14,7 +14,7 @@
 #   scripts/secrets-sync.sh /tmp/out                 # custom output path (for testing)
 #   scripts/secrets-sync.sh <out> <template>         # custom output AND template — lets
 #                                                    # other stacks reuse this engine, e.g.
-#     scripts/secrets-sync.sh stacks/monitoring/.env.local stacks/monitoring/secrets.env.local.template
+#     scripts/secrets-sync.sh stacks/<Stack>/.env.local stacks/<Stack>/secrets.env.local.template
 #
 set -euo pipefail
 

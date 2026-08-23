@@ -40,7 +40,7 @@ provisioning and dashboards. [`assets/`](assets/) is rendered to `/home/podman/m
 **before any unit starts**, and its contents are folded into the managed marker — so editing a
 config re-converges and restarts the units consuming it.
 
-This **replaces [`../deploy/install.sh`](../deploy/install.sh)**, which shipped the same tree by
+This **replaced `../deploy/install.sh`** (since deleted), which shipped the same tree by
 tar and then ran `docker compose up`. The assets hold the *rendered* filenames directly, dropping
 that script's `sample.*.yml` → `*.yml` copy step.
 
@@ -69,7 +69,7 @@ points at an address again. UniFi can attach the record to the reservation itsel
 
 ```bash
 # 0. provision the host, quadlets and assets
-dotnet run --project Infrastructure/engine -- converge stacks/monitoring --apply
+dotnet run --project Infrastructure/engine -- converge stacks/Monitoring --apply
 
 # 1. reserve an address + register the DNS name for CT 4001 (UniFi legacy API, X-API-KEY)
 #    → monitoring.homelab.chrison.internal
@@ -118,14 +118,18 @@ ssh root@hpe-01 'pct stop 4000'
 6. **Tempo/Loki** return pre-migration data — proves the 3.9 GB landed with correct ownership
 7. Units survive an LXC reboot
 
-**Rollback:** `pct start 4000` then `docker compose up -d` inside it, and stop the new units. The
-copy duplicates state rather than moving it, so CT 4000 keeps its own untouched copy.
+**Rollback:** was `pct start 4000` then `docker compose up -d` inside it. **No longer available**
+— CT 4000 was destroyed and its shape and compose files deleted. Rolling back now means restoring
+from git history, not starting a stopped guest.
 
-## Follow-up once CT 4000 is destroyed
+## Follow-up once CT 4000 is destroyed — DONE
 
-These become dead weight and should be deleted in one commit:
+CT 4000 is gone from all three nodes, so the dead weight this section listed was deleted:
+`../compose.yml`, `../deploy/`, `../config/sample.*.yml`, `../grafana/**`,
+`../secrets.env.local.template` and the CT 4000 shape.
 
-- `../compose.yml`, `../deploy/install.sh`, `../secrets.env.local.template`
-- `../config/sample.*.yml` and `../grafana/**` — superseded by `assets/`, which currently
-  **duplicates** them. The duplication is deliberate and temporary: keeping the old paths intact
-  is what preserves the rollback path while CT 4000 still exists.
+They had stopped being merely redundant. `config/sample.prometheus.yml` had drifted **41 lines**
+behind `assets/config/prometheus.yml` (no `unifi` job, no alerting, no `rule_files`), and the old
+`grafana/provisioning/datasources.yml` had no Alertmanager entry — while the stack README still
+told you to `cp sample.prometheus.yml prometheus.yml`. Following those instructions would have
+deployed a config missing most of the current setup.

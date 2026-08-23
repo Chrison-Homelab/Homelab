@@ -262,7 +262,7 @@ spec:
         zone: iot
         sso: true
         target: { ip: homeassistant.iot.chrison.internal, port: 8123, method: http }
-      # Pulse — fleet monitoring UI (stacks/monitoring CT 4000). SSO-gated; served at
+      # Pulse — fleet monitoring UI (stacks/Monitoring CT 4001). SSO-gated; served at
       # pulse.lab.chrison.dev (covered by the *.lab wildcard — no new DNS record).
       - name: Pulse
         subdomain: pulse

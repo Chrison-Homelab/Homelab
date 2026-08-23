@@ -17,7 +17,7 @@
 #     `config.assets` exists for (#305) — the tree under podman-host/assets/ is rendered
 #     to assetsTarget BEFORE any unit starts, and its contents are folded into the managed
 #     marker so editing a config re-converges and restarts the units consuming it. This
-#     replaces stacks/monitoring/deploy/install.sh, which shipped the same tree by tar.
+#     replaced stacks/Monitoring/deploy/install.sh (since deleted), which shipped it by tar.
 #
 #  2. FIXED-UID DATA DIRS on 3.9 GB of state (tempo 3.2G · pulse 616M · grafana 50M ·
 #     loki 68K). Each container runs as a uid we don't control, so each gets

@@ -101,6 +101,10 @@ jobs:
       # them. Only the API key is secret; the rest are the same literals secrets.env carries.
       # The controller is addressed by IP on purpose: it IS the DNS server.
       UNIFI_API_KEY: ${{ secrets.UNIFI_API_KEY }}
+      # Alert bus delivery (ADR-0011). Seeding is add-only but HARD-FAILS on an absent source
+      # value even when the podman secret already exists on the host, so a missing passthrough
+      # here fails the WHOLE stack converge, not just alertmanager.
+      HA_ALERT_WEBHOOK_URL: ${{ secrets.HA_ALERT_WEBHOOK_URL }}
       UNIFI_LOCAL_HOST: '192.168.178.1'
       UNIFI_BASE_URL: 'https://192.168.178.1/proxy/network/integration'
       UNIFI_VERIFY_TLS: 'false'
