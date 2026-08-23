@@ -1,0 +1,132 @@
+# Homelab identity model — groups, and Pangolin as the first OIDC client (#468).
+#
+# ONE FILE ON PURPOSE. Authentik applies entries within a blueprint IN ORDER, but gives no
+# ordering guarantee BETWEEN blueprint files. Splitting the groups into their own file and
+# reaching for them here with `!Find` would be a race on first apply: if this file ran first
+# the lookup would miss, and a PolicyBinding whose group resolves to nothing is not a binding
+# that fails safe. Groups are therefore defined here and referenced by `!KeyOf`, which is an
+# exact reference to an entry in this same file rather than a lookup that can come up empty.
+#
+# THE AUTHORISATION MODEL, in two independent layers:
+#
+#   1. HERE — may you get a token for Pangolin at all? Only members of the four groups below.
+#      A user in NO group matches no binding and is denied. That matters because the Plex
+#      source enrolls friends automatically (`allow_friends: true` +
+#      `default-source-enrollment`), so "authenticated" must never imply "authorised".
+#   2. PANGOLIN — which resources may you reach? Its own resource↔role matrix, which today
+#      grants every resource to the Admin role ONLY. So a Family or Guests member can obtain
+#      a token and reach nothing until a resource is deliberately opened to their role.
+#
+# Both layers deny by default, and neither relies on the other being correct.
+#
+# `groups` needs no custom property mapping — Authentik's stock `profile` scope already emits
+# `[group.name for group in request.user.groups.all()]`, which is what Pangolin's roleMapping
+# reads. Verified against the live scope mapping rather than assumed.
+
+version: 1
+metadata:
+  name: homelab - identity model
+  labels:
+    blueprints.goauthentik.io/description: |
+      Homelab access groups and the Pangolin OIDC client. Managed by converge from
+      stacks/Core/authentik/assets/blueprints — edit there, not in the UI.
+
+entries:
+  # ── Groups ────────────────────────────────────────────────────────────────────────
+  # NOT `is_superuser`. That flag is Authentik's OWN admin rights (the built-in "authentik
+  # Admins" group has it) and is unrelated to what these groups are for, which is deciding
+  # who reaches which homelab application. Granting it here would hand anyone in Family the
+  # ability to rewrite the access model they are subject to.
+  - model: authentik_core.group
+    id: grp-homelab-admins
+    identifiers: { name: Homelab Admins }
+    attrs:
+      is_superuser: false
+      attributes:
+        homelab.chrison.dev/purpose: Infrastructure — Proxmox, PDM, Pangolin, identity, Pulse, shell, power, Traefik
+
+  - model: authentik_core.group
+    id: grp-media-admins
+    identifiers: { name: Media Admins }
+    attrs:
+      is_superuser: false
+      attributes:
+        homelab.chrison.dev/purpose: The arr fleet — Sonarr, Radarr, Prowlarr, Bazarr, qBittorrent, Tracearr, Youtarr, Shelfmark
+
+  - model: authentik_core.group
+    id: grp-family
+    identifiers: { name: Family }
+    attrs:
+      is_superuser: false
+      attributes:
+        homelab.chrison.dev/purpose: Household apps — Seerr, Audiobookshelf, RomM, Home Assistant
+
+  - model: authentik_core.group
+    id: grp-guests
+    identifiers: { name: Guests }
+    attrs:
+      is_superuser: false
+      attributes:
+        homelab.chrison.dev/purpose: Deliberately narrow — media requests only
+
+  # ── Pangolin: OAuth2/OIDC provider ────────────────────────────────────────────────
+  - model: authentik_providers_oauth2.oauth2provider
+    id: pangolin-provider
+    identifiers: { name: Pangolin }
+    attrs:
+      client_type: confidential
+      # Both values are generated into Bitwarden Secrets Manager and reach this container as
+      # podman secrets, so the pair is never typed into a UI and never copied out of one. The
+      # SAME two values are handed to Pangolin's IdP registration — that is the whole point of
+      # fixing them here rather than letting Authentik mint them.
+      client_id: !Env AUTHENTIK_PANGOLIN_CLIENT_ID
+      client_secret: !Env AUTHENTIK_PANGOLIN_CLIENT_SECRET
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      # Pangolin reads the groups claim out of the ID TOKEN to pick a role, so the claims have
+      # to be in there rather than only behind a userinfo call.
+      include_claims_in_id_token: true
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+      # REGEX, not strict. Pangolin builds its callback as
+      # `<dashboardUrl>/auth/idp/${idpId}/oidc/callback` and idpId is assigned by Pangolin when
+      # the IdP row is created — so a strict URI would need the id before it exists, and would
+      # silently stop matching if the IdP were ever recreated with a new id. Confirmed against
+      # Pangolin's own bundle, which validates callbacks with `/auth/idp/[0-9]+/oidc/callback`.
+      redirect_uris:
+        - matching_mode: regex
+          url: https://pangolin\.chrison\.dev/auth/idp/[0-9]+/oidc/callback
+
+  # ── Pangolin: application ─────────────────────────────────────────────────────────
+  - model: authentik_core.application
+    id: pangolin-app
+    identifiers: { slug: pangolin }
+    attrs:
+      name: Pangolin
+      provider: !KeyOf pangolin-provider
+      meta_launch_url: https://pangolin.chrison.dev
+      meta_description: Public ingress and SSO gate for the *.lab / *.arr / *.iot surface.
+      # `any` — the four bindings below are alternatives, not requirements. With `all` a user
+      # would have to be in every group at once, which would lock everyone out including you.
+      policy_engine_mode: any
+
+  # ── Who may authenticate to Pangolin ──────────────────────────────────────────────
+  # All four groups, deliberately. Pangolin is the front door for household apps as well as
+  # admin ones, so restricting this to admins would mean Family could never reach anything
+  # through the gate. What each group can actually SEE is Pangolin's resource↔role matrix,
+  # which is the layer that stays closed until opened one resource at a time.
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf pangolin-app, group: !KeyOf grp-homelab-admins }
+    attrs: { order: 0, enabled: true }
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf pangolin-app, group: !KeyOf grp-media-admins }
+    attrs: { order: 1, enabled: true }
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf pangolin-app, group: !KeyOf grp-family }
+    attrs: { order: 2, enabled: true }
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf pangolin-app, group: !KeyOf grp-guests }
+    attrs: { order: 3, enabled: true }

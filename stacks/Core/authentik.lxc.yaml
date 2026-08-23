@@ -75,6 +75,21 @@ spec:
     user: podman
     quadlets: authentik/quadlets
 
+    # ACCESS MODEL AS CODE (#468). Everything under authentik/assets/ is rendered to
+    # assetsTarget before any unit starts; the blueprints subdir is mounted read-only at
+    # /blueprints/custom, where Authentik discovers and applies it. Groups, the Pangolin OIDC
+    # client and its policy bindings therefore live in git and are reviewable in a diff,
+    # rather than existing only as UI state nobody can audit.
+    #
+    # ⚠ assetsTarget is a DEDICATED directory, deliberately NOT /home/podman/authentik.
+    # The asset push ends with `chown -R podman:podman <assetsTarget>`, and the Postgres data
+    # dir under /home/podman/authentik/database is owned by uid 999 via keep-id. Pointing
+    # assetsTarget at the shared parent would chown the database to uid 1000 and Postgres
+    # refuses to start on wrong ownership — a broken IdP as a side effect of shipping a
+    # config file.
+    assets: authentik/assets
+    assetsTarget: /home/podman/authentik-blueprints
+
     # podman secrets seeded from secrets.env, add-only. Namespaced `authentik_*` because a
     # Core host may grow more of them later.
     #
@@ -85,3 +100,8 @@ spec:
     secrets:
       authentik_secret_key: AUTHENTIK_SECRET_KEY
       authentik_pg_password: AUTHENTIK_PG_PASSWORD
+      # Consumed by the blueprint's `!Env` tags, and handed identically to Pangolin's IdP
+      # registration — fixing the pair here is what keeps the client credentials out of a
+      # copy-paste between two UIs.
+      authentik_pangolin_client_id: AUTHENTIK_PANGOLIN_CLIENT_ID
+      authentik_pangolin_client_secret: AUTHENTIK_PANGOLIN_CLIENT_SECRET

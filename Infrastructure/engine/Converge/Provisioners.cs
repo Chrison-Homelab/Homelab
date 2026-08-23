@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Homelab.Infrastructure.Shapes;
 
 namespace Homelab.Infrastructure.Converge;
@@ -662,6 +663,8 @@ public sealed class PangolinProvisioner : IAppProvisioner
             yield return "restart pangolin + gerbil if config changed (idempotent via managed marker)";
         }
         yield return "reconcile declared resources via the integration API (add-only by fullDomain)";
+        foreach (var idp in DeclaredIdps(s))
+            yield return $"reconcile identity provider '{idp.Name}' + its claim→role mapping via the integration API";
     }
 
     // Stable marker over the managed inputs — when unchanged, apply is a no-op.
@@ -880,10 +883,170 @@ public sealed class PangolinProvisioner : IAppProvisioner
         var (resMsg, resChanged, resFailed) = await ReconcileResourcesAsync(s, ctx, node, ctid);
         if (resFailed is not null) return ApplyResult.Failed(resFailed);
 
-        if (configMsg is null && !dnsChanged && !resChanged)
+        // Identity providers (#468): register the homelab IdP as an OIDC provider for this
+        // org, with the claim→role mapping. Same skipped-not-failed rule as resources.
+        var (idpMsg, idpChanged, idpFailed) = await ReconcileIdpsAsync(s, ctx, node, ctid);
+        if (idpFailed is not null) return ApplyResult.Failed(idpFailed);
+
+        if (configMsg is null && !dnsChanged && !resChanged && !idpChanged)
             return ApplyResult.NoChange($"config current (marker {marker})"
-                + (dnsMsg is null ? "" : $"; {dnsMsg}") + (resMsg is null ? "" : $"; {resMsg}"));
-        return ApplyResult.Applied(string.Join("; ", new[] { configMsg, dnsMsg, resMsg }.Where(x => x is not null)));
+                + (dnsMsg is null ? "" : $"; {dnsMsg}") + (resMsg is null ? "" : $"; {resMsg}")
+                + (idpMsg is null ? "" : $"; {idpMsg}"));
+        return ApplyResult.Applied(string.Join("; ", new[] { configMsg, dnsMsg, resMsg, idpMsg }.Where(x => x is not null)));
+    }
+
+    // ── Identity providers (#468) ─────────────────────────────────────────────────────
+    // A declared IdP, flattened from config.idps[]. `ClientIdFrom`/`ClientSecretFrom` name
+    // KEYS IN secrets.env rather than carrying values, so a shape never holds a credential
+    // and the same pair can be handed to both ends of the OIDC relationship.
+    internal readonly record struct DeclaredIdp(
+        string Name, string AuthUrl, string TokenUrl, string ClientIdFrom, string ClientSecretFrom,
+        string IdentifierPath, string EmailPath, string NamePath, string Scopes,
+        bool AutoProvision, string? RoleMapping);
+
+    internal static IReadOnlyList<DeclaredIdp> DeclaredIdps(Shape s)
+    {
+        var list = new List<DeclaredIdp>();
+        if (!(s.Spec.Config.TryGetValue("idps", out var v) && v is IEnumerable<object> items)) return list;
+        foreach (var it in items)
+        {
+            if (it is not System.Collections.IDictionary d) continue;
+            string? Str(string k) => d[k]?.ToString() is { Length: > 0 } x ? x : null;
+            if (Str("name") is not { } name || Str("authUrl") is not { } au || Str("tokenUrl") is not { } tu) continue;
+            list.Add(new DeclaredIdp(
+                name, au, tu,
+                Str("clientIdFrom") ?? "", Str("clientSecretFrom") ?? "",
+                Str("identifierPath") ?? "sub",
+                Str("emailPath") ?? "email",
+                Str("namePath") ?? "preferred_username",
+                Str("scopes") ?? "openid profile email",
+                !(d["autoProvision"] is { } ap && bool.TryParse(ap.ToString(), out var b) && !b),
+                Str("roleMapping")));
+        }
+        return list;
+    }
+
+    // The create/update body for an OIDC IdP. Pulled out as a pure function so the JSON shape
+    // is unit-testable without an API — the same reason ArrExec's dialects are.
+    internal static string IdpOidcJson(DeclaredIdp idp, string clientId, string clientSecret)
+    {
+        var o = new JsonObject
+        {
+            ["name"] = idp.Name,
+            ["clientId"] = clientId,
+            ["clientSecret"] = clientSecret,
+            ["authUrl"] = idp.AuthUrl,
+            ["tokenUrl"] = idp.TokenUrl,
+            ["identifierPath"] = idp.IdentifierPath,
+            ["emailPath"] = idp.EmailPath,
+            ["namePath"] = idp.NamePath,
+            ["scopes"] = idp.Scopes,
+            ["autoProvision"] = idp.AutoProvision,
+            ["variant"] = "oidc",
+        };
+        return o.ToJsonString();
+    }
+
+    // Reconcile declared identity providers via the integration API.
+    //
+    // RECONCILES, never add-only. #309 is the precedent: the resource reconciler was add-only,
+    // an edited target silently never reached Pangolin, and converge reported a clean plan
+    // while the route was down. An IdP has the same failure shape and worse consequences —
+    // an authUrl left pointing at an old issuer is a login loop nobody can debug from the
+    // plan output, because the plan says everything matches.
+    //
+    // THE CLIENT SECRET IS NOT DRIFT-CHECKED, because it cannot be: the API never reads one
+    // back. It is written on create and on any update we make for another reason. To rotate
+    // it, change the value in Secrets Manager and edit something else on the IdP, or delete
+    // the IdP and let this recreate it.
+    //
+    // Skipped — not failed — when the API key or the client credentials are absent, matching
+    // the resource reconciler: a plan on a machine without the full secret set still converges
+    // everything else rather than going red.
+    private static async Task<(string? msg, bool changed, string? failed)> ReconcileIdpsAsync(
+        Shape s, ConvergeContext ctx, string node, string ctid)
+    {
+        var idps = DeclaredIdps(s);
+        if (idps.Count == 0) return (null, false, null);
+        if (ctx.Secrets.Get("PANGOLIN_API_KEY") is not { Length: > 0 } key)
+            return ("idps declared but PANGOLIN_API_KEY unset — skipped", false, null);
+        if (s.Spec.Config.Str("org") is not { Length: > 0 } org)
+            return (null, false, "idps declared but config.org (Pangolin org id) is missing");
+
+        var ct = CancellationToken.None;
+        var pg = new PangolinClient(ctx.Exec, node, ctid, key);
+        var (lok, lroot) = await pg.CallAsync("GET", "/idp", null, ct);
+        if (!lok) return (null, false, "pangolin: integration API unreachable or key invalid (GET idp failed)");
+
+        var live = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+        foreach (var e in DataArray(lroot, "idps"))
+            if (e.TryGetProperty("name", out var n) && n.GetString() is { Length: > 0 } ns)
+                live[ns] = e;
+
+        int created = 0, updated = 0, mapped = 0;
+        foreach (var idp in idps)
+        {
+            var clientId = ctx.Secrets.Get(idp.ClientIdFrom);
+            var clientSecret = ctx.Secrets.Get(idp.ClientSecretFrom);
+            if (clientId is not { Length: > 0 } || clientSecret is not { Length: > 0 })
+                return ($"idp '{idp.Name}' declared but {idp.ClientIdFrom}/{idp.ClientSecretFrom} unset — skipped", false, null);
+
+            var body = IdpOidcJson(idp, clientId, clientSecret);
+            int idpId;
+            if (!live.TryGetValue(idp.Name, out var cur))
+            {
+                var (cok, croot) = await pg.CallAsync("PUT", "/idp/oidc", body, ct);
+                if (!cok || !Data(croot).TryGetProperty("idpId", out var nid))
+                    return (null, false, $"pangolin: failed to create idp '{idp.Name}'");
+                idpId = nid.GetInt32();
+                created++;
+            }
+            else
+            {
+                if (!cur.TryGetProperty("idpId", out var cid)) return (null, false, $"pangolin: idp '{idp.Name}' has no idpId");
+                idpId = cid.GetInt32();
+                if (IdpDrifted(cur, idp))
+                {
+                    var (uok, _) = await pg.CallAsync("POST", $"/idp/{idpId}/oidc", body, ct);
+                    if (!uok) return (null, false, $"pangolin: failed to update idp '{idp.Name}'");
+                    updated++;
+                }
+            }
+
+            // Org policy: the claim→role mapping. PUT creates it; if it already exists PUT is
+            // rejected, so fall back to POST. Cheaper and more reliable than a read-then-branch
+            // against an endpoint that has no documented GET.
+            if (idp.RoleMapping is { Length: > 0 } rm)
+            {
+                var mapBody = new JsonObject { ["roleMapping"] = rm }.ToJsonString();
+                var (pok, _) = await pg.CallAsync("PUT", $"/idp/{idpId}/org/{org}", mapBody, ct);
+                if (!pok)
+                {
+                    var (pok2, _) = await pg.CallAsync("POST", $"/idp/{idpId}/org/{org}", mapBody, ct);
+                    if (!pok2) return (null, false, $"pangolin: failed to set role mapping for idp '{idp.Name}'");
+                }
+                mapped++;
+            }
+        }
+
+        var changed = created > 0 || updated > 0;
+        return ($"{idps.Count} idp(s) declared, {created} created, {updated} updated, {mapped} role mapping(s) applied",
+                changed, null);
+    }
+
+    // Field-by-field drift on the readable parts of an IdP. The client secret is absent by
+    // design (see above) and is therefore not part of the comparison.
+    internal static bool IdpDrifted(JsonElement live, DeclaredIdp want)
+    {
+        static string S(JsonElement e, string p) =>
+            e.TryGetProperty(p, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+        return S(live, "authUrl") != want.AuthUrl
+            || S(live, "tokenUrl") != want.TokenUrl
+            || S(live, "identifierPath") != want.IdentifierPath
+            || S(live, "emailPath") != want.EmailPath
+            || S(live, "namePath") != want.NamePath
+            || S(live, "scopes") != want.Scopes
+            || Truthy(live, "autoProvision") != want.AutoProvision;
     }
 
     // Reconcile the grey-cloud wildcard A records (#221): one proxied:false A record per

@@ -1136,4 +1136,141 @@ public sealed class ConvergeCoreTests
         }
         throw new FileNotFoundException($"Could not locate {relative} by walking up from {AppContext.BaseDirectory}");
     }
+
+    // ── Identity providers (#468) ─────────────────────────────────────────────────────
+
+    private static Dictionary<object, object> AuthentikIdpEntry() => new()
+    {
+        ["name"] = "Authentik",
+        ["authUrl"] = "https://identity.chrison.dev/application/o/authorize/",
+        ["tokenUrl"] = "https://identity.chrison.dev/application/o/token/",
+        ["clientIdFrom"] = "AUTHENTIK_PANGOLIN_CLIENT_ID",
+        ["clientSecretFrom"] = "AUTHENTIK_PANGOLIN_CLIENT_SECRET",
+        ["identifierPath"] = "sub",
+        ["emailPath"] = "email",
+        ["namePath"] = "preferred_username",
+        ["scopes"] = "openid profile email",
+        ["autoProvision"] = true,
+        ["roleMapping"] = "contains(groups, 'Homelab Admins') && 'Admin' || 'Member'",
+    };
+
+    [Fact]
+    public void Pangolin_DeclaredIdps_CarriesSecretKeyNamesRatherThanSecretValues()
+    {
+        // The shape must never hold a credential — it names the secrets.env KEYS and the
+        // reconciler resolves them. This is what lets the same two keys configure BOTH ends of
+        // the OIDC relationship (Authentik's blueprint reads them via `!Env`) without either
+        // side's value ever being copied out of a UI or committed.
+        var s = PangolinWildcardShape();
+        s.Spec.Config["idps"] = new List<object> { AuthentikIdpEntry() };
+
+        var idps = PangolinProvisioner.DeclaredIdps(s);
+
+        var idp = Assert.Single(idps);
+        Assert.Equal("Authentik", idp.Name);
+        Assert.Equal("AUTHENTIK_PANGOLIN_CLIENT_ID", idp.ClientIdFrom);
+        Assert.Equal("AUTHENTIK_PANGOLIN_CLIENT_SECRET", idp.ClientSecretFrom);
+    }
+
+    [Fact]
+    public void Pangolin_DeclaredIdps_DefaultsTheClaimPathsSoAMinimalEntryStillWorks()
+    {
+        var s = PangolinWildcardShape();
+        s.Spec.Config["idps"] = new List<object>
+        {
+            new Dictionary<object, object>
+            {
+                ["name"] = "Authentik",
+                ["authUrl"] = "https://identity.chrison.dev/application/o/authorize/",
+                ["tokenUrl"] = "https://identity.chrison.dev/application/o/token/",
+            },
+        };
+
+        var idp = Assert.Single(PangolinProvisioner.DeclaredIdps(s));
+
+        Assert.Equal("sub", idp.IdentifierPath);
+        Assert.Equal("email", idp.EmailPath);
+        Assert.Equal("preferred_username", idp.NamePath);
+        Assert.Equal("openid profile email", idp.Scopes);
+        Assert.True(idp.AutoProvision);
+    }
+
+    [Fact]
+    public void Pangolin_DeclaredIdps_SkipsAnEntryMissingItsEndpoints()
+    {
+        // A half-written entry must not become a half-configured IdP. Pangolin requires both
+        // URLs, so an entry without them is dropped rather than sent and rejected at the API.
+        var s = PangolinWildcardShape();
+        s.Spec.Config["idps"] = new List<object>
+        {
+            new Dictionary<object, object> { ["name"] = "Broken" },
+            AuthentikIdpEntry(),
+        };
+
+        Assert.Equal("Authentik", Assert.Single(PangolinProvisioner.DeclaredIdps(s)).Name);
+    }
+
+    [Fact]
+    public void Pangolin_IdpOidcJson_SendsTheFieldsPangolinRequires()
+    {
+        var idp = Assert.Single(IdpsFrom(AuthentikIdpEntry()));
+
+        var json = JsonDocument.Parse(PangolinProvisioner.IdpOidcJson(idp, "the-id", "the-secret")).RootElement;
+
+        Assert.Equal("Authentik", json.GetProperty("name").GetString());
+        Assert.Equal("the-id", json.GetProperty("clientId").GetString());
+        Assert.Equal("the-secret", json.GetProperty("clientSecret").GetString());
+        Assert.Equal("oidc", json.GetProperty("variant").GetString());
+        Assert.Equal("openid profile email", json.GetProperty("scopes").GetString());
+        Assert.True(json.GetProperty("autoProvision").GetBoolean());
+    }
+
+    [Fact]
+    public void Pangolin_IdpDrifted_NoticesAChangedIssuerButIgnoresTheUnreadableSecret()
+    {
+        // The drift check is the #309 lesson applied to identity: an authUrl left pointing at a
+        // stale issuer is a login loop, and add-only reconciliation would report a clean plan
+        // while it stayed broken. The client secret is deliberately NOT compared — the API
+        // never reads one back, so "differs" is unknowable and would force an update every run.
+        var idp = Assert.Single(IdpsFrom(AuthentikIdpEntry()));
+        var live = JsonDocument.Parse("""
+            {"idpId":1,"name":"Authentik",
+             "authUrl":"https://identity.chrison.dev/application/o/authorize/",
+             "tokenUrl":"https://identity.chrison.dev/application/o/token/",
+             "identifierPath":"sub","emailPath":"email","namePath":"preferred_username",
+             "scopes":"openid profile email","autoProvision":1}
+            """).RootElement;
+
+        Assert.False(PangolinProvisioner.IdpDrifted(live, idp));
+
+        var moved = JsonDocument.Parse("""
+            {"idpId":1,"name":"Authentik",
+             "authUrl":"https://old-idp.example/authorize/",
+             "tokenUrl":"https://identity.chrison.dev/application/o/token/",
+             "identifierPath":"sub","emailPath":"email","namePath":"preferred_username",
+             "scopes":"openid profile email","autoProvision":1}
+            """).RootElement;
+
+        Assert.True(PangolinProvisioner.IdpDrifted(moved, idp));
+    }
+
+    [Fact]
+    public void ShapeValidator_SkipsAssetPayloadsSoBlueprintTagsDoNotTripIt()
+    {
+        // Authentik blueprints are valid YAML that no general parser can resolve, because of
+        // the `!Env` / `!Find` / `!KeyOf` tags. They live under assets/ and are payloads, not
+        // shapes. The apiVersion probe deliberately KEEPS unparseable files so a typo in a real
+        // shape is never silently skipped — so asset trees have to be excluded before it.
+        Assert.True(ShapeValidator.IsAssetPayload("stacks/Core/authentik/assets/blueprints/00-homelab-identity.yaml"));
+        Assert.True(ShapeValidator.IsAssetPayload("stacks/monitoring/podman-host/assets/prometheus/prometheus.yaml"));
+        Assert.False(ShapeValidator.IsAssetPayload("stacks/Core/authentik.lxc.yaml"));
+        Assert.False(ShapeValidator.IsAssetPayload("stacks/Core/pangolin.lxc.yaml"));
+    }
+
+    private static IReadOnlyList<PangolinProvisioner.DeclaredIdp> IdpsFrom(Dictionary<object, object> entry)
+    {
+        var s = PangolinWildcardShape();
+        s.Spec.Config["idps"] = new List<object> { entry };
+        return PangolinProvisioner.DeclaredIdps(s);
+    }
 }
