@@ -112,3 +112,5 @@ spec:
       unifi_api_key: UNIFI_API_KEY
       # Grafana's alert contact point posts here (HA automation webhook).
       ha_alert_webhook_url: HA_ALERT_WEBHOOK_URL
+      authentik_grafana_client_id: AUTHENTIK_GRAFANA_CLIENT_ID
+      authentik_grafana_client_secret: AUTHENTIK_GRAFANA_CLIENT_SECRET
