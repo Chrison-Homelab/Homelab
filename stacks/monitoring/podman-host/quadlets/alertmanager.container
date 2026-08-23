@@ -1,0 +1,46 @@
+# Alertmanager — the homelab's alert bus (ADR-0011).
+#
+# Every producer sends here; Alertmanager decides what actually reaches a human. Home
+# Assistant is now just a RECEIVER at the far end, not the bus itself — swapping it for
+# email, ntfy or anything else is one receiver block in alertmanager.yml.
+#
+# Producers:
+#   • Prometheus  — rule_files in prometheus.yml, sent over the shared network
+#   • Pulse       — templated webhook → /api/v2/alerts (its own alert engine, see the ADR)
+#
+# UserNS=keep-id:uid=65534 — alertmanager runs as nobody(65534), which is OUTSIDE the
+# 65536-uid window this LXC maps, so crun refuses to start it without this:
+#     crun: setgroups: Invalid argument
+# Same reason prometheus carries it. Verified the hard way, not assumed.
+#
+# The data dir holds silences and notification state, so unlike unpoller this container IS
+# stateful — losing it loses active silences and re-notifies for everything currently firing.
+
+[Unit]
+Description=Alertmanager (alert bus)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=quay.io/prometheus/alertmanager:latest
+ContainerName=alertmanager
+Network=monitoring.network
+PublishPort=9093:9093
+UserNS=keep-id:uid=65534,gid=65534
+Volume=/home/podman/monitoring/config/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+Volume=/home/podman/monitoring/data/alertmanager:/alertmanager
+
+# The HA webhook URL is a capability, so it is mounted as a file and referenced by
+# `url_file:` in alertmanager.yml — it never appears in a config file under git.
+Secret=ha_alert_webhook_url,type=mount,target=/run/secrets/ha_alert_webhook_url
+
+Exec=--config.file=/etc/alertmanager/alertmanager.yml --storage.path=/alertmanager --web.external-url=http://monitoring.homelab.chrison.internal:9093
+AutoUpdate=registry
+
+[Service]
+ExecStartPre=/usr/bin/mkdir -p /home/podman/monitoring/data/alertmanager
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

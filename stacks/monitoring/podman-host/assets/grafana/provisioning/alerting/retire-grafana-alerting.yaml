@@ -1,0 +1,37 @@
+# Retire the Grafana-managed UniFi alerting (ADR-0011).
+#
+# Deleting the provisioning FILES is not enough — Grafana keeps previously provisioned
+# rules and contact points in its database, so they would keep evaluating and keep
+# notifying Home Assistant directly, in parallel with Alertmanager. This file removes them
+# explicitly, and must stay until the Grafana volume is rebuilt from scratch.
+#
+# The rules now live as native Prometheus rules in config/rules/unifi.rules.yml, and
+# routing/inhibition/silences belong to Alertmanager. Grafana is dashboards again — plus
+# the Alertmanager datasource, which gives it a UI for browsing alerts and setting silences.
+apiVersion: 1
+
+deleteRules:
+  - orgId: 1
+    uid: unifi-collector-down
+  - orgId: 1
+    uid: unifi-device-vanished
+  - orgId: 1
+    uid: unifi-site-disconnected
+  - orgId: 1
+    uid: unifi-channel-utilization
+  - orgId: 1
+    uid: unifi-poe-budget
+  - orgId: 1
+    uid: unifi-wan-latency
+  - orgId: 1
+    uid: unifi-device-temperature
+
+# Root policy back to Grafana's built-in no-op receiver, so nothing is left pointing at the
+# contact point deleted below.
+policies:
+  - orgId: 1
+    receiver: empty
+
+deleteContactPoints:
+  - orgId: 1
+    uid: ha-webhook

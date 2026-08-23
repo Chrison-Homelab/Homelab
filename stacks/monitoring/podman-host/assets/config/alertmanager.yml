@@ -1,0 +1,62 @@
+# Alert bus routing (ADR-0011).
+#
+# Home Assistant is a RECEIVER here, not the bus. To swap it out, change the receiver
+# below — no producer knows or cares where alerts end up.
+
+global:
+  # How long after a producer stops sending before an alert is considered resolved.
+  # Prometheus re-sends every evaluation, so this only matters if Prometheus itself dies.
+  resolve_timeout: 5m
+
+route:
+  receiver: home-assistant
+  # Group by the alert and the thing it is about, so three flapping APs are one
+  # notification rather than three.
+  group_by: [alertname, name]
+  group_wait: 30s
+  group_interval: 5m
+  # Slow on purpose: a homelab problem still true four hours later has not become more
+  # urgent, and this lands on a phone.
+  repeat_interval: 4h
+
+  routes:
+    # Critical repeats more often, but still not often enough to be ignorable.
+    - matchers: ['severity="critical"']
+      receiver: home-assistant
+      repeat_interval: 1h
+
+receivers:
+  - name: home-assistant
+    webhook_configs:
+      # url_file, not url — the webhook id is a capability and lives in a podman secret
+      # mounted at this path. Nothing sensitive is in this file.
+      - url_file: /run/secrets/ha_alert_webhook_url
+        send_resolved: true
+
+inhibit_rules:
+  # A dead gateway takes the APs, the switch and the WAN with it. Without this, one
+  # power cut is seven notifications, six of which tell you nothing you did not already
+  # know from the first.
+  - source_matchers:
+      - 'alertname="UniFiDeviceVanished"'
+      - 'name="Cloud Gateway Ultra"'
+    target_matchers:
+      - 'stack="unifi"'
+    # No `equal:` — when the gateway is gone, suppress the whole UniFi stack, not just
+    # alerts sharing a label with it.
+    equal: []
+
+  # If the collector is down every other UniFi rule is blind, so its silence means
+  # nothing. Say that once rather than letting stale state leak out as alerts.
+  - source_matchers:
+      - 'alertname="UniFiCollectorDown"'
+    target_matchers:
+      - 'stack="unifi"'
+    equal: []
+
+  # Severity ladder: never page about a warning for something already critical.
+  - source_matchers:
+      - 'severity="critical"'
+    target_matchers:
+      - 'severity="warning"'
+    equal: [alertname, name]

@@ -21,3 +21,15 @@ datasources:
     type: loki
     access: proxy
     url: http://loki:3100
+  # Alert bus (ADR-0011). Read-only-ish view onto Alertmanager so Grafana's Alerting UI can
+  # list firing alerts and — the useful part — create SILENCES during maintenance without
+  # touching rule definitions. handleGrafanaManagedAlerts is explicitly false: Grafana has no
+  # managed rules any more, and forwarding would put two Alertmanagers in the path.
+  - name: Alertmanager
+    uid: alertmanager
+    type: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    jsonData:
+      implementation: prometheus
+      handleGrafanaManagedAlerts: false

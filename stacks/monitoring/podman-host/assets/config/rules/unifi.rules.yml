@@ -1,0 +1,94 @@
+# UniFi alert rules (ADR-0011).
+#
+# These were Grafana-managed rules when UniFi monitoring first landed. They are native
+# Prometheus rules now so there is ONE alert path — producer → Alertmanager → receiver —
+# rather than Grafana forwarding to an Alertmanager that also has its own routing. Grafana
+# is dashboards again.
+#
+# Thresholds come from THIS network's measured baseline, not vendor defaults. Each rule
+# records what normal looks like so a future reader can tell a tightened threshold from a
+# guessed one.
+#
+# `alertname` values are referenced by the inhibit_rules in alertmanager.yml — renaming one
+# silently breaks an inhibition, which fails open (more noise), not closed.
+
+groups:
+  - name: unifi
+    interval: 1m
+    rules:
+      - alert: UniFiCollectorDown
+        expr: up{job="unifi"} == 0
+        for: 10m
+        labels: { severity: critical, stack: unifi }
+        annotations:
+          summary: "Prometheus cannot scrape unpoller"
+          description: >-
+            unpoller on CT 4001 is not being scraped, so every other UniFi rule is blind.
+            Either unpoller is down or it cannot reach the controller at
+            unifi.homelab.chrison.internal. Check `systemctl --user status unpoller`.
+
+      # An offline device emits NO series at all rather than a zero — unpoller only reports
+      # what the controller currently sees. Hence comparing against an hour ago instead of
+      # testing a value. This catches gear that fails from here on; anything already offline
+      # (the two USW Flex Minis, #307) is absent from both sides and never fires.
+      - alert: UniFiDeviceVanished
+        expr: >-
+          count by (name) (unpoller_device_uptime_seconds offset 1h)
+          unless count by (name) (unpoller_device_uptime_seconds)
+        for: 15m
+        labels: { severity: critical, stack: unifi }
+        annotations:
+          summary: "{{ $labels.name }} dropped off the controller"
+          description: >-
+            {{ $labels.name }} was adopted an hour ago and the controller no longer sees it.
+
+      # The complement to the rule above: covers gear the controller still knows about but
+      # cannot reach, which never disappears from the series and so never "vanishes".
+      - alert: UniFiSiteDisconnected
+        expr: sum(unpoller_site_disconnected) > 0
+        for: 15m
+        labels: { severity: warning, stack: unifi }
+        annotations:
+          summary: "Controller reports {{ $value }} disconnected device(s)"
+          description: "Site-level count from the controller, covering adopted-but-unreachable gear."
+
+      - alert: UniFiChannelSaturated
+        expr: unpoller_device_radio_channel_utilization_total_ratio > 0.7
+        for: 20m
+        labels: { severity: warning, stack: unifi }
+        annotations:
+          summary: "{{ $labels.name }} {{ $labels.band }} GHz airtime at {{ $value | humanizePercentage }}"
+          description: >-
+            Sustained airtime above 70% means clients queue for the medium and throughput
+            collapses regardless of signal. 2.4 GHz runs 0.2–0.5 here normally. The
+            co-channel overlap between Lounge and Master Bedroom is #331 — fixing the
+            channel plan is the remedy, not raising this threshold.
+
+      - alert: UniFiPoEBudgetHigh
+        expr: sum(unpoller_device_port_poe_watts) > 180
+        for: 15m
+        labels: { severity: warning, stack: unifi }
+        annotations:
+          summary: "Switch PoE draw at {{ $value | printf \"%.1f\" }} W"
+          description: >-
+            The US-24-PoE-250W has a 250 W budget; 180 W is where to look before ports start
+            being denied power. Normal draw here is under 20 W, so this firing means
+            something substantial was plugged in.
+
+      - alert: UniFiWanLatencyHigh
+        expr: unpoller_site_latency_seconds{subsystem="www"} > 0.15
+        for: 15m
+        labels: { severity: warning, stack: unifi }
+        annotations:
+          summary: "WAN latency at {{ $value | humanizeDuration }}"
+          description: >-
+            The controller's own internet health check. Baseline here is about 2 ms, so
+            150 ms sustained is a genuine upstream problem rather than jitter.
+
+      - alert: UniFiDeviceHot
+        expr: unpoller_device_temperature_celsius > 80
+        for: 15m
+        labels: { severity: warning, stack: unifi }
+        annotations:
+          summary: "{{ $labels.name }} at {{ $value }}°C"
+          description: "Not every model reports temperature; those that do not simply never evaluate."
