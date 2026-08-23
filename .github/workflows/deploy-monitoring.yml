@@ -1,0 +1,36 @@
+name: deploy-monitoring
+# One pipeline per stack (ADR-0005 stacks / ADR-0001 Fallout). PR touching the
+# stack → Preview (dry-run). Manual dispatch with apply=true → live Deploy.
+#
+# ADDED LATE (#474/#485). Core, DevOps, Gaming and Media each had one; monitoring did
+# not, so its stack was the one place a shape change had no pipeline to travel through
+# and every apply was somebody's laptop. That also meant a proposed change got no
+# Preview on the PR, which is the half that actually catches mistakes.
+on:
+  pull_request:
+    paths:
+      - 'stacks/monitoring/**'
+      - 'Infrastructure/**'
+      - 'build/**'
+      - 'nuget.config'
+      - 'global.json'
+      - '.github/workflows/deploy-monitoring.yml'
+      - '.github/workflows/_deploy-stack.yml'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Live apply (leave unchecked for Preview only).'
+        type: boolean
+        default: false
+      only:
+        description: 'Restrict to these stack members (comma-separated, e.g. podman-host). Empty = whole stack.'
+        type: string
+        default: ''
+jobs:
+  deploy:
+    uses: ./.github/workflows/_deploy-stack.yml
+    with:
+      stack: monitoring
+      apply: ${{ github.event_name == 'workflow_dispatch' && inputs.apply }}
+      only: ${{ github.event_name == 'workflow_dispatch' && inputs.only || '' }}
+    secrets: inherit

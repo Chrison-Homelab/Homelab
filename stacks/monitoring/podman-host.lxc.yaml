@@ -104,3 +104,7 @@ spec:
       radarr_api_key: RADARR_API_KEY
       sonarr_api_key: SONARR_API_KEY
       prowlarr_api_key: PROWLARR_API_KEY
+      # Pulse's OIDC client credentials (#485). The same pair is read by authentik's
+      # blueprint via `!Env`, so both ends of the relationship come from one source.
+      authentik_pulse_client_id: AUTHENTIK_PULSE_CLIENT_ID
+      authentik_pulse_client_secret: AUTHENTIK_PULSE_CLIENT_SECRET
