@@ -32,30 +32,31 @@
 #   sudo -E ./install-pulse-agent.sh              # install (or update if present)
 #   sudo -E ./install-pulse-agent.sh --uninstall  # remove agent + deregister
 #   sudo -E ./install-pulse-agent.sh --dry-run    # print the command, change nothing
+#   sudo -E ./install-pulse-agent.sh --smartctl-path /usr/local/bin/smartctl-7
 #
 # `sudo -E` matters: without it sudo strips PULSE_API_TOKEN from the environment.
 #
-# ── DISK HEALTH DOES NOT WORK ON DSM 7.1 (known limitation) ─────────────────────
-# The agent enumerates the disks correctly — model, size, device path all show up in
-# Pulse — but health reads UNKNOWN and temperature 0 on every one of them.
-#
-# Cause: the agent collects S.M.A.R.T. by running
+# ── DISK HEALTH NEEDS A MODERN smartctl ─────────────────────────────────────────
+# DSM 7.1.1 ships smartctl 6.5 (2021). The agent collects S.M.A.R.T. by running
 #     smartctl -n standby,3 -i -A -H --json=o /dev/sdX
-# (verified by logging the agent's own invocations). DSM 7.1.1 ships smartctl **6.5**,
-# which predates JSON output entirely — smartmontools only added it in 7.0. 6.5 ignores
-# --json, prints its banner, and exits, so the agent parses nothing.
+# (confirmed by logging the agent's own invocations), and JSON output only arrived in
+# smartmontools 7.0 — 6.5 ignores --json, prints its banner and exits. The agent parses
+# nothing, so every disk reads health=UNKNOWN, temperature=0.
 #
-# NOT a device-type problem. The agent already retries each disk with `-d sat` by itself,
-# so wrapping smartctl to force sat changes nothing. Verified: with `-d sat` the DSM
-# binary returns a correct ATA report, but still not as JSON.
+# NOT a device-type problem. The agent already retries each disk with `-d sat` itself,
+# so wrapping smartctl to force sat changes nothing.
 #
-# The fix is a smartctl >= 7.0 on the NAS, pointed at via the PULSE_SMARTCTL_PATH
-# environment variable that the agent honours (a systemd drop-in on DSM 7+ survives the
-# installer rewriting its unit). That means putting a third-party binary on the NAS, so it
-# is deliberately NOT done here.
+# The fix is a smartctl >= 7.0 on the NAS. The agent honours PULSE_SMARTCTL_PATH, so
+# DSM's own /usr/bin/smartctl is left exactly as shipped and the agent is pointed at a
+# private copy instead. Build one with build-static-smartctl.sh (static, from the
+# checksum-verified upstream tarball) and drop it at /usr/local/bin/smartctl-7; this
+# script finds it and writes the drop-in automatically.
 #
-# Until then, disk health on the NAS comes from DSM's own Storage Manager and its
-# notification e-mails; Pulse still gives you volume capacity, CPU, memory and network.
+# A systemd DROP-IN, not an edit of pulse-agent.service: the upstream installer rewrites
+# that unit on every run and would silently discard an inline edit.
+#
+# If no modern smartctl is present this script warns and carries on — you still get
+# volume capacity, CPU, memory, network and disk I/O, just no disk health.
 #
 # ── THE md0 / md1 FALSE POSITIVE ────────────────────────────────────────────────
 # DSM keeps its system partition on /dev/md0 and swap on /dev/md1, both mirrored
@@ -83,6 +84,7 @@ PULSE_URL="${PULSE_URL:-http://monitoring.homelab.chrison.internal:7655}"
 INTERVAL=""
 ENABLE_COMMANDS=true
 DISK_EXCLUDE_DEFAULTS=true
+SMARTCTL_PATH="/usr/local/bin/smartctl-7"
 TOKEN_FILE=""
 TOKEN_STDIN=false
 MODE="install"
@@ -103,6 +105,7 @@ while [ $# -gt 0 ]; do
         --token-stdin)  TOKEN_STDIN=true; shift ;;
         --no-commands)  ENABLE_COMMANDS=false; shift ;;
         --no-disk-exclude-defaults) DISK_EXCLUDE_DEFAULTS=false; shift ;;
+        --smartctl-path) SMARTCTL_PATH="$2"; shift 2 ;;
         --update)       MODE="update"; shift ;;
         --uninstall)    MODE="uninstall"; shift ;;
         --dry-run)      DRY_RUN=true; shift ;;
@@ -207,6 +210,50 @@ curl -fsSL --max-time 60 "$PULSE_URL/install.sh" -o "$INSTALLER" \
 [ -s "$INSTALLER" ] || die "Installer downloaded empty from $PULSE_URL/install.sh"
 
 bash "$INSTALLER" "${ARGS[@]}" || die "The Pulse installer failed (see output above)."
+
+# ── Point the agent at a modern smartctl (see the header) ───────────────────────
+SMART_DROPIN_DIR="/etc/systemd/system/pulse-agent.service.d"
+SMART_DROPIN="${SMART_DROPIN_DIR}/10-smartctl.conf"
+
+configure_smartctl() {
+    # DSM 6.x is Upstart and has no drop-in mechanism; leave its vendor job alone.
+    if ! [ "$DSM_MAJOR" -ge 7 ] 2>/dev/null; then
+        warn "DSM ${DSM_MAJOR} uses Upstart (no drop-in support) — not wiring PULSE_SMARTCTL_PATH.
+       Disk health will read UNKNOWN. Set it by hand in /etc/init/pulse-agent.conf if you want it."
+        return 0
+    fi
+
+    if [ ! -x "$SMARTCTL_PATH" ]; then
+        rm -f "$SMART_DROPIN" 2>/dev/null || true
+        warn "No modern smartctl at $SMARTCTL_PATH — disk health will read UNKNOWN in Pulse.
+       DSM's own smartctl ($(/usr/bin/smartctl --version 2>/dev/null | head -1 | awk '{print $2}')) predates the JSON output the agent parses.
+       Build one:  src/Synology/build-static-smartctl.sh   (see its --help to copy it over)"
+        return 0
+    fi
+
+    log "Pointing the agent at $SMARTCTL_PATH ($("$SMARTCTL_PATH" --version 2>/dev/null | head -1 | awk '{print $1, $2}'))"
+    mkdir -p "$SMART_DROPIN_DIR"
+    cat > "$SMART_DROPIN" <<DROPIN
+# Managed by src/Synology/install-pulse-agent.sh — do not edit by hand.
+# DSM ships smartctl 6.5, which predates the --json output the agent parses.
+[Service]
+Environment=PULSE_SMARTCTL_PATH=${SMARTCTL_PATH}
+DROPIN
+    systemctl daemon-reload
+    systemctl restart pulse-agent
+}
+
+remove_smartctl_config() {
+    rm -f "$SMART_DROPIN" 2>/dev/null || true
+    rmdir "$SMART_DROPIN_DIR" 2>/dev/null || true
+    systemctl daemon-reload 2>/dev/null || true
+}
+
+if [ "$MODE" = "uninstall" ]; then
+    remove_smartctl_config
+else
+    configure_smartctl
+fi
 
 # ── Verify ──────────────────────────────────────────────────────────────────────
 if [ "$MODE" = "uninstall" ]; then
