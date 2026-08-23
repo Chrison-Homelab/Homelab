@@ -28,6 +28,15 @@ This directory contains automation scripts specifically designed for Proxmox VE 
   - Useful for capacity planning and performance analysis
   - Includes per-thread CPU usage statistics
 
+- **install-pulse-agent.sh / install-pulse-agent.ps1**
+  - Installs, updates or removes the Pulse unified agent on a node
+  - Adds the telemetry the Proxmox API cannot return — per-disk S.M.A.R.T., temperatures,
+    ZFS/mdadm/Ceph detail, LXC filesystem breakdown — which is what the "Host telemetry not
+    installed" banner in the Pulse UI refers to
+  - Wraps the installer served by the Pulse server, so the agent is always version-matched
+  - Takes the API token from `PULSE_API_TOKEN` / `--token-file` / `--token-stdin`, never argv
+  - Available in both Bash and PowerShell versions
+
 ### System Configuration
 
 - **install-powershell.sh**
@@ -77,6 +86,8 @@ Scripts can be tested in the development container. See [TESTING.md](../../TESTI
 - **PowerShell scripts**: PowerShell Core (use install-powershell.sh to install)
 - **NFS scripts**: nfs-common package (installed automatically by the scripts)
 - **Hardware info scripts**: lscpu, dmidecode, lspci, ethtool, smartctl
+- **Pulse agent**: smartmontools + lm-sensors (installed automatically by the script), a
+  reachable Pulse server, and `PULSE_API_TOKEN` from `secrets.env`
 
 ## Development
 
