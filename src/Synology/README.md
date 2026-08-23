@@ -13,6 +13,12 @@ Automation scripts designed to run on a Synology DSM NAS (`DS1813-01`,
   - Excludes DSM's `md0`/`md1` by default to suppress a known permanent false-positive alert
   - Bash only — DSM has no PowerShell, so there is no `.ps1` twin here
 
+- **build-static-smartctl.sh**
+  - Builds a statically linked smartctl 7.5 from the checksum-verified upstream tarball
+  - DSM ships smartctl 6.5, which predates the `--json` output the Pulse agent parses, so
+    without this every disk reports `health=UNKNOWN, temperature=0`
+  - Runs the build in a throwaway container; nothing is installed on your workstation
+
 ## Why this directory has no PowerShell twins
 
 `src/Proxmox/` keeps every script in matched `.sh` / `.ps1` pairs because PowerShell Core can
