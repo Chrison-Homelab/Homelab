@@ -974,9 +974,15 @@ public sealed class PangolinProvisioner : IAppProvisioner
             return (null, false, "idps declared but config.org (Pangolin org id) is missing");
 
         var ct = CancellationToken.None;
-        var pg = new PangolinClient(ctx.Exec, node, ctid, key);
+        // Prefer a ROOT-scoped key when one exists. IdPs are a SERVER-level object in
+        // Pangolin, not an org-level one, so most of /idp/* refuses an org key outright
+        // ("Key does not have root access", 403). PANGOLIN_API_KEY stays org-scoped for
+        // resources — which is the narrower scope that work actually needs — and this reads
+        // the root key only if it has been provisioned.
+        var idpKey = ctx.Secrets.Get("PANGOLIN_ROOT_API_KEY") is { Length: > 0 } rk ? rk : key;
+        var pg = new PangolinClient(ctx.Exec, node, ctid, idpKey);
         var (lok, lroot) = await pg.CallAsync("GET", "/idp", null, ct);
-        if (!lok) return (null, false, "pangolin: integration API unreachable or key invalid (GET idp failed)");
+        if (!lok) return ("idps declared but the integration API would not list them — skipped", false, null);
 
         var live = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
         foreach (var e in DataArray(lroot, "idps"))
@@ -984,6 +990,11 @@ public sealed class PangolinProvisioner : IAppProvisioner
                 live[ns] = e;
 
         int created = 0, updated = 0, mapped = 0;
+        // Collected rather than thrown. IDENTITY MUST NOT TAKE DOWN ROUTING: this runs in the
+        // same apply as the resource reconcile, so a hard failure here means no public route
+        // can be managed until the IdP is happy — two unrelated concerns welded together. The
+        // precedent is three lines up, where an absent PANGOLIN_API_KEY is a note, not a fault.
+        var notes = new List<string>();
         foreach (var idp in idps)
         {
             var clientId = ctx.Secrets.Get(idp.ClientIdFrom);
@@ -997,19 +1008,43 @@ public sealed class PangolinProvisioner : IAppProvisioner
             {
                 var (cok, croot) = await pg.CallAsync("PUT", "/idp/oidc", body, ct);
                 if (!cok || !Data(croot).TryGetProperty("idpId", out var nid))
-                    return (null, false, $"pangolin: failed to create idp '{idp.Name}'");
+                {
+                    notes.Add($"idp '{idp.Name}' could not be created (root-scoped endpoint?) — skipped");
+                    continue;
+                }
                 idpId = nid.GetInt32();
                 created++;
             }
             else
             {
-                if (!cur.TryGetProperty("idpId", out var cid)) return (null, false, $"pangolin: idp '{idp.Name}' has no idpId");
+                if (!cur.TryGetProperty("idpId", out var cid))
+                {
+                    notes.Add($"idp '{idp.Name}' has no idpId in the listing — skipped");
+                    continue;
+                }
                 idpId = cid.GetInt32();
-                if (IdpDrifted(cur, idp))
+
+                // ⚠ THE LISTING IS NOT ENOUGH TO COMPARE AGAINST, and assuming it was is what
+                // broke this. GET /idp returns only {idpId, name, type, variant, orgCount,
+                // autoProvision, tags} — none of authUrl, tokenUrl, scopes or the claim paths.
+                // Diffing the declared values against a payload that never contained them made
+                // IdpDrifted true on EVERY run, which fired an update, which 403s on an
+                // org-scoped key, which failed the whole apply — taking resource management
+                // down with it on a stack whose IdP was already correct.
+                //
+                // The per-IdP detail endpoint has the fields but is root-only, so with an org
+                // key drift is genuinely unknowable. Say so in the plan output rather than
+                // guessing in either direction.
+                var (dok, droot) = await pg.CallAsync("GET", $"/idp/{idpId}", null, ct);
+                if (!dok)
+                {
+                    notes.Add($"idp '{idp.Name}' present; config drift NOT checked (GET /idp/{idpId} needs a root-scoped key — set PANGOLIN_ROOT_API_KEY)");
+                }
+                else if (IdpDrifted(Data(droot), idp))
                 {
                     var (uok, _) = await pg.CallAsync("POST", $"/idp/{idpId}/oidc", body, ct);
-                    if (!uok) return (null, false, $"pangolin: failed to update idp '{idp.Name}'");
-                    updated++;
+                    if (!uok) notes.Add($"idp '{idp.Name}' has drifted but could not be updated (needs a root-scoped key) — left as-is");
+                    else updated++;
                 }
             }
 
@@ -1023,15 +1058,16 @@ public sealed class PangolinProvisioner : IAppProvisioner
                 if (!pok)
                 {
                     var (pok2, _) = await pg.CallAsync("POST", $"/idp/{idpId}/org/{org}", mapBody, ct);
-                    if (!pok2) return (null, false, $"pangolin: failed to set role mapping for idp '{idp.Name}'");
+                    if (!pok2) { notes.Add($"idp '{idp.Name}' role mapping could not be set — skipped"); continue; }
                 }
                 mapped++;
             }
         }
 
         var changed = created > 0 || updated > 0;
-        return ($"{idps.Count} idp(s) declared, {created} created, {updated} updated, {mapped} role mapping(s) applied",
-                changed, null);
+        var msg = $"{idps.Count} idp(s) declared, {created} created, {updated} updated, {mapped} role mapping(s) applied";
+        if (notes.Count > 0) msg += "; " + string.Join("; ", notes);
+        return (msg, changed, null);
     }
 
     // Field-by-field drift on the readable parts of an IdP. The client secret is absent by
