@@ -33,6 +33,19 @@ metadata:
 
 entries:
   # ── Groups ────────────────────────────────────────────────────────────────────────
+  # ⚠ NAMES CONTAIN NO SPACES OR CAPITALS, AND THAT IS A HARD CONSTRAINT, NOT A STYLE.
+  # A group name travels to relying parties inside the `groups` claim, and they parse that
+  # list with their own rules. Pulse splits its allow-list on WHITESPACE AS WELL AS COMMAS:
+  #
+  #   strings.FieldsFunc(value, func(r rune) bool {
+  #       return r == ',' || r == ' ' || r == '\t' || r == '\n' || r == '\r' })
+  #
+  # so `Homelab Admins` in OIDC_ALLOWED_GROUPS becomes `Homelab` + `Admins`, neither of which
+  # matches anything, and the gate fails closed with no message saying why. These were
+  # originally title-case with spaces and were renamed before anything but Pangolin and Pulse
+  # depended on them. Keep new ones lowercase-hyphenated; an access-control identifier that
+  # some consumer might re-split is a lockout waiting to happen.
+  #
   # TWO AXES, deliberately. `Family`/`Guests` say WHO SOMEONE IS; the `<Stack> Admins`
   # groups say WHAT THEY ADMINISTER, one per stack, so access can be granted a stack at a
   # time instead of all-or-nothing.
@@ -55,7 +68,7 @@ entries:
   # ability to rewrite the access model they are subject to.
   - model: authentik_core.group
     id: grp-homelab-admins
-    identifiers: { name: Homelab Admins }
+    identifiers: { name: homelab-admins }
     attrs:
       is_superuser: false
       attributes:
@@ -63,7 +76,7 @@ entries:
 
   - model: authentik_core.group
     id: grp-media-admins
-    identifiers: { name: Media Admins }
+    identifiers: { name: media-admins }
     attrs:
       is_superuser: false
       attributes:
@@ -72,7 +85,7 @@ entries:
 
   - model: authentik_core.group
     id: grp-core-admins
-    identifiers: { name: Core Admins }
+    identifiers: { name: core-admins }
     attrs:
       is_superuser: false
       attributes:
@@ -81,7 +94,7 @@ entries:
 
   - model: authentik_core.group
     id: grp-monitoring-admins
-    identifiers: { name: Monitoring Admins }
+    identifiers: { name: monitoring-admins }
     attrs:
       is_superuser: false
       attributes:
@@ -90,7 +103,7 @@ entries:
 
   - model: authentik_core.group
     id: grp-smarthome-admins
-    identifiers: { name: SmartHome Admins }
+    identifiers: { name: smarthome-admins }
     attrs:
       is_superuser: false
       attributes:
@@ -99,7 +112,7 @@ entries:
 
   - model: authentik_core.group
     id: grp-devops-admins
-    identifiers: { name: DevOps Admins }
+    identifiers: { name: devops-admins }
     attrs:
       is_superuser: false
       attributes:
@@ -108,7 +121,7 @@ entries:
 
   - model: authentik_core.group
     id: grp-family
-    identifiers: { name: Family }
+    identifiers: { name: family }
     attrs:
       is_superuser: false
       attributes:
@@ -116,7 +129,7 @@ entries:
 
   - model: authentik_core.group
     id: grp-guests
-    identifiers: { name: Guests }
+    identifiers: { name: guests }
     attrs:
       is_superuser: false
       attributes:
@@ -274,3 +287,41 @@ entries:
       groups:
         - !Find [authentik_core.group, [name, authentik Admins]]
         - !KeyOf grp-homelab-admins
+
+  # ── Retire the previous title-case groups ─────────────────────────────────────────
+  # A blueprint keys objects by `identifiers`, so changing `name` does NOT rename a group —
+  # it creates a second one and orphans the first, complete with its members. The akadmin
+  # entry above re-declares its full group list, so membership moves to the new names; these
+  # entries clear away what would otherwise be eight abandoned groups that still look real in
+  # the UI and would quietly grant nothing.
+  #
+  # Ordered last on purpose: the deletions must not run before the bindings that reference
+  # the replacements exist.
+  #
+  # Safe to delete outright once applied everywhere — kept here as the record of the rename,
+  # since a future reader will otherwise wonder why `Homelab Admins` is absent from a system
+  # whose git history clearly created it.
+  - model: authentik_core.group
+    identifiers: { name: Homelab Admins }
+    state: absent
+  - model: authentik_core.group
+    identifiers: { name: Media Admins }
+    state: absent
+  - model: authentik_core.group
+    identifiers: { name: Core Admins }
+    state: absent
+  - model: authentik_core.group
+    identifiers: { name: Monitoring Admins }
+    state: absent
+  - model: authentik_core.group
+    identifiers: { name: SmartHome Admins }
+    state: absent
+  - model: authentik_core.group
+    identifiers: { name: DevOps Admins }
+    state: absent
+  - model: authentik_core.group
+    identifiers: { name: Family }
+    state: absent
+  - model: authentik_core.group
+    identifiers: { name: Guests }
+    state: absent

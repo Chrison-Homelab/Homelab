@@ -185,7 +185,7 @@ spec:
     # ROLE MAPPING is a JMESPath expression Pangolin evaluates against the ID token claims,
     # whose result is normalised to Pangolin role names. `groups` comes from Authentik's stock
     # `profile` scope with no custom mapping needed. In JMESPath `a && b` yields b when a is
-    # truthy and `x || y` yields y when x is falsy, so this reads: Homelab Admins become
+    # truthy and `x || y` yields y when x is falsy, so this reads: homelab-admins become
     # Pangolin Admins, everyone else becomes a Member.
     #
     # ⚠ MEMBER IS NOT A DOWNGRADE TO "LESS ACCESS" — TODAY IT IS NO ACCESS AT ALL. Every
@@ -207,7 +207,7 @@ spec:
         # has already decided the person belongs to one of the four groups — without that
         # binding, autoProvision would mean every Plex friend gets a Pangolin account.
         autoProvision: true
-        roleMapping: "contains(groups, 'Homelab Admins') && 'Admin' || 'Member'"
+        roleMapping: "contains(groups, 'homelab-admins') && 'Admin' || 'Member'"
 
     # Declarative resources (#136): the provisioner upserts these via the integration API
     # using PANGOLIN_API_KEY, RECONCILING each one (#309): found by fullDomain, then the target
