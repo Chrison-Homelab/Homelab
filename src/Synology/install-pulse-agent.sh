@@ -35,6 +35,28 @@
 #
 # `sudo -E` matters: without it sudo strips PULSE_API_TOKEN from the environment.
 #
+# ── DISK HEALTH DOES NOT WORK ON DSM 7.1 (known limitation) ─────────────────────
+# The agent enumerates the disks correctly — model, size, device path all show up in
+# Pulse — but health reads UNKNOWN and temperature 0 on every one of them.
+#
+# Cause: the agent collects S.M.A.R.T. by running
+#     smartctl -n standby,3 -i -A -H --json=o /dev/sdX
+# (verified by logging the agent's own invocations). DSM 7.1.1 ships smartctl **6.5**,
+# which predates JSON output entirely — smartmontools only added it in 7.0. 6.5 ignores
+# --json, prints its banner, and exits, so the agent parses nothing.
+#
+# NOT a device-type problem. The agent already retries each disk with `-d sat` by itself,
+# so wrapping smartctl to force sat changes nothing. Verified: with `-d sat` the DSM
+# binary returns a correct ATA report, but still not as JSON.
+#
+# The fix is a smartctl >= 7.0 on the NAS, pointed at via the PULSE_SMARTCTL_PATH
+# environment variable that the agent honours (a systemd drop-in on DSM 7+ survives the
+# installer rewriting its unit). That means putting a third-party binary on the NAS, so it
+# is deliberately NOT done here.
+#
+# Until then, disk health on the NAS comes from DSM's own Storage Manager and its
+# notification e-mails; Pulse still gives you volume capacity, CPU, memory and network.
+#
 # ── THE md0 / md1 FALSE POSITIVE ────────────────────────────────────────────────
 # DSM keeps its system partition on /dev/md0 and swap on /dev/md1, both mirrored
 # across every disk in the box. DSM deliberately suppresses their non-critical
