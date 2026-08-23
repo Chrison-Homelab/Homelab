@@ -197,27 +197,36 @@ docker compose up -d nfs-test
 
 ### Monitoring Stack
 
+Converged like any other stack — there is no compose file and no `.env` any more (the Docker
+CT 4000 generation was deleted once that guest was destroyed; see git history).
+
 ```bash
-cd stacks/monitoring
-# Requires .env file with: RADARR_API_KEY, RADARR_URL, SONARR_API_KEY, SONARR_URL,
-#   PROWLARR_API_KEY, PROWLARR_URL, GRAFANA_PORT, GF_SECURITY_ADMIN_USER, GF_SECURITY_ADMIN_PASSWORD
-docker compose up -d
-# Prometheus: http://localhost:9090
-# Grafana:    http://localhost:3000 (or $GRAFANA_PORT)
-# SNMP:       http://localhost:9116
-# Servarr:    http://localhost:9707
+./build.sh Preview --stack Monitoring   # dry-run
+./build.sh Deploy  --stack Monitoring   # live apply
 ```
+
+Runs on **CT 4001** (`monitoring.homelab.chrison.internal`), rootless podman + quadlets:
+
+| | |
+|---|---|
+| Grafana | `:3000` |
+| Prometheus | `:9091` (9090 is Cockpit on podman hosts) |
+| Alertmanager | `:9093` — the alert bus, [ADR-0011](docs/adr/ADR-0011-alert-bus.md) |
+| Pulse | `:7655` |
+
+Secrets come from the root `secrets.env` as podman secrets, declared in the shape's
+`config.secrets` — not a per-stack `.env`.
 
 > **Note:** The legacy `infra/` directory (Ansible DSM automation + OpenTofu
 > Synology spike) was retired — both are superseded by the planned C#-native
-> SynoSharp. The monitoring stack moved to `stacks/monitoring/`. See git history.
+> SynoSharp. The monitoring stack moved to `stacks/Monitoring/`. See git history.
 
 ## Architecture
 
 ### Directory Layout
 
 - **`src/Proxmox/`** — Bash and PowerShell scripts deployed directly to Proxmox nodes. Scripts exist in both `.sh` and `.ps1` variants with equivalent functionality.
-- **`stacks/monitoring/`** — In-repo monitoring stack: SNMP Exporter → Prometheus → Grafana, plus Servarr Exporter for *arr apps. (Was `infra/docker/monitoring/`.)
+- **`stacks/Monitoring/`** — In-repo monitoring stack on CT 4001 (rootless podman + quadlets): Prometheus, Grafana, Alertmanager, OTel→Tempo/Loki, snmp_exporter, exportarr, unpoller and Pulse.
 - **`.containers/homelab/`** — Debian 13 (Trixie) test container matching the Proxmox OS. Used for local validation of `src/Proxmox/` scripts.
 - **`.containers/proxmox/`** — Containerized Proxmox for local dev (requires `/dev/kvm`, Linux only).
 - **`.containers/dsm/`** — Virtual DSM container (Synology) for local testing, exposed on port 5000.

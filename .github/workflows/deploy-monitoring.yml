@@ -9,7 +9,7 @@ name: deploy-monitoring
 on:
   pull_request:
     paths:
-      - 'stacks/monitoring/**'
+      - 'stacks/Monitoring/**'
       - 'Infrastructure/**'
       - 'build/**'
       - 'nuget.config'
@@ -30,7 +30,7 @@ jobs:
   deploy:
     uses: ./.github/workflows/_deploy-stack.yml
     with:
-      stack: monitoring
+      stack: Monitoring
       apply: ${{ github.event_name == 'workflow_dispatch' && inputs.apply }}
       only: ${{ github.event_name == 'workflow_dispatch' && inputs.only || '' }}
     secrets: inherit

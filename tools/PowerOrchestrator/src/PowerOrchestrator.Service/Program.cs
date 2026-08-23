@@ -80,7 +80,7 @@ builder.Services.AddHostedService<PowerLoop>();
 // Blazor web dashboard (PR2) — control + monitor UI on the same host.
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 
-// --- OpenTelemetry → OTLP collector (stacks/monitoring). Only export when an endpoint is set,
+// --- OpenTelemetry → OTLP collector (stacks/Monitoring). Only export when an endpoint is set,
 //     so local dry-runs don't spam connection errors. ---
 var otlpEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
 builder.Services.AddOpenTelemetry()

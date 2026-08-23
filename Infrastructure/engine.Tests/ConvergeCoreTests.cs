@@ -1276,7 +1276,7 @@ public sealed class ConvergeCoreTests
         // shapes. The apiVersion probe deliberately KEEPS unparseable files so a typo in a real
         // shape is never silently skipped — so asset trees have to be excluded before it.
         Assert.True(ShapeValidator.IsAssetPayload("stacks/Core/authentik/assets/blueprints/00-homelab-identity.yaml"));
-        Assert.True(ShapeValidator.IsAssetPayload("stacks/monitoring/podman-host/assets/prometheus/prometheus.yaml"));
+        Assert.True(ShapeValidator.IsAssetPayload("stacks/Monitoring/podman-host/assets/prometheus/prometheus.yaml"));
         Assert.False(ShapeValidator.IsAssetPayload("stacks/Core/authentik.lxc.yaml"));
         Assert.False(ShapeValidator.IsAssetPayload("stacks/Core/pangolin.lxc.yaml"));
     }

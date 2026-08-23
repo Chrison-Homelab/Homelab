@@ -88,7 +88,7 @@ copies that onto the node — it does not build.) Installs as a systemd service
 ## Telemetry
 
 The service exports OTLP (metrics + traces) when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. The
-collector lives in [`stacks/monitoring`](../../stacks/monitoring) (`otel-collector` → Prometheus / Tempo /
+collector lives in [`stacks/Monitoring`](../../stacks/Monitoring) (`otel-collector` → Prometheus / Tempo /
 Loki) with a **Node Power** Grafana dashboard. Metrics: `orchestrator_armed`,
 `orchestrator_presence_present_count`, `orchestrator_node_online{node}`,
 `orchestrator_node_running_guests{node}`, `orchestrator_actions_total{node,action,trigger,result}`.
