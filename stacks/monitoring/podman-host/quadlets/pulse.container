@@ -22,6 +22,12 @@ PublishPort=7655:7655
 Volume=/home/podman/monitoring/data/pulse:/data
 AutoUpdate=registry
 
+# Docker-in-LXC inventory. The per-node agents (src/Proxmox/install-pulse-agent.sh) are
+# installed with --enable-commands, which lets them `pct exec` into a guest — but the
+# SERVER gates the feature too, and silently reports nothing without this. Both halves
+# are required; the agent flag alone looks like it works and returns an empty inventory.
+Environment=PULSE_ENABLE_PROXMOX_GUEST_DOCKER_INVENTORY=true
+
 [Service]
 ExecStartPre=/usr/bin/mkdir -p /home/podman/monitoring/data/pulse
 Restart=always
