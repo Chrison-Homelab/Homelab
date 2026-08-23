@@ -108,6 +108,11 @@ public sealed class ForgejoProvisioner : IAppProvisioner
         var root = s.Spec.Config.Str("rootUrl");
         if (root is not null)
             yield return $"set [server] ROOT_URL + DOMAIN → {root} (restart forgejo if changed)";
+        if (OidcSource(s) is { } o)
+        {
+            yield return $"reconcile the '{o.Name}' OAuth2 auth source (add-oauth / update-oauth, idempotent by name)";
+            yield return $"set [oauth2_client] ACCOUNT_LINKING={o.AccountLinking}, USERNAME={o.UsernameClaim}";
+        }
         yield return "exposes action 'generate-runner-token' for dependents (forgejo-runner)";
     }
 
@@ -123,8 +128,16 @@ public sealed class ForgejoProvisioner : IAppProvisioner
         if (!read.Ok) return ApplyResult.Failed($"could not read app.ini: {read.Stderr}");
 
         var current = read.Stdout.Contains('=') ? read.Stdout.Split('=', 2)[1].Trim() : "";
+        string? rootMsg = null;
         if (Norm(current) == Norm(desired))
-            return ApplyResult.NoChange($"ROOT_URL already {current}");
+        {
+            // ROOT_URL being current says nothing about the auth source, which lives in the
+            // database and can drift or vanish independently. Fall through rather than
+            // returning — an early exit here would make the OIDC source unmanaged on every
+            // run after the first, which is the shape of bug that cost a day elsewhere.
+            if (OidcSource(s) is null) return ApplyResult.NoChange($"ROOT_URL already {current}");
+            return await FinishAsync(s, ctx, node, ctid, null);
+        }
 
         var host = new Uri(desired).Host;
         var set =
@@ -132,10 +145,115 @@ public sealed class ForgejoProvisioner : IAppProvisioner
             $"sed -i \"s|^DOMAIN = .*|DOMAIN = {host}|\" /etc/forgejo/app.ini && " +
             "systemctl restart forgejo";
         var res = await ctx.Exec.InContainerAsync(node, ctid, set);
-        return res.Ok
-            ? ApplyResult.Applied($"ROOT_URL {current} → {desired} (restarted)")
-            : ApplyResult.Failed($"set failed: {res.Stderr}");
+        if (!res.Ok) return ApplyResult.Failed($"set failed: {res.Stderr}");
+        rootMsg = $"ROOT_URL {current} → {desired} (restarted)";
+
+        return await FinishAsync(s, ctx, node, ctid, rootMsg);
     }
+
+    // ── OIDC auth source (#485) ───────────────────────────────────────────────────────
+    //
+    // Forgejo keeps auth sources in its DATABASE, not app.ini, so this cannot be a config
+    // rewrite like ROOT_URL — it goes through the admin CLI. `add-oauth` creates and
+    // `update-oauth --id` edits, so the reconcile is: list, match by name, branch.
+    //
+    // THE CLIENT SECRET IS NOT READABLE BACK from `auth list`, which prints only
+    // ID/Name/Type/Enabled. So drift on the secret is undetectable and the update runs
+    // unconditionally when the source exists — cheap, and it makes rotation work by simply
+    // changing the value in Secrets Manager. The same limitation the Pangolin IdP reconciler
+    // has, handled the opposite way because here the update costs nothing.
+    internal readonly record struct ForgejoOidc(
+        string Name, string DiscoveryUrl, string ClientIdFrom, string ClientSecretFrom,
+        string GroupClaim, string AdminGroup, string Scopes, string AccountLinking, string UsernameClaim);
+
+    internal static ForgejoOidc? OidcSource(Shape s)
+    {
+        if (!(s.Spec.Config.TryGetValue("oidc", out var v) && v is System.Collections.IDictionary d)) return null;
+        string? Str(string k) => d[k]?.ToString() is { Length: > 0 } x ? x : null;
+        if (Str("discoveryUrl") is not { } disco) return null;
+        return new ForgejoOidc(
+            Str("name") ?? "authentik", disco,
+            Str("clientIdFrom") ?? "", Str("clientSecretFrom") ?? "",
+            Str("groupClaim") ?? "groups", Str("adminGroup") ?? "",
+            Str("scopes") ?? "openid profile email",
+            Str("accountLinking") ?? "auto",
+            Str("usernameClaim") ?? "preferred_username");
+    }
+
+    // Built as a pure function so the flag set is testable without a Forgejo to run it on.
+    // `--scopes` is REPEATED, not space-joined: the flag is declared as a string slice, and a
+    // single "openid profile email" would be stored as one scope of that literal name and
+    // silently request nothing useful.
+    internal static string BuildAuthCommand(ForgejoOidc o, string clientId, string clientSecret, int? existingId)
+    {
+        var verb = existingId is { } id ? $"update-oauth --id {id}" : "add-oauth";
+        var sb = new StringBuilder($"/usr/local/bin/forgejo admin auth {verb} --config /etc/forgejo/app.ini");
+        sb.Append($" --name '{o.Name}' --provider openidConnect");
+        sb.Append($" --key '{clientId}' --secret '{clientSecret}'");
+        sb.Append($" --auto-discover-url '{o.DiscoveryUrl}'");
+        foreach (var scope in o.Scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            sb.Append($" --scopes '{scope}'");
+        if (o.GroupClaim.Length > 0) sb.Append($" --group-claim-name '{o.GroupClaim}'");
+        if (o.AdminGroup.Length > 0) sb.Append($" --admin-group '{o.AdminGroup}'");
+        return sb.ToString();
+    }
+
+    // ID for an existing source of this name, from `auth list`'s tab-separated rows.
+    internal static int? ParseAuthSourceId(string listOutput, string name)
+    {
+        foreach (var line in listOutput.Split('\n'))
+        {
+            var cols = line.Split('\t', StringSplitOptions.TrimEntries);
+            if (cols.Length >= 2 && cols[1].Equals(name, StringComparison.Ordinal)
+                && int.TryParse(cols[0], out var id)) return id;
+        }
+        return null;
+    }
+
+    private static async Task<ApplyResult> FinishAsync(
+        Shape s, ConvergeContext ctx, string node, string ctid, string? rootMsg)
+    {
+        if (OidcSource(s) is not { } o) return rootMsg is null
+            ? ApplyResult.NoChange("no rootUrl configured")
+            : ApplyResult.Applied(rootMsg);
+
+        var clientId = ctx.Secrets.Get(o.ClientIdFrom);
+        var clientSecret = ctx.Secrets.Get(o.ClientSecretFrom);
+        if (clientId is not { Length: > 0 } || clientSecret is not { Length: > 0 })
+            return Combine(rootMsg, $"oidc source '{o.Name}' declared but {o.ClientIdFrom}/{o.ClientSecretFrom} unset — skipped");
+
+        var asGit = $"su - git -s /bin/sh -c \"{{0}}\"";
+        var list = await ctx.Exec.InContainerAsync(node, ctid,
+            string.Format(asGit, "/usr/local/bin/forgejo admin auth list --config /etc/forgejo/app.ini"));
+        if (!list.Ok) return ApplyResult.Failed($"could not list forgejo auth sources: {list.Stderr}");
+
+        var existing = ParseAuthSourceId(list.Stdout, o.Name);
+        var cmd = BuildAuthCommand(o, clientId, clientSecret, existing);
+        var run = await ctx.Exec.InContainerAsync(node, ctid, string.Format(asGit, cmd.Replace("\"", "\\\"")));
+        // The secret is in that command line; never echo stderr verbatim on failure.
+        if (!run.Ok) return ApplyResult.Failed(
+            $"forgejo auth {(existing is null ? "add" : "update")}-oauth failed for '{o.Name}' (output withheld — the command carries the client secret)");
+
+        // [oauth2_client] governs what happens AFTER a successful assertion. Written here
+        // rather than in the shape's app.ini edits because it is meaningless without a source.
+        var ini = string.Join(" && ", new[]
+        {
+            "grep -q '^\\[oauth2_client\\]' /etc/forgejo/app.ini || printf '\\n[oauth2_client]\\n' >> /etc/forgejo/app.ini",
+            $"sed -i '/^\\[oauth2_client\\]/,/^\\[/{{/^ACCOUNT_LINKING/d;/^USERNAME/d;/^ENABLE_AUTO_REGISTRATION/d}}' /etc/forgejo/app.ini",
+            $"sed -i '/^\\[oauth2_client\\]/a ENABLE_AUTO_REGISTRATION = false\\nACCOUNT_LINKING = {o.AccountLinking}\\nUSERNAME = {o.UsernameClaim}' /etc/forgejo/app.ini",
+            "systemctl restart forgejo",
+        });
+        var iniRes = await ctx.Exec.InContainerAsync(node, ctid, ini);
+        if (!iniRes.Ok) return ApplyResult.Failed($"could not write [oauth2_client]: {iniRes.Stderr}");
+
+        return Combine(rootMsg,
+            $"oidc source '{o.Name}' {(existing is null ? "created" : "updated")}"
+            + (o.AdminGroup.Length > 0 ? $" (admin group '{o.AdminGroup}')" : "")
+            + $"; [oauth2_client] ACCOUNT_LINKING={o.AccountLinking}");
+    }
+
+    private static ApplyResult Combine(string? rootMsg, string msg) =>
+        ApplyResult.Applied(rootMsg is null ? msg : $"{rootMsg}; {msg}");
 
     private static string Norm(string url) => url.TrimEnd('/');
 }

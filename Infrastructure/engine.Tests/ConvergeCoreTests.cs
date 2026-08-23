@@ -1416,4 +1416,82 @@ public sealed class ConvergeCoreTests
         s.Spec.Config["idps"] = new List<object> { entry };
         return PangolinProvisioner.DeclaredIdps(s);
     }
+    // ── Forgejo OIDC (#485) ───────────────────────────────────────────────────────────
+
+    private static Shape ForgejoOidcShape()
+    {
+        var s = Lxc("forgejo", "3000");
+        s.Spec.Node = "desktop-01";
+        s.Spec.Config["rootUrl"] = "https://forgejo.chrison.dev";
+        s.Spec.Config["oidc"] = new Dictionary<object, object>
+        {
+            ["name"] = "authentik",
+            ["discoveryUrl"] = "https://identity.chrison.dev/application/o/forgejo/.well-known/openid-configuration",
+            ["clientIdFrom"] = "AUTHENTIK_FORGEJO_CLIENT_ID",
+            ["clientSecretFrom"] = "AUTHENTIK_FORGEJO_CLIENT_SECRET",
+            ["groupClaim"] = "groups",
+            ["adminGroup"] = "homelab-admins",
+        };
+        return s;
+    }
+
+    [Fact]
+    public void Forgejo_ScopesArePassedAsRepeatedFlagsNotOneJoinedString()
+    {
+        // `--scopes` is declared as a string SLICE. Passing "openid profile email" as a single
+        // value stores one scope literally named that, so the request asks for a scope nobody
+        // defines and silently gets none of the three — including `profile`, which is the one
+        // carrying the groups claim the admin mapping depends on.
+        var o = PangolinForgejoOidc();
+
+        var cmd = ForgejoProvisioner.BuildAuthCommand(o, "the-id", "the-secret", null);
+
+        Assert.Contains("--scopes 'openid'", cmd, StringComparison.Ordinal);
+        Assert.Contains("--scopes 'profile'", cmd, StringComparison.Ordinal);
+        Assert.Contains("--scopes 'email'", cmd, StringComparison.Ordinal);
+        Assert.DoesNotContain("--scopes 'openid profile email'", cmd, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Forgejo_ExistingSourceIsUpdatedInPlaceRatherThanDuplicated()
+    {
+        var o = PangolinForgejoOidc();
+
+        var create = ForgejoProvisioner.BuildAuthCommand(o, "id", "secret", null);
+        var update = ForgejoProvisioner.BuildAuthCommand(o, "id", "secret", 3);
+
+        Assert.Contains("auth add-oauth", create, StringComparison.Ordinal);
+        Assert.Contains("auth update-oauth --id 3", update, StringComparison.Ordinal);
+        Assert.DoesNotContain("add-oauth", update, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Forgejo_ParsesTheSourceIdOutOfAuthListAndIgnoresOtherSources()
+    {
+        // `auth list` is tab-separated with a header row. Matching on the name column rather
+        // than a substring matters: "authentik" must not match "authentik-old".
+        const string listing = "ID\tName\tType\tEnabled\n1\tldap-legacy\tLDAP\ttrue\n7\tauthentik\tOAuth2\ttrue\n";
+
+        Assert.Equal(7, ForgejoProvisioner.ParseAuthSourceId(listing, "authentik"));
+        Assert.Null(ForgejoProvisioner.ParseAuthSourceId(listing, "authentik-old"));
+        Assert.Null(ForgejoProvisioner.ParseAuthSourceId("ID\tName\tType\tEnabled\n", "authentik"));
+    }
+
+    [Fact]
+    public void Forgejo_AdminGroupIsOmittedRatherThanSentEmpty()
+    {
+        // An empty --admin-group would map the empty group to admin, which every user without
+        // the claim would arguably match. Omit the flag instead of sending a blank one.
+        var s = ForgejoOidcShape();
+        ((Dictionary<object, object>)s.Spec.Config["oidc"]!)["adminGroup"] = "";
+
+        var cmd = ForgejoProvisioner.BuildAuthCommand(
+            ForgejoProvisioner.OidcSource(s)!.Value, "id", "secret", null);
+
+        Assert.DoesNotContain("--admin-group", cmd, StringComparison.Ordinal);
+    }
+
+    private static ForgejoProvisioner.ForgejoOidc PangolinForgejoOidc() =>
+        ForgejoProvisioner.OidcSource(ForgejoOidcShape())!.Value;
+
 }
