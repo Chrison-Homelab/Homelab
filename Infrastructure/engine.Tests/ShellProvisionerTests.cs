@@ -392,6 +392,50 @@ public sealed class ShellProvisionerTests : IDisposable
     }
 
     [Fact]
+    public void Deploy_MakesTheUsersConfigDirOwnedByTheUser()
+    {
+        // Regression guard. `install -d -o csimon .../.config/systemd/user` applies -o/-g to the
+        // FINAL component only — every intermediate directory it creates is left owned by the
+        // invoking user, i.e. root. The `chown -R` that followed started at `.config/systemd`, so
+        // ~/.config itself stayed root:root and the login user could not create anything in it.
+        // Observed on CT 3003 as `mkdir: cannot create directory '/home/csimon/.config/gh':
+        // Permission denied` — which reads as a bug in gh rather than in the box, since ~/.config
+        // is where essentially every CLI keeps its state and its login.
+        var script = ShellProvisioner.BuildDeploy(ShellShape(), "m", "/p");
+
+        // The parent is created in its own right, BEFORE the nested path that used to imply it.
+        var parent = script.IndexOf("install -d -o csimon -g csimon -m 755 /home/csimon/.config\n",
+                                    StringComparison.Ordinal);
+        var nested = script.IndexOf("install -d -o csimon -g csimon -m 755 /home/csimon/.config/systemd/user",
+                                    StringComparison.Ordinal);
+        Assert.True(parent >= 0, "~/.config must be created explicitly, not as an install -d side effect");
+        Assert.True(nested > parent, "the parent must be created before the nested unit directory");
+
+        // And an already-provisioned host is repaired, non-recursively: only the directory itself
+        // was ever wrong, and a -R would stamp over state dirs the tools legitimately own.
+        Assert.Contains("chown csimon:csimon /home/csimon/.config\n", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("chown -R csimon:csimon /home/csimon/.config\n", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deploy_PutsDotnetGlobalToolsOnPathUnconditionally()
+    {
+        // `dotnet tool install -g` drops shims in ~/.dotnet/tools and the SDK does not put that on
+        // PATH, so a global tool installs successfully and is then simply not findable. It must go
+        // in /etc/profile.d for the same reason brew does — Debian's .bashrc returns early for
+        // non-interactive shells, which is every scripted invocation.
+        var shape = ShellShape(("tmux.conf", "set -g mouse on\n"), ("Brewfile", "brew \"dotnet\"\n"));
+        shape.Spec.Config["homebrew"] = true;
+        var script = ShellProvisioner.BuildDeploy(shape, "m", "/p");
+
+        Assert.Contains("/etc/profile.d/dotnet-tools.sh", script, StringComparison.Ordinal);
+        Assert.Contains("$HOME/.dotnet/tools", script, StringComparison.Ordinal);
+        // NOT guarded on the directory existing: it does not exist until the first global tool is
+        // installed, and guarding on it makes that first install appear to have done nothing.
+        Assert.DoesNotContain("[ -d \"$HOME/.dotnet/tools\" ]", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Deploy_EnablesLingerAndInstallsTheUnitIntoTheUsersOwnSystemdDir()
     {
         // Without linger the user manager does not start at boot with nobody logged in, and

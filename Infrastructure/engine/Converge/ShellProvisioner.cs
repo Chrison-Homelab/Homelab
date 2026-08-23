@@ -309,11 +309,24 @@ public sealed class ShellProvisioner : IAppProvisioner
         sb.Append($"UID_N=$(id -u {user})\n");
         sb.Append("for i in $(seq 1 30); do [ -S /run/user/$UID_N/bus ] && break; sleep 1; done\n");
 
+        //    ⚠ `install -d` applies -o/-g to the FINAL component only; every intermediate
+        //    directory it has to create is left owned by the invoking user, i.e. root. So
+        //    `install -d -o csimon .../.config/systemd/user` produced a root-owned ~/.config,
+        //    and the `chown -R` below starts at `.config/systemd` and never repairs its parent.
+        //    The result is a home directory the user cannot create anything in under ~/.config
+        //    — which is where essentially every CLI keeps its state. `gh auth login` (~/.config/gh),
+        //    `bw`, and zellij's own config all fail with a bare "Permission denied" that reads
+        //    like a bug in the tool rather than in the box. Create the parent explicitly first.
+        sb.Append($"install -d -o {user} -g {user} -m 755 {home}/.config\n");
         sb.Append($"install -d -o {user} -g {user} -m 755 {home}/.config/systemd/user\n");
         sb.Append($"cat > {home}/.config/systemd/user/{UnitName(session)} <<'HOMELAB_UNIT'\n");
         sb.Append(BuildUnit(user, session));
         sb.Append("HOMELAB_UNIT\n");
         sb.Append($"chown -R {user}:{user} {home}/.config/systemd\n");
+        //    Repair an existing host provisioned before the fix above. Non-recursive on purpose:
+        //    only the directory itself was ever wrong, and a -R here would stamp over whatever
+        //    ownership the tools' own state directories have legitimately grown.
+        sb.Append($"chown {user}:{user} {home}/.config\n");
 
         //    Migration: retire the system unit this provisioner used to install. Guarded so a
         //    host that never had one does not fail the converge.
@@ -366,6 +379,21 @@ public sealed class ShellProvisioner : IAppProvisioner
             if (assets.Contains(BrewfileName))
                 sb.Append(AsUser(user,
                     $"eval \"$({BrewBin} shellenv)\" && brew bundle --file={StagingDir}/{BrewfileName}"));
+
+            // ~/.dotnet/tools is where `dotnet tool install -g` puts its shims, and the SDK does
+            // not put it on PATH — so a globally installed tool (proxmoxsharp, synosharp) exists
+            // and is simply not findable. Same profile.d mechanism and same reason as brew above:
+            // .bashrc is skipped for non-interactive shells, which is every scripted invocation.
+            sb.Append("cat > /etc/profile.d/dotnet-tools.sh <<'HOMELAB_DOTNET_ENV'\n");
+            sb.Append("# MANAGED BY converge (ShellProvisioner) — edit the shape, not this file.\n");
+            // NOT guarded on the directory existing. It does not exist until the first
+            // `dotnet tool install -g` runs, and guarding on it makes that first install appear
+            // to do nothing — the tool lands and stays unfindable until the next login. A PATH
+            // entry pointing at a directory that is not there yet costs nothing.
+            sb.Append("case \":$PATH:\" in *\":$HOME/.dotnet/tools:\"*) ;; *) PATH=\"$HOME/.dotnet/tools:$PATH\";; esac\n");
+            sb.Append("export PATH\n");
+            sb.Append("HOMELAB_DOTNET_ENV\n");
+            sb.Append("chmod 0644 /etc/profile.d/dotnet-tools.sh\n");
         }
 
         if (ClaudeCode(s))
