@@ -138,3 +138,5 @@ spec:
       authentik_pulse_client_secret: AUTHENTIK_PULSE_CLIENT_SECRET
       authentik_grafana_client_id: AUTHENTIK_GRAFANA_CLIENT_ID
       authentik_grafana_client_secret: AUTHENTIK_GRAFANA_CLIENT_SECRET
+      authentik_forgejo_client_id: AUTHENTIK_FORGEJO_CLIENT_ID
+      authentik_forgejo_client_secret: AUTHENTIK_FORGEJO_CLIENT_SECRET
