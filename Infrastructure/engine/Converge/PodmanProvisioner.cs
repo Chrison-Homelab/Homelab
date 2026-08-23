@@ -147,7 +147,22 @@ public sealed class PodmanProvisioner : IAppProvisioner
 
         var cur = await ctx.Exec.InContainerAsync(node, ctid, $"cat {markerPath} 2>/dev/null || true");
         if (cur.Stdout.Trim() == marker)
-            return ApplyResult.NoChange($"podman host current (marker {marker})");
+        {
+            // VERIFY STILL RUNS WHEN NOTHING CHANGED, and it has to. The marker says the
+            // inputs are unchanged since the last converge — it says nothing about whether
+            // the consumer ever accepted them. A blueprint rejected on the run that shipped
+            // it stays rejected, and every subsequent converge would report a contented
+            // NOCHANGE forever. That is the same shape of blindness the whole mechanism was
+            // added to remove, so skipping it here would have left the hole half-open.
+            //
+            // `{{since}}` is EPOCH on this path, which weakens the question from "was it
+            // applied by this run" to "is it currently in the state we asked for" — the
+            // strongest assertion available when, by definition, this run applied nothing.
+            var (nMsg, nFailed) = await RunVerifyAsync(s, ctx, node, ctid, user, EpochSince);
+            if (nFailed is not null) return ApplyResult.Failed(nFailed);
+            return ApplyResult.NoChange($"podman host current (marker {marker})"
+                + (nMsg is null ? "" : $"; {nMsg}"));
+        }
 
         // Resolve the secrets BEFORE building the script so a missing one fails the converge
         // with a clear message instead of creating an empty podman secret the units then
@@ -252,6 +267,10 @@ public sealed class PodmanProvisioner : IAppProvisioner
     // what lets a check distinguish "applied by this run" from "was already fine". Without it
     // a status left over from an earlier converge reads as a pass, which is the same
     // stale-read failure the mechanism is meant to catch.
+    // Substituted for {{since}} when a run changed nothing, so the freshness clause becomes
+    // vacuously true and the check reduces to "is it successful right now".
+    internal const string EpochSince = "1970-01-01 00:00:00";
+
     internal readonly record struct VerifyStep(string Name, string Run, int Retries, int IntervalSeconds);
 
     internal static IReadOnlyList<VerifyStep> VerifySteps(Shape s)
