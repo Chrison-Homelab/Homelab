@@ -874,19 +874,33 @@ public sealed class PangolinProvisioner : IAppProvisioner
         // point each *.<zone> hostname at the home WAN IP. Add-only, idempotent by existence.
         // Skipped — not failed — when publicIp or the CF token is absent (so a plan/dev run
         // without the WAN IP or creds still converges the rest).
+        // WHAT ALREADY SUCCEEDED MUST SURVIVE A LATER FAILURE. Each step below can abort the
+        // apply, and every one of those returns used to discard the messages from the steps
+        // that had already run — so an apply that genuinely rewrote public routes and then
+        // tripped on a later step reported the later step's error and nothing else. That is
+        // not a cosmetic loss: another session read exactly that output, concluded the
+        // resource reconcile had never run, and rebuilt a live resource by hand on the
+        // strength of it. The output was wrong, not their reading of it.
+        var done = new List<string>();
+        ApplyResult FailWithContext(string reason) => ApplyResult.Failed(
+            done.Count == 0 ? reason : $"{reason} — completed before this: {string.Join("; ", done)}");
+        if (configMsg is not null) done.Add(configMsg);
+
         var (dnsMsg, dnsChanged, dnsFailed) = await ReconcileWildcardDnsAsync(s, ctx);
-        if (dnsFailed is not null) return ApplyResult.Failed(dnsFailed);
+        if (dnsFailed is not null) return FailWithContext(dnsFailed);
+        if (dnsMsg is not null) done.Add(dnsMsg);
 
         // Resources (declarative, #136): reconcile declared admin-UI resources via the
         // integration API (add-only, idempotent by fullDomain). Skipped — not failed —
         // until the org PANGOLIN_API_KEY exists, since that's a post-setup bootstrap secret.
         var (resMsg, resChanged, resFailed) = await ReconcileResourcesAsync(s, ctx, node, ctid);
-        if (resFailed is not null) return ApplyResult.Failed(resFailed);
+        if (resFailed is not null) return FailWithContext(resFailed);
+        if (resMsg is not null) done.Add(resMsg);
 
         // Identity providers (#468): register the homelab IdP as an OIDC provider for this
         // org, with the claim→role mapping. Same skipped-not-failed rule as resources.
         var (idpMsg, idpChanged, idpFailed) = await ReconcileIdpsAsync(s, ctx, node, ctid);
-        if (idpFailed is not null) return ApplyResult.Failed(idpFailed);
+        if (idpFailed is not null) return FailWithContext(idpFailed);
 
         if (configMsg is null && !dnsChanged && !resChanged && !idpChanged)
             return ApplyResult.NoChange($"config current (marker {marker})"
