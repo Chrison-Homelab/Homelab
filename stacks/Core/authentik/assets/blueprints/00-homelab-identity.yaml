@@ -87,6 +87,15 @@ entries:
       # Pangolin reads the groups claim out of the ID TOKEN to pick a role, so the claims have
       # to be in there rather than only behind a userinfo call.
       include_claims_in_id_token: true
+      # ⚠ MUST BE SET EXPLICITLY. On 2026.8 `grant_types` is an allow-list that defaults to
+      # EMPTY, and an empty list permits nothing — so a provider created without it looks
+      # perfectly configured and rejects every single authorization request with
+      # `invalid_request` / "The request is otherwise malformed". The real reason only appears
+      # in the server log as "Invalid grant_type for provider". Older releases had no such
+      # field, which is why essentially every example blueprint online omits it.
+      grant_types:
+        - authorization_code
+        - refresh_token
       property_mappings:
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
@@ -130,3 +139,20 @@ entries:
   - model: authentik_policies.policybinding
     identifiers: { target: !KeyOf pangolin-app, group: !KeyOf grp-guests }
     attrs: { order: 3, enabled: true }
+
+  # ── Who is actually in a group ────────────────────────────────────────────────────
+  # Without this the whole model is inert: the four bindings above admit only members of
+  # those groups, and akadmin was in `authentik Admins` — which is Authentik's OWN admin
+  # group and deliberately not one of them. So the sole human account could authenticate and
+  # then be refused the Pangolin application. A converge reported success either way.
+  #
+  # ⚠ BOTH GROUPS LISTED ON PURPOSE. `groups` REPLACES the membership list rather than adding
+  # to it, so naming only Homelab Admins here would strip akadmin of `authentik Admins` and
+  # take away the ability to administer the IdP — a lockout caused by the change meant to
+  # grant access.
+  - model: authentik_core.user
+    identifiers: { username: akadmin }
+    attrs:
+      groups:
+        - !Find [authentik_core.group, [name, authentik Admins]]
+        - !KeyOf grp-homelab-admins
