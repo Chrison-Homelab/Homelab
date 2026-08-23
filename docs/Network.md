@@ -105,37 +105,38 @@ and site-level latency, client count and internet drops.
 
 ### Alerting
 
-Seven rules in the `UniFi` group (Grafana unified alerting, provisioned under
-`assets/grafana/provisioning/alerting/`), delivered to **Home Assistant** via a webhook
-contact point → the HA automation *"Grafana alerts → notification"*.
+Alerts go to **Alertmanager**, the homelab's alert bus ([ADR-0011](adr/ADR-0011-alert-bus.md)) —
+Home Assistant is a *receiver* at the far end, not the bus. Rules are native Prometheus rules in
+`config/rules/unifi.rules.yml`.
 
-| Rule | Fires when | Severity |
+| Alert | Fires when | Severity |
 |---|---|---|
-| UniFi collector is down | `up{job="unifi"} < 1` for 10m | critical |
-| UniFi device dropped off the controller | a device present 1h ago is gone for 15m | critical |
-| UniFi reports disconnected devices | `unpoller_site_disconnected > 0` for 15m | warning |
-| Wi-Fi channel saturated | radio airtime > 70% for 20m | warning |
-| PoE budget under pressure | switch PoE draw > 180 W for 15m | warning |
-| WAN latency is high | WWW latency > 150 ms for 15m | warning |
-| UniFi device running hot | device temperature > 80 °C for 15m | warning |
+| `UniFiCollectorDown` | `up{job="unifi"} == 0` for 10m | critical |
+| `UniFiDeviceVanished` | a device present 1h ago is gone for 15m | critical |
+| `UniFiSiteDisconnected` | `unpoller_site_disconnected > 0` for 15m | warning |
+| `UniFiChannelSaturated` | radio airtime > 70% for 20m | warning |
+| `UniFiPoEBudgetHigh` | switch PoE draw > 180 W for 15m | warning |
+| `UniFiWanLatencyHigh` | WWW latency > 150 ms for 15m | warning |
+| `UniFiDeviceHot` | device temperature > 80 °C for 15m | warning |
 
-Two things worth knowing about these:
+Three things worth knowing:
 
-- **An offline device emits no metrics at all**, rather than a zero — unpoller only reports
-  what the controller currently sees. That is why the "dropped off" rule compares against
-  `offset 1h` instead of testing a value. It catches gear that fails *from now on*; anything
-  already offline before the rule existed (the two USW Flex Minis, [#307]) appears on neither
-  side of the comparison and will never fire. The site-level `disconnected` rule is the
-  complement for adopted-but-unreachable gear.
+- **An offline device emits no metrics at all**, rather than a zero — unpoller only reports what
+  the controller currently sees. That is why `UniFiDeviceVanished` compares against `offset 1h`
+  instead of testing a value. It catches gear that fails *from now on*; anything already offline
+  before the rule existed (the two USW Flex Minis, [#307]) appears on neither side of the
+  comparison and will never fire. `UniFiSiteDisconnected` is the complement, covering
+  adopted-but-unreachable gear.
 - **Thresholds are set against this network's measured baseline**, not vendor defaults. WWW
   latency sits near 2 ms, 2.4 GHz airtime runs 0.2–0.5, and PoE draw is well under 20 W of the
-  switch's 250 W budget. The channel-utilization rule is deliberately above today's worst
-  reading, so fixing the channel plan ([#331]) is the remedy rather than muting the alert.
+  switch's 250 W budget. `UniFiChannelSaturated` is deliberately above today's worst reading, so
+  fixing the channel plan ([#331]) is the remedy rather than muting the alert.
+- **`alertname` values are load-bearing.** `inhibit_rules` in `alertmanager.yml` match on them, so
+  renaming an alert silently breaks an inhibition — which fails *open* (more noise), not closed.
 
-`noDataState` is `OK` on every rule except the collector one: absent series are normal here
-(a model that reports no temperature, no device having vanished), and treating absence as
-failure would make the whole set cry wolf. If unpoller stops being scraped, though, every
-other rule goes blind — so that one is `Alerting`.
+Inhibition collapses a gateway outage from seven notifications to one: if the Cloud Gateway
+vanishes, every other `stack="unifi"` alert is suppressed as downstream noise. Silences (for
+maintenance) can be set from Grafana's Alerting UI, which reads the Alertmanager datasource.
 
 [#307]: https://github.com/Chrison-Homelab/Homelab/issues/307
 [#331]: https://github.com/Chrison-Homelab/Homelab/issues/331

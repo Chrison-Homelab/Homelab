@@ -24,6 +24,8 @@ PublishPort=9091:9090
 # Docker), so this aligns the process uid only — nothing to chown.
 UserNS=keep-id:uid=65534,gid=65534
 Volume=/home/podman/monitoring/config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+# Alert rules (ADR-0011). A directory, so adding a rule file needs no quadlet change.
+Volume=/home/podman/monitoring/config/rules:/etc/prometheus/rules:ro
 
 # EXPLICIT data volume — and this is a deliberate IMPROVEMENT on the Docker setup, not just a
 # port. compose declared no volume for Prometheus, so its TSDB lived in an anonymous volume
