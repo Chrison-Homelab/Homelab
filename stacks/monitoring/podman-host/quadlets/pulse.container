@@ -43,7 +43,7 @@ Environment=PULSE_ENABLE_PROXMOX_GUEST_DOCKER_INVENTORY=true
 # ⚠ GROUP→ROLE MAPPING IS A PRO FEATURE and is deliberately NOT used here.
 #   OIDC_GROUP_ROLE_MAPPINGS exists but needs a Pro licence. What DOES work on Community —
 #   and is what actually matters — is OIDC_ALLOWED_GROUPS, which refuses the login outright
-#   unless the user is in one of these groups. So the groups gate access; they just cannot
+#   unless the user is in one of the groups named below. So the groups gate access; they just cannot
 #   yet distinguish an admin from a viewer once someone is in.
 #
 # LOCAL LOGIN STAYS VISIBLE. `PULSE_AUTH_HIDE_LOCAL_LOGIN` is deliberately unset: authentik's
@@ -53,14 +53,23 @@ Environment=PULSE_ENABLE_PROXMOX_GUEST_DOCKER_INVENTORY=true
 Environment=OIDC_ENABLED=true
 Environment=OIDC_ISSUER_URL=https://identity.chrison.dev/application/o/pulse/
 Environment=OIDC_REDIRECT_URL=https://pulse.lab.chrison.dev/api/oidc/callback
-Environment=OIDC_SCOPES=openid profile email
+# ⚠ QUOTED, AND IT MUST BE. systemd's `Environment=` splits an unquoted value on
+# whitespace, so `Environment=OIDC_SCOPES=openid profile email` sets OIDC_SCOPES=openid and
+# discards the rest as two malformed assignments. Verified on the deployed unit: the quadlet
+# file said `openid profile email` and the container had `OIDC_SCOPES=openid`. Losing the
+# `profile` scope silently removes the groups claim, which removes the entire access gate.
+Environment="OIDC_SCOPES=openid profile email"
 Environment=OIDC_USERNAME_CLAIM=preferred_username
 Environment=OIDC_EMAIL_CLAIM=email
 # The groups claim comes from authentik's stock `profile` scope — no custom property
 # mapping. ALLOWED_GROUPS is the whole access decision on Community, so it must name the
 # stack group AND the superset, exactly as the authentik-side bindings do.
 Environment=OIDC_GROUPS_CLAIM=groups
-Environment=OIDC_ALLOWED_GROUPS=Homelab Admins,Monitoring Admins
+# Lowercase-hyphenated because Pulse splits this list on WHITESPACE as well as commas
+# (`strings.FieldsFunc` on `, \t\n\r`), so a group named `Homelab Admins` could never match —
+# it arrives as `Homelab` + `Admins`. Quoted anyway: the value has no spaces today, and the
+# quoting is what stops that becoming load-bearing if a name ever gains one.
+Environment="OIDC_ALLOWED_GROUPS=homelab-admins,monitoring-admins"
 Secret=authentik_pulse_client_id,type=env,target=OIDC_CLIENT_ID
 Secret=authentik_pulse_client_secret,type=env,target=OIDC_CLIENT_SECRET
 
