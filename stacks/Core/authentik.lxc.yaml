@@ -136,3 +136,7 @@ spec:
       # blueprint file, silently undoing every unrelated change in it.
       authentik_pulse_client_id: AUTHENTIK_PULSE_CLIENT_ID
       authentik_pulse_client_secret: AUTHENTIK_PULSE_CLIENT_SECRET
+      # Krautwatch's web UI (Krautwatch #48). The same pair is handed to the krautwatch-web
+      # container as Auth__Oidc__ClientId / Auth__Oidc__ClientSecret.
+      authentik_krautwatch_client_id: AUTHENTIK_KRAUTWATCH_CLIENT_ID
+      authentik_krautwatch_client_secret: AUTHENTIK_KRAUTWATCH_CLIENT_SECRET

@@ -69,6 +69,12 @@ Secret=authentik_pangolin_client_secret,type=env,target=AUTHENTIK_PANGOLIN_CLIEN
 # being copied between two UIs.
 Secret=authentik_pulse_client_id,type=env,target=AUTHENTIK_PULSE_CLIENT_ID
 Secret=authentik_pulse_client_secret,type=env,target=AUTHENTIK_PULSE_CLIENT_SECRET
+# Krautwatch's pair, same reason again: the blueprint declaring its provider is applied in this
+# container, so `!Env AUTHENTIK_KRAUTWATCH_CLIENT_ID` reads it from here. Declaring the secret in
+# authentik.lxc.yaml only CREATES it — without these two lines it is never injected, `!Env`
+# resolves null, and authentik rejects the whole blueprint file (#497).
+Secret=authentik_krautwatch_client_id,type=env,target=AUTHENTIK_KRAUTWATCH_CLIENT_ID
+Secret=authentik_krautwatch_client_secret,type=env,target=AUTHENTIK_KRAUTWATCH_CLIENT_SECRET
 Environment=AUTHENTIK_POSTGRESQL__HOST=authentik-postgresql
 Environment=AUTHENTIK_POSTGRESQL__NAME=authentik
 Environment=AUTHENTIK_POSTGRESQL__USER=authentik
