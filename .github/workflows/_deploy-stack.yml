@@ -78,6 +78,8 @@ jobs:
       # NOT the runner, which has no secrets.env and reads these env names instead.
       AUTHENTIK_SECRET_KEY: ${{ secrets.AUTHENTIK_SECRET_KEY }}
       AUTHENTIK_PG_PASSWORD: ${{ secrets.AUTHENTIK_PG_PASSWORD }}
+      AUTHENTIK_PANGOLIN_CLIENT_ID: ${{ secrets.AUTHENTIK_PANGOLIN_CLIENT_ID }}
+      AUTHENTIK_PANGOLIN_CLIENT_SECRET: ${{ secrets.AUTHENTIK_PANGOLIN_CLIENT_SECRET }}
       # UniFi, for the DHCP-reservation reconciler (#416, #446). Without these every declared
       # reservation reports `reservation SKIPPED: ... no UniFi credentials` and the run still
       # goes GREEN — so the shapes look reconciled while the controller has never heard of

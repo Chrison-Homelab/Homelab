@@ -170,6 +170,45 @@ spec:
       disableUserCreateOrg: false
       enableIntegrationApi: true     # integration API on :3003 — declarative resource mgmt
 
+    # ── Identity providers (#468) ─────────────────────────────────────────────────
+    # Authentik (CT 2014) is the homelab IdP; Pangolin is a downstream client of it, not a
+    # peer. Reconciled through the same integration API as `resources` below, and reconciled
+    # rather than add-only for the #309 reason: an authUrl left pointing at a stale issuer is
+    # a login loop that a clean-looking plan actively hides.
+    #
+    # CREDENTIALS BY REFERENCE, NOT BY VALUE. clientIdFrom/clientSecretFrom name keys in
+    # secrets.env; the SAME two keys are consumed by Authentik's blueprint via `!Env`, so both
+    # ends of the OIDC relationship are configured from one source and neither is copied out
+    # of a UI. The client secret cannot be read back from Pangolin, so it is not drift-checked
+    # — rotate by changing it in Secrets Manager and deleting the IdP so this recreates it.
+    #
+    # ROLE MAPPING is a JMESPath expression Pangolin evaluates against the ID token claims,
+    # whose result is normalised to Pangolin role names. `groups` comes from Authentik's stock
+    # `profile` scope with no custom mapping needed. In JMESPath `a && b` yields b when a is
+    # truthy and `x || y` yields y when x is falsy, so this reads: Homelab Admins become
+    # Pangolin Admins, everyone else becomes a Member.
+    #
+    # ⚠ MEMBER IS NOT A DOWNGRADE TO "LESS ACCESS" — TODAY IT IS NO ACCESS AT ALL. Every
+    #   resource in this file currently grants the Admin role only, so a Member authenticates
+    #   successfully and then sees nothing. That is deliberate for now (deny by default while
+    #   the group model is built out), but it means adding someone to Family and expecting
+    #   them to reach Seerr will NOT work until the resource↔role matrix exists.
+    idps:
+      - name: Authentik
+        authUrl: https://identity.chrison.dev/application/o/authorize/
+        tokenUrl: https://identity.chrison.dev/application/o/token/
+        clientIdFrom: AUTHENTIK_PANGOLIN_CLIENT_ID
+        clientSecretFrom: AUTHENTIK_PANGOLIN_CLIENT_SECRET
+        identifierPath: sub
+        emailPath: email
+        namePath: preferred_username
+        scopes: openid profile email
+        # Pangolin creates a local user on first successful login. Safe here because Authentik
+        # has already decided the person belongs to one of the four groups — without that
+        # binding, autoProvision would mean every Plex friend gets a Pangolin account.
+        autoProvision: true
+        roleMapping: "contains(groups, 'Homelab Admins') && 'Admin' || 'Member'"
+
     # Declarative resources (#136): the provisioner upserts these via the integration API
     # using PANGOLIN_API_KEY, RECONCILING each one (#309): found by fullDomain, then the target
     # (ip/port/method/enabled) and the ssl/sso gates are compared against live and corrected, so

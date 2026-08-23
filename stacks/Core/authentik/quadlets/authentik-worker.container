@@ -57,6 +57,12 @@ Exec=worker
 
 Secret=authentik_secret_key,type=env,target=AUTHENTIK_SECRET_KEY
 Secret=authentik_pg_password,type=env,target=AUTHENTIK_POSTGRESQL__PASSWORD
+# OIDC client credentials for the Pangolin application, consumed by the blueprint's `!Env`
+# tags. Fixed by us rather than minted by Authentik, because Pangolin's IdP registration needs
+# the identical pair — generating them here and reading them out of a UI is the manual step
+# this avoids.
+Secret=authentik_pangolin_client_id,type=env,target=AUTHENTIK_PANGOLIN_CLIENT_ID
+Secret=authentik_pangolin_client_secret,type=env,target=AUTHENTIK_PANGOLIN_CLIENT_SECRET
 Environment=AUTHENTIK_POSTGRESQL__HOST=authentik-postgresql
 Environment=AUTHENTIK_POSTGRESQL__NAME=authentik
 Environment=AUTHENTIK_POSTGRESQL__USER=authentik
@@ -64,6 +70,17 @@ Environment=TZ=Pacific/Auckland
 
 # /data is SHARED with the server — same host path, same keep-id mapping, deliberately.
 # /certs is the worker's own: it writes rotated certificates there.
+# BLUEPRINTS — the IaC path for groups, providers, applications and policy bindings (#468).
+# Authentik discovers *.yaml anywhere under /blueprints and applies them, so mounting our tree
+# at /blueprints/custom makes the access model a reviewable file in git instead of a sequence
+# of clicks nobody can diff. Read-only: Authentik has no reason to write here, and a writable
+# mount would let a UI edit silently diverge from the file that is supposed to define it.
+#
+# ⚠ SOURCED FROM ITS OWN DIRECTORY, NOT FROM /home/podman/authentik. The engine's asset push
+# finishes with `chown -R <user> <assetsTarget>`, so pointing assetsTarget at the shared
+# authentik directory would recursively chown the Postgres data dir — which runs as uid 999
+# under keep-id — to uid 1000, and Postgres refuses to start on wrong ownership.
+Volume=/home/podman/authentik-blueprints:/blueprints/custom:ro
 Volume=/home/podman/authentik/data:/data
 Volume=/home/podman/authentik/certs:/certs
 Volume=/home/podman/authentik/custom-templates:/templates
@@ -78,7 +95,7 @@ HealthRetries=5
 HealthStartPeriod=120s
 
 [Service]
-ExecStartPre=/usr/bin/mkdir -p /home/podman/authentik/data /home/podman/authentik/certs /home/podman/authentik/custom-templates
+ExecStartPre=/usr/bin/mkdir -p /home/podman/authentik/data /home/podman/authentik/certs /home/podman/authentik/custom-templates /home/podman/authentik-blueprints
 Restart=always
 RestartSec=10
 TimeoutStartSec=180

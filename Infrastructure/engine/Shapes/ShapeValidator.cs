@@ -114,7 +114,20 @@ public static class ShapeValidator
             .OrderBy(f => f, StringComparer.Ordinal);
         // Only validate homelab/v1 shapes; skip other YAML (e.g. the app-catalogue,
         // CI/compose files) — mirrors tools/validate-shapes.py's apiVersion gate.
-        return files.Where(IsHomelabShape).Select(ValidateFile).ToList();
+        return files.Where(f => !IsAssetPayload(f)).Where(IsHomelabShape).Select(ValidateFile).ToList();
+    }
+
+    // Anything under an `assets/` directory is a PAYLOAD shipped into a guest, not a shape —
+    // podman-host config trees, Grafana dashboards, Authentik blueprints. Excluded before the
+    // apiVersion probe rather than by it, because that probe deliberately KEEPS files it
+    // cannot parse so a typo in a real shape is never silently skipped. Authentik's blueprints
+    // are valid YAML 1.1 but use custom tags (`!Env`, `!Find`, `!KeyOf`) that no general
+    // parser resolves, so they would trip that safety net on every run while being exactly the
+    // kind of file it is not meant to catch.
+    internal static bool IsAssetPayload(string path)
+    {
+        var norm = path.Replace('\\', '/');
+        return norm.Contains("/assets/", StringComparison.Ordinal);
     }
 
     // Cheap apiVersion probe: a directory scan validates only documents that
