@@ -86,6 +86,12 @@ jobs:
       AUTHENTIK_GRAFANA_CLIENT_SECRET: ${{ secrets.AUTHENTIK_GRAFANA_CLIENT_SECRET }}
       AUTHENTIK_FORGEJO_CLIENT_ID: ${{ secrets.AUTHENTIK_FORGEJO_CLIENT_ID }}
       AUTHENTIK_FORGEJO_CLIENT_SECRET: ${{ secrets.AUTHENTIK_FORGEJO_CLIENT_SECRET }}
+      # DevOps stack. The github-runner member derives its registration token from this PAT,
+      # and it had never been passed to the runner — the same gap as the four monitoring
+      # secrets in #490, found the same way: the first live apply of that stack in a while.
+      # A stack that deploys fine by hand goes red the moment CI touches it, because the
+      # laptop already had a populated secrets.env and the runner has none.
+      GH_RUNNER_PAT: ${{ secrets.GH_RUNNER_PAT }}
       # monitoring stack (#485). These four were never here because monitoring had no
       # workflow to need them — every apply ran from a laptop that already had secrets.env,
       # so nothing ever noticed. Adding deploy-monitoring.yml made the runner the first
