@@ -5,6 +5,11 @@ on:
   pull_request:
     paths:
       - 'stacks/Media/**'
+      # ⚠ BOTH FORMS, because Media is a SUBMODULE. A pointer bump changes the path
+      # `stacks/Media` with nothing after it, and `stacks/Media/**` requires a trailing
+      # segment — so the glob alone silently never matches the commits that actually change
+      # what this stack deploys. The bare entry is what catches the bump bot's commits.
+      - 'stacks/Media'
       - 'Infrastructure/**'
       - 'build/**'
       - 'nuget.config'
