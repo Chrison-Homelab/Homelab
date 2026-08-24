@@ -63,6 +63,30 @@ their own `Homelab.Stacks.<Name>` repos, composed as submodules at `stacks/<Name
 3. **Core cross-cutting stacks stay in-tree for now** — `Core`, `monitoring`, `Media`,
    `Photos`. `Media` in particular is the heart of the lab and heavily coupled to
    `monitoring`/`cloudflared`. `Gaming` is a borderline future candidate.
+   > **Amended 2026-08-24 — `Media` was extracted after all**
+   > ([Homelab.Stacks.Media](https://github.com/Chrison-Homelab/Homelab.Stacks.Media), with
+   > history, 38 commits back to 2026-06-20).
+   >
+   > Two of the three costs this ADR weighed against extraction no longer hold:
+   >
+   > - *"no independent validation"* — stack repos now validate themselves. The portable
+   >   validator ships from the `schema-v1` release and SmartHome proved the pattern; `DevOps`
+   >   and `Media` both adopted it the same day, and each caught its own shapes on its own PR.
+   > - *"the 2-PR tax"* — item 5's bot now runs hourly, validates the newly-pinned shapes inside
+   >   its own run, and merges itself. No human writes the second PR; an open bump PR means the
+   >   gate failed.
+   >
+   > **The coupling argument was NOT refuted and should not be read as such.** `exportarr-*` in
+   > the monitoring stack still holds API keys for services declared in Media, and Pangolin's
+   > `resources:` list still hard-codes each Media member's IP and port. Both are still
+   > unenforced, and extraction made both two-repo changes rather than one. What changed is that
+   > this is now a documented hazard in the stack's own `CLAUDE.md` rather than a reason to keep
+   > the directory in-tree — the coupling was never actually mitigated *by* co-location, only
+   > made easier to trip over in one commit.
+   >
+   > `Core` stays in-tree regardless: it is where converge authority lives. `monitoring`,
+   > `Photos` and `Gaming` remain undecided and should be judged on the criteria below, not on
+   > Media's precedent.
 4. **Validation = opt-in shared Action.** Publish `shape.schema.json` as a **versioned
    artifact** from the Infrastructure repo, plus a **reusable GitHub Action** any stack
    repo *may* call to validate its shapes against the pinned schema. Opt-in, not

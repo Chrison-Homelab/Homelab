@@ -25,3 +25,7 @@
 [submodule "stacks/BuildLab"]
 	path = stacks/BuildLab
 	url = https://github.com/Chrison-Homelab/Homelab.Stacks.BuildLab.git
+[submodule "stacks/Media"]
+	path = stacks/Media
+	url = https://github.com/Chrison-Homelab/Homelab.Stacks.Media.git
+	branch = main
