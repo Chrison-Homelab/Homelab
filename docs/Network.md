@@ -134,6 +134,14 @@ Three things worth knowing:
 - **`alertname` values are load-bearing.** `inhibit_rules` in `alertmanager.yml` match on them, so
   renaming an alert silently breaks an inhibition — which fails *open* (more noise), not closed.
 
+### Where to look
+
+| | |
+|---|---|
+| [karma](http://monitoring.homelab.chrison.internal:8080) | `:8080` — the nice one. Grouped cards, dark mode, readable on a phone. Read-only for alerts, but it can create silences. |
+| [Alertmanager](http://monitoring.homelab.chrison.internal:9093) | `:9093` — the authority. Its **Status** tab shows the routing tree and inhibition rules *as Alertmanager actually parsed them*, which is what you want when an alert did not arrive and you need to know which route caught it. |
+| Grafana → Alerting | `:3000` — set the Alertmanager selector to **Alertmanager**, not "Grafana built-in", or the page looks empty: the rules are native Prometheus rules, so Grafana's own list is legitimately zero. |
+
 Inhibition collapses a gateway outage from seven notifications to one: if the Cloud Gateway
 vanishes, every other `stack="unifi"` alert is suppressed as downstream noise. Silences (for
 maintenance) can be set from Grafana's Alerting UI, which reads the Alertmanager datasource.

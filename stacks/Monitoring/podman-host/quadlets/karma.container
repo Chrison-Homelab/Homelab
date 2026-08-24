@@ -1,0 +1,48 @@
+# karma — a read-only dashboard over Alertmanager (ADR-0011). UI on :8080.
+#
+# Alertmanager's own UI at :9093 stays the authority: it is where you read the parsed routing
+# tree and inhibition rules, and it is what the alert bus itself believes. karma is the nicer
+# VIEWER on top of the same data — grouped cards, dark mode, readable on a phone.
+#
+# It reaches Alertmanager over the shared quadlet network by container name, so it never
+# depends on the published :9093 and keeps working if that port is ever unpublished.
+#
+# NO UserNS — verified against the image, which declares `User: 0`. The default rootless
+# mapping therefore sends container-root to the `podman` user, same as snmp_exporter and
+# pulse. (Alertmanager needed keep-id because it runs as 65534, outside this LXC's uid map —
+# the difference is the image's uid, not a house style, so check before copying either one.)
+#
+# NO Volume: karma is stateless. It holds no silences or alert state of its own — everything
+# it shows is fetched from Alertmanager on each poll, so losing this container loses nothing.
+
+[Unit]
+Description=karma (Alertmanager dashboard)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=ghcr.io/prymitive/karma:latest
+ContainerName=karma
+Network=monitoring.network
+PublishPort=8080:8080
+
+# Single upstream. ALERTMANAGER_NAME is what labels the source in the UI — worth setting even
+# with one Alertmanager, because the default is the bare URI and reads like a bug.
+Environment=ALERTMANAGER_URI=http://alertmanager:9093
+Environment=ALERTMANAGER_NAME=homelab
+Environment=ALERTMANAGER_INTERVAL=30s
+Environment=PORT=8080
+Environment=LOG_LEVEL=info
+
+# No FILTERS_DEFAULT on purpose. karma already leads with active alerts, and pinning a
+# default of `@state=active` would hide SILENCED ones — which is precisely the alert you most
+# want to notice, because a forgotten silence is invisible failure rather than noise.
+
+AutoUpdate=registry
+
+[Service]
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

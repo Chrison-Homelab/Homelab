@@ -14,6 +14,7 @@ rootless-podman host running the fleet as quadlets.
 | `prometheus` | metrics + alert rule evaluation | `:9091` (host), `prometheus:9090` (network) |
 | `grafana` | dashboards, and a UI for Alertmanager silences | `:3000` |
 | `alertmanager` | the alert bus — routing, grouping, inhibition, silences | `:9093` |
+| `karma` | read-only dashboard over Alertmanager | `:8080` |
 | `unpoller` | UniFi gear → Prometheus | `unpoller:9130` |
 | `snmp_exporter` | Synology NAS via SNMP | `:9116` |
 | `exportarr-{radarr,sonarr,prowlarr}` | *arr app metrics | `:9708–9710` |
