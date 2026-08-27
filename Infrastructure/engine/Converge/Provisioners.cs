@@ -76,6 +76,7 @@ public sealed class ProvisionerRegistry
         new ShelfmarkProvisioner(),
         new SeerrProvisioner(),
         new PlexProvisioner(),
+        new InvenTreeProvisioner(),
     });
 }
 

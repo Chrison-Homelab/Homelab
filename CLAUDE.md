@@ -221,6 +221,29 @@ Secrets come from the root `secrets.env` as podman secrets, declared in the shap
 > Synology spike) was retired — both are superseded by the planned C#-native
 > SynoSharp. The monitoring stack moved to `stacks/Monitoring/`. See git history.
 
+## Parts inventory — ask it before writing a BOM
+
+**CT 8000, <http://inventory.homelab.chrison.internal>** (Workshop stack, #508). InvenTree,
+token-auth REST API. It knows what parts are on hand, how many, and **which drawer**.
+
+Before listing parts for a build, query it — the whole point is that a shopping list is the
+BOM *minus* what is already in a drawer, not the BOM. And when parts arrive or get consumed,
+say so, or the next answer is wrong.
+
+```bash
+set -a && . ./secrets.env && set +a
+TOKEN=$(curl -s http://inventory.homelab.chrison.internal/api/user/token/ \
+          -u "admin:$INVENTREE_ADMIN_PASSWORD" | jq -r .token)
+curl -s -H "Authorization: Token $TOKEN" \
+     'http://inventory.homelab.chrison.internal/api/part/?search=esp32' | jq
+```
+
+`/api/part/` (catalogue) · `/api/stock/` (quantity **and** location) · `/api/stock/location/`
+· `/api/bom/` (what a build consumes). See [`stacks/Workshop/README.md`](stacks/Workshop/README.md).
+
+> ⚠️ **Stock counts are only as true as the last person to update them.** They were seeded at
+> **0** deliberately — a fabricated count is worse than no inventory, because it is believed.
+
 ## Architecture
 
 ### Directory Layout
