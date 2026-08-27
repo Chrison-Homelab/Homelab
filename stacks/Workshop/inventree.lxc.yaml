@@ -1,0 +1,87 @@
+# InvenTree — the parts inventory (#508).
+#
+# WHAT IT IS FOR: given a BOM, answer what is in stock, what is short, and which
+# drawer the part is in. The last of those matters as much as the counts — "we
+# have a reed switch" is not useful if nobody knows where it is.
+#
+# WHY InvenTree over the alternatives: it is the only candidate where a BOM and
+# the stock are the SAME system. Part-DB has better parametric fields but no BOM;
+# Homebox is a lighter binary but is general home inventory and has no component
+# model. Since the whole point is "check this BOM against stock", one system that
+# holds both wins over two that have to be reconciled by hand.
+#
+# ⚠ UBUNTU, NOT DEBIAN — the one place this member departs from the lab norm and
+#   from its own stack defaults. The upstream `ct/inventree.sh` installs from
+#   packager.io's deb repo and the install script refuses anything else:
+#   `grep -qE "^ID=(ubuntu)$" /etc/os-release` … "InvenTree requires Ubuntu".
+#   This is not a preference that can be flipped later without leaving the
+#   packaged install path entirely.
+#
+# ⚠ THIRD-PARTY APT REPO. Packages come from dl.packager.io, not Ubuntu and not
+#   InvenTree's own infrastructure. It is how upstream ships, and it is why this
+#   guest is unprivileged, on the Homelab VLAN, and holds nothing but part counts.
+#
+# STORAGE ENGINE: SQLite at /home/inventree/data/database.sqlite3 — the install
+# script's own choice, not ours (it appends `engine: sqlite3` to config.yaml when
+# no engine is set). Fine at this scale and it makes the backup story one file
+# instead of a Postgres dump, but it is also why the root disk must stay on
+# local-lvm: SQLite over NFS is a locking hazard, so no moving this to a NAS
+# volume to save pool space.
+#
+# Validate against ../../Infrastructure/schema/shape.schema.json.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: inventree
+  stack: Workshop
+  tags: [inventree, inventory, parts, bom]
+
+spec:
+  app: inventree         # community-scripts ct/inventree.sh + the `inventree` provisioner
+  ctid: 8000             # first of the Workshop block (8000–8099)
+
+  os: ubuntu             # OVERRIDES the stack default (debian 13) — see the note above.
+  osVersion: "24.04"     # QUOTED — bare 24.04 is a YAML FLOAT and the schema rejects it
+                         # (string|integer). The newest of the three the packager.io repo
+                         # publishes for.
+
+  cores: 2               # upstream default. Idle almost always; gunicorn + a worker.
+  memory: 2048           # upstream default. No Postgres/redis to feed — SQLite.
+  disk: 16               # upstream default is 6, which leaves nothing for uploaded
+                         # datasheets and part images. Thin-provisioned on a pool with
+                         # ~153 GiB free, so the headroom costs nothing until used.
+
+  # node / storage / timezone / onboot inherited from stack.yaml (hpe-01, local-lvm).
+  #
+  # `network` is RESTATED rather than inherited: the schema requires the block on the
+  # member itself (defaults are merged by converge, not by validate), so a member that
+  # leans entirely on stack defaults fails ValidateShapes. bridge/vlan still come from
+  # the stack — only the address method is named here.
+  #
+  # The DHCP reservation + local DNS record are added once the guest has a lease —
+  # converge reads net0's live MAC after create and reconciles the controller entry
+  # (#416), so the address is pinned from the shape rather than by hand in the UI.
+  network:
+    ipv4: dhcp
+    # Pinned AFTER the first create, from the lease the guest actually took — converge
+    # reads net0's live MAC and reconciles the controller entry (#416), so this is the
+    # declaration of a reservation rather than a note about one made by hand.
+    #
+    # The DNS name is the load-bearing half. `site_url` and every API caller resolve
+    # through it, so a future re-address is a reservation edit and nothing more —
+    # which is exactly what the installer's `site_url: http://<dhcp-ip>` would have
+    # cost us on the next lease change.
+    reservation:
+      fixedIp: 10.10.149.168
+      localDnsRecord: inventory.homelab.chrison.internal
+
+  config:
+    # The name InvenTree writes into absolute links, and what the API is reached by.
+    # The install script sets this to the CT's DHCP address, which is exactly the
+    # hard-coded-address failure the local DNS records exist to prevent — the
+    # provisioner rewrites it to the name.
+    siteUrl: http://inventory.homelab.chrison.internal
+    adminUser: admin
+    adminEmail: homelab@chrison.dev

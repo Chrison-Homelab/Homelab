@@ -150,3 +150,15 @@ apps:
   newt:
     script: debian
     provisioner: newt
+
+  # InvenTree — the parts inventory (#508). ct/inventree.sh installs the packager.io
+  # deb and runs the migrations, but leaves two things a fresh install cannot use:
+  # `site_url` points at the CT's DHCP address, and there is NO superuser, so nothing
+  # can log in or mint an API token. The `inventree` provisioner closes both.
+  #
+  # NOTE the OS constraint travels with this entry: the install script hard-requires
+  # Ubuntu (`grep -qE "^ID=(ubuntu)$"`), so a shape using it must set os: ubuntu.
+  # See stacks/Workshop/inventree.lxc.yaml.
+  inventree:
+    script: inventree
+    provisioner: inventree
