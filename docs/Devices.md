@@ -147,7 +147,7 @@ APs live on the **Network Devices** VLAN (10.0.0.0/16). Verified 2026-08-01.
 
 | Device | Type | Model | Firmware | IP | Status |
 |---|---|---|---|---|---|
-| **Cloud Gateway Ultra** | `udm` | **UDRULT** | 5.1.19.33549 | `118.67.199.127` (WAN) | 🟢 20d |
+| **Cloud Gateway Ultra** | `udm` | **UDRULT** | 5.1.19.33549 | `$HOME_WAN_IP` (WAN — see secrets.env) | 🟢 20d |
 | US 24 PoE 250W | `usw` | US24P250 | 7.4.1.16850 | 10.0.53.142 | 🟢 20d |
 | AC LR (Lounge) | `uap` | U7LR | 6.8.2.15592 | 10.0.14.89 | 🟢 20d |
 | AC LR (Kitchen) | `uap` | U7LR | 6.8.2.15592 | 10.0.93.133 | 🟢 20d |

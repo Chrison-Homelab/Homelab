@@ -48,8 +48,8 @@ spec:
     #                                                # chrison.cloudflareaccess.com = still gated
     access:
       bypass:
-        - 118.67.199.127/32           # home WAN IPv4 — static (matches `publicIp` in pangolin.lxc.yaml)
-        - 2407:8b00:116d:e500::/56    # home IPv6 prefix — DHCPv6-PD from Quic, sticky in practice
+        - ${HOME_WAN_IP}/32           # home WAN IPv4 — static (matches `publicIp` in pangolin.lxc.yaml)
+        - ${HOME_WAN_IPV6_PREFIX}/56  # home IPv6 prefix — DHCPv6-PD from Quic, sticky in practice
                                       # (UniFi shows no reservation for it, confirmed stable by the
                                       # user). The /56 is the whole house: all four VLANs draw their
                                       # /64s from it (1000/1010/1020/1040, e.g. …e503::/64). Do NOT

@@ -35,6 +35,15 @@ jobs:
       # Cloudflare tunnel-token provider (cloudflared shapes) — ADD-ONLY (CLAUDE.md).
       CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
       CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+      # Home edge addressing, expanded into spec.config by ShapeVars (`${HOME_WAN_IP}`).
+      # SECRETS, not `vars.*`, on purpose: this repo is public, so its Actions logs are
+      # public, and converge PRINTS publicIp in Preview ("ensure grey-cloud A record(s)
+      # … → <ip>"). GitHub masks secrets in logs and does not mask variables — a variable
+      # would have moved the literal out of the shape and straight into the build log.
+      # Consumed by Core (pangolin publicIp + cloudflared access.bypass) and Media
+      # (cloudflared access.bypass). An unset value fails the load LOUDLY, by name.
+      HOME_WAN_IP: ${{ secrets.HOME_WAN_IP }}
+      HOME_WAN_IPV6_PREFIX: ${{ secrets.HOME_WAN_IPV6_PREFIX }}
       # Pangolin EE (Core): the chrison-dev org integration-API key the pangolin provisioner
       # uses to upsert resources via the CT's :3003 API. Without it, declared resources are
       # SKIPPED (wildcard A records still get created). Repo secret: PANGOLIN_API_KEY.

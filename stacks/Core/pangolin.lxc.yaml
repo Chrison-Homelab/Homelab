@@ -101,7 +101,11 @@ spec:
     # *.<zone> hostname Traefik mints a cert for actually resolves to the home edge. Add-only +
     # ManagedComment-stamped (so #195's prune leaves hand-managed records alone). Update if the
     # WAN IP changes. The UniFi :443 port-forward itself is still hand-managed (gated on #102).
-    publicIp: 118.67.199.127
+    # ${HOME_WAN_IP} — resolved from secrets.env at converge time (ShapeVars). The literal
+    # is deliberately NOT committed: this repo is public. Note this hides it from the repo
+    # and from Actions logs (GitHub masks secrets), NOT from the world — the grey-cloud A
+    # records below publish it, so `dig *.lab.chrison.dev` answers with it by design.
+    publicIp: ${HOME_WAN_IP}
 
     # GERBIL ENDPOINT — where Newt connectors are told to send WireGuard. Deliberately the
     # INTERNAL address, not publicIp.
@@ -109,7 +113,7 @@ spec:
     # publicIp is the correct default for a remote site, and it is what the code falls back to
     # (#444, which fixed this pointing at the Cloudflare-proxied dashboard — WireGuard UDP does
     # not survive Cloudflare's proxy). But every site we have is on this LAN, and the gateway
-    # does NOT hairpin: from CT 3005, `curl https://118.67.199.127` fails outright while
+    # does NOT hairpin: from CT 3005, `curl https://<home WAN IP>` fails outright while
     # `https://10.10.0.13` answers. So a LAN connector handed the public IP cannot reach the
     # edge sitting one subnet away — the websocket control plane connects over :443 through
     # Cloudflare, then WireGuard times out and Newt logs "all 5 ping attempts failed".
