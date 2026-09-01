@@ -95,11 +95,15 @@ static async Task<int> RunUnifiReservationReport(string[] args)
         .ToList();
     if (Directory.EnumerateFiles(root, "*.lxc.yaml").Any()) stackDirs.Insert(0, root);
 
+    // Same secrets.env the converge path uses, so a shape carrying `${VAR}` in its
+    // config resolves here too rather than reporting every stack as unloadable.
+    var reportEnv = SecretsEnv.Load(FindUp("secrets.env", Directory.GetCurrentDirectory()));
+
     var declared = new List<(string Stack, string Member, ReservationSpec Spec, bool IsVm)>();
     foreach (var dir in stackDirs)
     {
         ShapeLoader.LoadedStack loaded;
-        try { loaded = ShapeLoader.LoadStack(dir); }
+        try { loaded = ShapeLoader.LoadStack(dir, reportEnv); }
         catch (Exception ex) { Console.Error.WriteLine($"  ! {Path.GetFileName(dir)}: {ex.Message}"); continue; }
 
         var stackName = loaded.Stack?.Metadata.Name ?? Path.GetFileName(dir);

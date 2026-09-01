@@ -40,7 +40,7 @@ public sealed class ConvergeRunner
     private (ShapeLoader.LoadedStack Loaded, IReadOnlyList<Shape> AllOrdered,
              IReadOnlyList<Shape> Members, IReadOnlyList<VmShape> VmMembers) LoadSelected()
     {
-        var loaded = ShapeLoader.LoadStack(_stackDir);
+        var loaded = ShapeLoader.LoadStack(_stackDir, _env);
         var allOrdered = TopologicalSorter.Order(loaded.Members);
         var (members, vms) = MemberSelection.Resolve(allOrdered, loaded.VmMembers, _only);
         return (loaded, allOrdered, members, vms);

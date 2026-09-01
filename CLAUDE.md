@@ -147,6 +147,32 @@ force / non-fast-forward pushes, and pushes onto a branch whose PR is already
 MERGED/CLOSED. It auto-installs on `./build.sh`; manual setup is
 `dotnet tool restore && dotnet husky install`.
 
+## `${VAR}` in a shape's `spec.config` — this repo is PUBLIC
+
+A few config values are facts about the **house**, not about the cluster, and have no
+business committed to a public repo. They are declared as `${VAR}` and expanded at
+converge time from `secrets.env` + process env
+([`ShapeVars.cs`](Infrastructure/engine/Shapes/ShapeVars.cs)):
+
+| Variable | What | Used by |
+|---|---|---|
+| `HOME_WAN_IP` | home WAN IPv4 behind the public :443 forward | Core `pangolin.publicIp`, Core + Media `cloudflared` `access.bypass` |
+| `HOME_WAN_IPV6_PREFIX` | DHCPv6-PD `/56` base from Quic (no suffix) | Core + Media `cloudflared` `access.bypass` |
+
+- **They are GitHub *secrets*, not `vars.*`.** GitHub masks secrets in Actions logs and
+  does **not** mask variables — and converge prints `publicIp` in Preview
+  (`ensure grey-cloud A record(s) … → <ip>`). A variable would have moved the literal out
+  of the shape and straight into a public build log. `_deploy-stack.yml` passes both.
+- **An unset variable is a FATAL load error** naming the file and the variable — never an
+  empty substitution. Both consumers fail *invisibly* on an empty value: an absent
+  `publicIp` reports the wildcard-DNS step as "skipped", and a dropped `access.bypass`
+  entry silently re-arms Cloudflare Access's one-time PIN across the whole admin surface.
+- **Scope is `spec.config` only.** Node, ctid, LAN addresses and mounts describe the
+  cluster and stay in git verbatim — don't hide infrastructure behind opaque names.
+- ⚠️ **This hides the value from the repo, not from the world.** The grey-cloud wildcard
+  A records publish the IPv4 by design: `dig x.lab.chrison.dev` answers with it. Treat it
+  as *don't hand it over for free*, not as a secret.
+
 ## Stack submodules (meta-repo model, ADR-0008)
 
 Domain stacks live in their own **`Homelab.Stacks.<Name>`** repos, composed here

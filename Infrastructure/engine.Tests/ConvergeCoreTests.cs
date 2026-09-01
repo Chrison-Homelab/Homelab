@@ -675,9 +675,9 @@ public sealed class ConvergeCoreTests
         // handed that endpoint sends handshakes into a black hole. In public-wildcard mode the
         // endpoint must be the home WAN IP the 51820/udp forward lives behind.
         var s = PangolinWildcardShape();
-        s.Spec.Config["publicIp"] = "118.67.199.127";
+        s.Spec.Config["publicIp"] = "203.0.113.7";
 
-        Assert.Equal("118.67.199.127", PangolinProvisioner.GerbilBaseEndpoint(s, "pangolin.chrison.dev"));
+        Assert.Equal("203.0.113.7", PangolinProvisioner.GerbilBaseEndpoint(s, "pangolin.chrison.dev"));
     }
 
     [Fact]
@@ -687,9 +687,9 @@ public sealed class ConvergeCoreTests
         // lives, and whose inputs appear in no other marker component. So the first attempt at
         // the endpoint fix rendered a new config.yml and still reported NOCHANGE.
         var before = PangolinWildcardShape();
-        before.Spec.Config["publicIp"] = "118.67.199.127";
+        before.Spec.Config["publicIp"] = "203.0.113.7";
         var after = PangolinWildcardShape();
-        after.Spec.Config["publicIp"] = "118.67.199.127";
+        after.Spec.Config["publicIp"] = "203.0.113.7";
         after.Spec.Config["gerbilEndpoint"] = "edge.example.net";
 
         Assert.NotEqual(PangolinProvisioner.DesiredMarker(before), PangolinProvisioner.DesiredMarker(after));
@@ -700,7 +700,7 @@ public sealed class ConvergeCoreTests
     {
         // When Gerbil moves off-site, connectors dial the VPS — this is the knob that turns.
         var s = PangolinWildcardShape();
-        s.Spec.Config["publicIp"] = "118.67.199.127";
+        s.Spec.Config["publicIp"] = "203.0.113.7";
         s.Spec.Config["gerbilEndpoint"] = "edge.example.net";
 
         Assert.Equal("edge.example.net", PangolinProvisioner.GerbilBaseEndpoint(s, "pangolin.chrison.dev"));
@@ -752,7 +752,11 @@ public sealed class ConvergeCoreTests
         // This test is the guard against quietly regressing to the SSH resource and re-introducing
         // that password: no resource in the shape may carry mode: ssh.
         var stackDir = Path.GetDirectoryName(FindRepoFile(Path.Combine("stacks", "Core", "pangolin.lxc.yaml")))!;
-        var shape = ShapeLoader.LoadStack(stackDir).Members.Single(m => m.Metadata.Name == "pangolin");
+        // Core's shapes carry `${HOME_WAN_IP}` (ShapeVars), and an unresolved variable is a
+        // hard load failure by design — so give the loader the values rather than depending
+        // on whoever runs the suite having a secrets.env.
+        var shape = ShapeLoader.LoadStack(stackDir, StubHomeEdgeVars())
+            .Members.Single(m => m.Metadata.Name == "pangolin");
         var resources = (System.Collections.IEnumerable)shape.Spec.Config["resources"]!;
 
         System.Collections.IDictionary? shell = null;
@@ -888,11 +892,11 @@ public sealed class ConvergeCoreTests
     public void Pangolin_WildcardARecords_OnePerZone_ToPublicIp_WhenPublicWildcard()
     {
         var s = PangolinWildcardShape();
-        s.Spec.Config["publicIp"] = "118.67.199.127";
+        s.Spec.Config["publicIp"] = "203.0.113.7";
         var recs = PangolinProvisioner.WildcardARecords(s);
         Assert.Equal(2, recs.Count);
-        Assert.Contains(("*.arr.chrison.dev", "118.67.199.127"), recs);
-        Assert.Contains(("*.lab.chrison.dev", "118.67.199.127"), recs);
+        Assert.Contains(("*.arr.chrison.dev", "203.0.113.7"), recs);
+        Assert.Contains(("*.lab.chrison.dev", "203.0.113.7"), recs);
     }
 
     [Fact]
@@ -903,7 +907,7 @@ public sealed class ConvergeCoreTests
 
         // cloudflared edge has no public :443, so no grey-cloud A records even with publicIp set.
         var cf = PangolinShape();
-        cf.Spec.Config["publicIp"] = "118.67.199.127";
+        cf.Spec.Config["publicIp"] = "203.0.113.7";
         Assert.Empty(PangolinProvisioner.WildcardARecords(cf));
     }
 
@@ -1072,8 +1076,8 @@ public sealed class ConvergeCoreTests
     {
         // The actual bug: live carried only the IPv4 home address while the shape had
         // grown the IPv6 prefix, so every dual-stack browser hit the OTP gate.
-        var live = new[] { "118.67.199.127/32" };
-        var desired = new[] { "118.67.199.127/32", "2407:8b00:116d:e500::/56" };
+        var live = new[] { "203.0.113.7/32" };
+        var desired = new[] { "203.0.113.7/32", "2001:db8:116d:e500::/56" };
         Assert.True(CloudflaredProvisioner.BypassDrifted(live, desired));
     }
 
@@ -1082,8 +1086,8 @@ public sealed class ConvergeCoreTests
     {
         // Cloudflare echoes back its own normalisation, and order is not meaningful.
         // Treating either as drift would rewrite the policy on every single converge.
-        var live = new[] { "2407:8B00:116D:E500:0:0:0:0/56", "118.67.199.127/32" };
-        var desired = new[] { "118.67.199.127/32", "2407:8b00:116d:e500::/56" };
+        var live = new[] { "2001:DB8:116D:E500:0:0:0:0/56", "203.0.113.7/32" };
+        var desired = new[] { "203.0.113.7/32", "2001:db8:116d:e500::/56" };
         Assert.False(CloudflaredProvisioner.BypassDrifted(live, desired));
     }
 
@@ -1092,16 +1096,16 @@ public sealed class ConvergeCoreTests
     {
         // /48 is Quic's pool, not the house — widening to it must never look like a no-op.
         Assert.True(CloudflaredProvisioner.BypassDrifted(
-            new[] { "2407:8b00:116d:e500::/56" }, new[] { "2407:8b00:116d::/48" }));
+            new[] { "2001:db8:116d:e500::/56" }, new[] { "2001:db8:116d::/48" }));
     }
 
     [Fact]
     public void BypassDrifted_DetectsARemovedEntryAndAnEmptyLivePolicy()
     {
         Assert.True(CloudflaredProvisioner.BypassDrifted(
-            new[] { "118.67.199.127/32", "203.0.113.5/32" }, new[] { "118.67.199.127/32" }));
+            new[] { "203.0.113.7/32", "203.0.113.5/32" }, new[] { "203.0.113.7/32" }));
         Assert.True(CloudflaredProvisioner.BypassDrifted(
-            Array.Empty<string>(), new[] { "118.67.199.127/32" }));
+            Array.Empty<string>(), new[] { "203.0.113.7/32" }));
     }
 
     [Fact]
@@ -1110,7 +1114,7 @@ public sealed class ConvergeCoreTests
         // A garbage entry must count as a difference, not normalise away to nothing and
         // silently compare equal — that would leave a broken policy in place forever.
         Assert.True(CloudflaredProvisioner.BypassDrifted(
-            new[] { "not-an-ip" }, new[] { "118.67.199.127/32" }));
+            new[] { "not-an-ip" }, new[] { "203.0.113.7/32" }));
         Assert.False(CloudflaredProvisioner.BypassDrifted(
             new[] { "not-an-ip" }, new[] { "not-an-ip" }));
     }
@@ -1139,6 +1143,16 @@ public sealed class ConvergeCoreTests
 
     // Walk up from the test assembly to a repo-relative file, the same way AppCatalogueTests
     // locates the catalogue — the test binary does not sit at the repo root.
+    // A SecretsEnv carrying the home-edge variables, from a throwaway file — the same
+    // code path production uses, with documentation-range values.
+    private static SecretsEnv StubHomeEdgeVars()
+    {
+        var tmp = Path.Combine(Path.GetTempPath(), $"secrets-{Guid.NewGuid():N}.env");
+        File.WriteAllText(tmp, "HOME_WAN_IP=203.0.113.7\nHOME_WAN_IPV6_PREFIX=2001:db8:116d:e500::\n");
+        try { return SecretsEnv.Load(tmp); }
+        finally { File.Delete(tmp); }
+    }
+
     private static string FindRepoFile(string relative)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

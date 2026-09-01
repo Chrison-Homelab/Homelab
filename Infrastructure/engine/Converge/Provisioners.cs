@@ -583,8 +583,8 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
 
     // True when a live bypass policy's CIDR list differs from the shape's — the signal to
     // rewrite it. Set comparison, so order never matters; CIDRs are normalised first
-    // because one IPv6 prefix has many spellings (`2407:8B00:116D:E500:0:0:0:0/56` and
-    // `2407:8b00:116d:e500::/56` are the same network) and Cloudflare echoes back its own.
+    // because one IPv6 prefix has many spellings (`2001:DB8:116D:E500:0:0:0:0/56` and
+    // `2001:db8:116d:e500::/56` are the same network) and Cloudflare echoes back its own.
     // Without that, an unchanged list would look drifted and be rewritten every converge.
     public static bool BypassDrifted(IEnumerable<string> live, IEnumerable<string> desired)
         => !NormalizeCidrs(live).SetEquals(NormalizeCidrs(desired));
