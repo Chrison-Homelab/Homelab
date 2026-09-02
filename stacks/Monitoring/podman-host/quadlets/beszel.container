@@ -1,0 +1,53 @@
+[Unit]
+# Beszel hub — EVALUATION, running alongside Pulse rather than replacing it (#517).
+#
+# WHY THIS EXISTS: the things we keep hitting in Pulse are behind its Pro tier and no
+# amount of configuration moves them — OIDC users cannot be admins on Community
+# (OIDC_GROUP_ROLE_MAPPINGS is Pro, and there is no Users/Roles panel at all), so
+# pulse.container documents keeping a local admin as the workaround. Beszel is MIT, so
+# the equivalent gaps are unwritten code rather than a licence wall.
+#
+# ⚠ THIS DOES NOT REPLACE PULSE YET. Both run at once on purpose: Beszel is host-agent
+# first and PVE guest/LXC stats are still an open upstream request (henrygd/beszel#539),
+# which is where Pulse is genuinely better today. Deciding replace-vs-coexist is the
+# point of the evaluation, not a foregone conclusion. Removing pulse.container before
+# #517 is answered would trade a licence wall for a monitoring gap.
+Description=Beszel hub (fleet monitoring — evaluation, #517)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/henrygd/beszel:latest
+ContainerName=beszel
+Network=monitoring.network
+PublishPort=8090:8090
+Volume=/home/podman/monitoring/data/beszel:/beszel_data
+AutoUpdate=registry
+
+# NO UserNS=keep-id, and that is per-image rather than house style. Verified against the
+# live image, not assumed: `podman image inspect` reports User=[], i.e. it runs as root,
+# so the default rootless mapping already sends container-root to the `podman` user —
+# same as pulse and snmp_exporter. Adding keep-id here would reproduce the
+# `crun: setgroups: Invalid argument` crash loop alertmanager hit in #501, where the
+# image genuinely runs as 65534 and needs it. Check the image before copying a neighbour.
+
+# Addressed BY NAME, never by IP — the host is on DHCP precisely so nothing pins an
+# address (see the NETWORKING note in podman-host.lxc.yaml). APP_URL is also what the
+# agents dial back on as HUB_URL, so a wrong value here breaks enrolment, not just links.
+Environment=APP_URL=http://monitoring.homelab.chrison.internal:8090
+
+# NO OIDC WIRING YET, deliberately. Beszel authenticates via PocketBase and its OIDC
+# role sync is still open upstream (henrygd/beszel#1967), so an SSO user would land
+# non-admin exactly like Pulse. The difference we actually care about — that Beszel has
+# a user admin surface where a role can be set BY HAND — is a thing to verify with local
+# auth first. Wiring authentik before confirming that would test two unknowns at once.
+# The first admin account is created through the web UI on first run; there is no
+# USER_EMAIL/USER_PASSWORD env path, so that step is manual and belongs to a human.
+
+[Service]
+ExecStartPre=/usr/bin/mkdir -p /home/podman/monitoring/data/beszel
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
