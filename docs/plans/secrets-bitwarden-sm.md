@@ -65,7 +65,7 @@ Template sketch:
 
 ```bash
 # ── non-secret: literal, passed through verbatim ──
-PROXMOX_BASE_URL=https://192.168.179.3:8006/api2/json
+PROXMOX_BASE_URL=https://hpe-01.homelab.chrison.internal:8006/api2/json
 PROXMOX_VERIFY_TLS=false
 GH_ORG=Chrison-Homelab
 ARR_USER=csimon

@@ -5,7 +5,7 @@
 # Automatically creates mount points and persists them in /etc/fstab
 # 
 # Usage: ./setup-nfs-shares.sh [NAS_IP] [NAS_NAME]
-#   NAS_IP: IP address of the NAS (default: 192.168.179.11)
+#   NAS_IP: address of the NAS — the UniFi name by default (default: nas.homelab.chrison.internal)
 #   NAS_NAME: Name for the mount base directory (default: DS1813-01)
 #
 # Example: ./setup-nfs-shares.sh 192.168.1.100 MyNAS
@@ -14,7 +14,7 @@
 
 set -e
 
-NAS_IP="${1:-192.168.179.11}"
+NAS_IP="${1:-nas.homelab.chrison.internal}"   # by UniFi name; the NAS moved to VLAN 1000 (#37)
 NAS_NAME="${2:-DS1813-01}"
 BASE_MOUNT="/mnt/${NAS_NAME}"
 
