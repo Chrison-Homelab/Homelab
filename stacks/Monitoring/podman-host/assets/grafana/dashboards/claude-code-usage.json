@@ -9,7 +9,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 3,
   "refresh": "1m",
   "time": {
     "from": "now-7d",
@@ -62,7 +62,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(increase(claude_code_token_usage_tokens_total{exported_instance=~\"$machine\"}[$__range]))",
+          "expr": "sum(max_over_time(claude_code_token_usage_tokens_total{exported_instance=~\"$machine\"}[$__range]))",
           "legendFormat": "all machines",
           "range": true,
           "refId": "A"
@@ -97,7 +97,8 @@
           }
         },
         "overrides": []
-      }
+      },
+      "description": "Each Claude Code session reports its OWN cumulative counter and the series goes flat when the session ends, so increase() over a range returns 0 for anything short. max_over_time takes each session's final total and sums them, which is the real figure."
     },
     {
       "type": "stat",
@@ -119,7 +120,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(increase(claude_code_session_count_total{exported_instance=~\"$machine\"}[$__range]))",
+          "expr": "sum(max_over_time(claude_code_session_count_total{exported_instance=~\"$machine\"}[$__range]))",
           "legendFormat": "all machines",
           "range": true,
           "refId": "A"
@@ -154,7 +155,8 @@
           }
         },
         "overrides": []
-      }
+      },
+      "description": "Each Claude Code session reports its OWN cumulative counter and the series goes flat when the session ends, so increase() over a range returns 0 for anything short. max_over_time takes each session's final total and sums them, which is the real figure."
     },
     {
       "type": "stat",
@@ -176,7 +178,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(increase(claude_code_active_time_seconds_total{exported_instance=~\"$machine\"}[$__range]))",
+          "expr": "sum(max_over_time(claude_code_active_time_seconds_total{exported_instance=~\"$machine\"}[$__range]))",
           "legendFormat": "all machines",
           "range": true,
           "refId": "A"
@@ -211,7 +213,8 @@
           }
         },
         "overrides": []
-      }
+      },
+      "description": "Each Claude Code session reports its OWN cumulative counter and the series goes flat when the session ends, so increase() over a range returns 0 for anything short. max_over_time takes each session's final total and sums them, which is the real figure."
     },
     {
       "type": "stat",
@@ -233,7 +236,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(increase(claude_code_cost_usage_USD_total{exported_instance=~\"$machine\"}[$__range]))",
+          "expr": "sum(max_over_time(claude_code_cost_usage_USD_total{exported_instance=~\"$machine\"}[$__range]))",
           "legendFormat": "all machines",
           "range": true,
           "refId": "A"
@@ -268,12 +271,13 @@
           }
         },
         "overrides": []
-      }
+      },
+      "description": "Each Claude Code session reports its OWN cumulative counter and the series goes flat when the session ends, so increase() over a range returns 0 for anything short. max_over_time takes each session's final total and sums them, which is the real figure."
     },
     {
       "type": "timeseries",
       "title": "Tokens by type",
-      "description": "cacheRead usually dominates by an order of magnitude \u2014 that is cache working, not waste.",
+      "description": "cacheRead usually dominates by an order of magnitude \u2014 that is cache working, not waste. Per-bucket growth within live sessions. A one-shot `claude -p` run reports once and shows nothing here \u2014 see the totals above for those.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -291,7 +295,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (type) (rate(claude_code_token_usage_tokens_total{exported_instance=~\"$machine\"}[$__rate_interval]))",
+          "expr": "sum by (type) (increase(claude_code_token_usage_tokens_total{exported_instance=~\"$machine\"}[$__interval]))",
           "legendFormat": "{{type}}",
           "range": true,
           "refId": "A"
@@ -331,7 +335,7 @@
     {
       "type": "timeseries",
       "title": "Tokens by machine",
-      "description": "",
+      "description": "Per-bucket growth within live sessions. A one-shot `claude -p` run reports once and shows nothing here \u2014 see the totals above for those.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -349,7 +353,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (exported_instance) (rate(claude_code_token_usage_tokens_total{exported_instance=~\"$machine\"}[$__rate_interval]))",
+          "expr": "sum by (exported_instance) (increase(claude_code_token_usage_tokens_total{exported_instance=~\"$machine\"}[$__interval]))",
           "legendFormat": "{{exported_instance}}",
           "range": true,
           "refId": "A"
@@ -389,7 +393,7 @@
     {
       "type": "timeseries",
       "title": "Tokens by model",
-      "description": "",
+      "description": "Per-bucket growth within live sessions. A one-shot `claude -p` run reports once and shows nothing here \u2014 see the totals above for those.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -407,7 +411,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (model) (rate(claude_code_token_usage_tokens_total{exported_instance=~\"$machine\"}[$__rate_interval]))",
+          "expr": "sum by (model) (increase(claude_code_token_usage_tokens_total{exported_instance=~\"$machine\"}[$__interval]))",
           "legendFormat": "{{model}}",
           "range": true,
           "refId": "A"
@@ -447,7 +451,7 @@
     {
       "type": "table",
       "title": "Token totals over range",
-      "description": "Exact counts for the selected window.",
+      "description": "Each Claude Code session reports its OWN cumulative counter and the series goes flat when the session ends, so increase() over a range returns 0 for anything short. max_over_time takes each session's final total and sums them, which is the real figure.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -465,7 +469,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sort_desc(sum by (exported_instance, model, type) (increase(claude_code_token_usage_tokens_total{exported_instance=~\"$machine\"}[$__range])))",
+          "expr": "sort_desc(sum by (exported_instance, model, type) (max_over_time(claude_code_token_usage_tokens_total{exported_instance=~\"$machine\"}[$__range])))",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -506,7 +510,7 @@
     {
       "type": "timeseries",
       "title": "Sessions started",
-      "description": "",
+      "description": "Per-bucket growth within live sessions. A one-shot `claude -p` run reports once and shows nothing here \u2014 see the totals above for those.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -564,7 +568,7 @@
     {
       "type": "timeseries",
       "title": "Lines of code changed",
-      "description": "Empty until an edit lands in the selected window.",
+      "description": "Empty until an edit lands in the selected window. Per-bucket growth within live sessions. A one-shot `claude -p` run reports once and shows nothing here \u2014 see the totals above for those.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -622,7 +626,7 @@
     {
       "type": "timeseries",
       "title": "Active time",
-      "description": "Seconds of active use per second \u2014 0.5 means half the wall clock was hands-on.",
+      "description": "Seconds of hands-on use per bucket. Per-bucket growth within live sessions. A one-shot `claude -p` run reports once and shows nothing here \u2014 see the totals above for those.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -640,7 +644,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (exported_instance) (rate(claude_code_active_time_seconds_total{exported_instance=~\"$machine\"}[$__rate_interval]))",
+          "expr": "sum by (exported_instance) (increase(claude_code_active_time_seconds_total{exported_instance=~\"$machine\"}[$__interval]))",
           "legendFormat": "{{exported_instance}}",
           "range": true,
           "refId": "A"
@@ -662,14 +666,14 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit",
+          "unit": "s",
           "custom": {
             "drawStyle": "line",
             "fillOpacity": 8,
             "lineWidth": 1,
             "showPoints": "never",
             "stacking": {
-              "mode": "none",
+              "mode": "normal",
               "group": "A"
             }
           }

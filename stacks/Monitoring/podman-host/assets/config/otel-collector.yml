@@ -35,18 +35,20 @@ receivers:
 processors:
   batch: {}
 
-  # Claude Code stamps EVERY metric with session.id, and a new session means a new label
-  # value forever — unbounded cardinality straight into the TSDB. Measured on a single
-  # throwaway session: 17 labels per series, 6 new series. At a few dozen sessions a day
-  # that is tens of thousands of series that no query ever groups by.
+  # Claude Code reports CUMULATIVE PER-SESSION counters from a short-lived process, so
+  # session.id is load-bearing, NOT just noise. Dropping it collapses every session on a
+  # machine onto one series where each new session overwrites the last with its own small
+  # value instead of accumulating — measured: three series all stuck at 1, and
+  # sum(increase(...)) over a week returned 0. Concurrent sessions (the whole point of this
+  # setup) would interleave and corrupt it further. It stays.
   #
-  # user.id (a 64-char hash), user.account_id, user.account_uuid and organization.id are
-  # dropped as well: they are constant per account, so they add width to every series and
-  # distinguish nothing.
+  # What IS safe to drop is the constant-per-account set: user.id (a 64-char hash),
+  # user.account_id, user.account_uuid and organization.id never vary for a given user, so
+  # they widen every series and distinguish nothing. user.email is kept — two values, and
+  # it is how the work laptop is told apart from this Mac.
   #
-  # KEPT deliberately: model, type (input/output/cacheRead/cacheCreation), terminal.type,
-  # query_source, start_type — the things worth grouping by — plus user.email and
-  # service.instance.id, which are how the work laptop and this Mac are told apart.
+  # Cardinality therefore still grows with session count. That is inherent to how Claude
+  # Code reports; the bound is Prometheus's 12 GB size cap, not label surgery.
   #
   # Scoped to claude_code.* so PowerOrchestrator's metrics are untouched.
   attributes/claude_code:
@@ -54,7 +56,6 @@ processors:
       match_type: regexp
       metric_names: ["^claude_code\\..*"]
     actions:
-      - { key: session.id, action: delete }
       - { key: user.id, action: delete }
       - { key: user.account_id, action: delete }
       - { key: user.account_uuid, action: delete }
