@@ -344,7 +344,10 @@ spec:
       - { name: Seerr,          subdomain: seerr,          zone: arr, sso: false, target: { ip: 10.10.15.6,    port: 5055,  method: http } }
       - { name: Tracearr,       subdomain: tracearr,       zone: arr, target: { ip: 10.10.202.145, port: 3000,  method: http } }
       - { name: RomM,           subdomain: romm,           zone: arr, target: { ip: 10.10.202.240, port: 80,    method: http } }
-      - { name: Youtarr,        subdomain: youtarr,        zone: arr, target: { ip: 10.10.73.250,  port: 3087,  method: http } }
+      # Youtarr moved to the Media podman host (CT 5114) in #302; the old CT 5113 is retired and
+      # its address no longer answers. Found by the dashboard's exposed-but-undeclared check
+      # (ADR-0012). Targeted by NAME like Pulse/Home Assistant — resolvable from CT 2013.
+      - { name: Youtarr,        subdomain: youtarr,        zone: arr, target: { ip: media.homelab.chrison.internal, port: 3087, method: http } }
       - { name: Audiobookshelf, subdomain: audiobookshelf, zone: arr, sso: false, target: { ip: 10.10.182.200, port: 13378, method: http } }
       - { name: Shelfmark,      subdomain: shelfmark,      zone: arr, target: { ip: 10.10.142.183, port: 8084,  method: http } }
 
