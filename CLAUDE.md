@@ -202,6 +202,36 @@ bw get password "Homelab Schema Read PAT" | gh secret set SCHEMA_RO_PAT --org Ch
 The caller passes it through as `schema_token` (underscore — GitHub secret ids
 forbid hyphens). Setting org secrets needs org-admin; scope the PAT to `contents:read`.
 
+## The dashboard is rendered from the shapes — declare, never edit (ADR-0012)
+
+Homepage at `http://monitoring.homelab.chrison.internal:3010` is **generated** from every shape's
+`metadata.services` plus the Pangolin/cloudflared exposure declarations, and re-pushed by the
+`dashboard` workflow on every merge to `main`. There is no dashboard to update.
+
+**Every shape whose guest serves a UI declares it** — this is how a new app reaches the dashboard:
+
+```yaml
+metadata:
+  name: sonarr
+  services:                      # one entry per UI the guest offers a human
+    - name: Sonarr               # also the match key for the public URL (Pangolin resource / tunnel host)
+      url: http://sonarr.homelab.chrison.internal:8989   # INTERNAL url — the dashboard is LAN-only
+      icon: sonarr               # dashboard-icons slug (optional; defaults to the lowercased name)
+      description: TV            # optional
+      widget: { type: sonarr, keyFrom: SONARR_API_KEY }  # optional Homepage widget; *From = a SECRET NAME
+```
+
+- Do **not** declare the public URL — it is derived by name from the Pangolin `resources` /
+  cloudflared `ingress`, so it cannot disagree with what is exposed. Anything exposed but undeclared
+  shows up in the dashboard's last group and fails `./build.sh PreviewDashboard`.
+- A widget credential is `keyFrom`/`passwordFrom: <SECRET_NAME>`; the value is exported by
+  `stacks/Monitoring/podman-host/quadlets/homepage.container` as `HOMEPAGE_VAR_<NAME>` (add both
+  ends: the shape's `config.secrets` entry and the quadlet's `Secret=` line). Never a literal.
+- Stack submodules validate against the **published** schema, so a new `metadata.services` field
+  in a stack repo needs the superproject's schema release to include it first.
+- `./build.sh PreviewDashboard` renders + checks without touching anything; `./build.sh Dashboard`
+  pushes to CT 4001 and restarts only the dashboard unit.
+
 ## Key Commands
 
 ### Testing Scripts Locally (Debian test container)

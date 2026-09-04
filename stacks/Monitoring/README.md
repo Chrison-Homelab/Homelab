@@ -21,6 +21,7 @@ rootless-podman host running the fleet as quadlets.
 | `otel-collector` | OTLP ingest → Tempo/Loki, re-exports to Prometheus | `:4317/:4318`, `:8889` |
 | `tempo` / `loki` | traces / logs | via Grafana datasources |
 | `pulse` | Proxmox + NAS fleet monitoring (its own UI and alert engine) | `:7655` |
+| `homepage` | the homelab dashboard, `services.yaml` RENDERED from every stack's shapes (ADR-0012) — pushed by the `dashboard` workflow, not by converge | `:3010` |
 
 Full per-container detail — uid mappings, why each one does or does not get `UserNS`, and the
 cutover notes — is in [`podman-host/README.md`](podman-host/README.md).

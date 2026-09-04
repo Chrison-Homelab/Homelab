@@ -13,6 +13,22 @@ kind: LXC
 metadata:
   name: cloudflared-hpe-01
   stack: Core
+  # The break-glass UIs this tunnel fronts have no shape of their own (Proxmox is the hypervisor,
+  # PDM a hand-managed guest), so the tunnel that exposes them declares their dashboard entries.
+  # `public:` is explicit because the hostnames do not match a shape name. ADR-0012.
+  services:
+    - name: Proxmox
+      group: Proxmox
+      url: https://hpe-01.homelab.chrison.internal:8006
+      public: https://proxmox.chrison.dev
+      icon: proxmox
+      description: hpe-01 node UI (nuc-01 and desktop-01 reachable the same way)
+    - name: Proxmox Datacenter Manager
+      group: Proxmox
+      url: https://10.10.208.155:8443
+      public: https://pdm.chrison.dev
+      icon: proxmox
+      description: Cluster-wide view across the three nodes
   tags: [network, cloudflare, tunnel, ha-primary]
 
 spec:

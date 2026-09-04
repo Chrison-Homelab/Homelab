@@ -26,6 +26,30 @@ public sealed class ShapeMetadata
     public string? Stack { get; set; }
     public List<string> Tags { get; set; } = new();
     public string? Description { get; set; }
+    // What this guest offers a HUMAN — one entry per UI — for the generated dashboard
+    // (ADR-0012). Lives in metadata because it describes the guest; nothing here is applied
+    // to it. `homelab-infra dashboard` renders every stack's entries into Homepage's
+    // services.yaml, so a new app is on the dashboard the moment its shape declares one.
+    public List<DashboardService> Services { get; set; } = new();
+}
+
+// One dashboard tile. `Url` is the INTERNAL address (the dashboard is LAN-only and the
+// gateway does not hairpin the public names). The public URL and its gate are not declared
+// here — they are derived from the Pangolin resources and cloudflared ingress that already
+// exist, matched by name, so they cannot disagree with what is actually exposed. `Public`
+// overrides that derivation when a name does not line up.
+public sealed class DashboardService
+{
+    public string Name { get; set; } = "";
+    public string? Group { get; set; }          // defaults to the stack name
+    public string Url { get; set; } = "";
+    public string? Icon { get; set; }           // dashboard-icons slug; defaults to the lowercased name
+    public string? Description { get; set; }
+    public string? Public { get; set; }         // explicit public URL, when derivation cannot match
+    // A Homepage service widget, verbatim, with one convention: any key ending in `From`
+    // (keyFrom, passwordFrom, usernameFrom) names a SECRET and is rendered as the matching
+    // {{HOMEPAGE_VAR_<NAME>}} placeholder — values never enter a shape. `url` defaults to Url.
+    public Dictionary<string, object?>? Widget { get; set; }
 }
 
 public sealed class LxcSpec

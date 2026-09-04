@@ -51,6 +51,13 @@ metadata:
   name: authentik
   stack: Core
   tags: [identity, sso, oidc, podman, quadlet, adr-0009]
+  services:
+    - name: Authentik
+      url: https://identity.chrison.dev
+      # Public name differs from the shape name, so derivation cannot match it — say so.
+      public: https://identity.chrison.dev
+      icon: authentik
+      description: The homelab identity provider (OIDC)
 
 spec:
   app: podman            # community-scripts ct/podman.sh + the `podman` provisioner

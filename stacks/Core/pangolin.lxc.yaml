@@ -30,6 +30,22 @@ metadata:
   name: pangolin
   stack: Core
   tags: [network, proxy, sso, remote-access, docker]
+  services:
+    - name: Pangolin
+      url: https://pangolin.chrison.dev
+      icon: pangolin
+      description: SSO front door and public ingress for *.lab / *.arr / *.iot
+    - name: Traefik
+      url: https://traefik.lab.chrison.dev
+      icon: traefik
+      description: Pangolin's edge proxy
+    # PowerOrchestrator (#191) is a systemd service on nuc-01 itself — no guest, no shape of its
+    # own. Pangolin is what exposes it (the `power` resource below), so its dashboard entry lives
+    # here rather than being invented as a shape. Still on the legacy address (#37).
+    - name: Power Orchestrator
+      url: http://192.168.179.1:8080
+      icon: mdi-power
+      description: Wake / sleep / arm the nodes — runs on nuc-01, not in a guest
 
 spec:
   app: debian            # plain base CT (ct/debian.sh) — Docker-capable via nesting+keyctl below

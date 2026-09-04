@@ -19,7 +19,9 @@ public sealed class ShapeLoader
     // already hold a SecretsEnv should pass it — ConvergeRunner does, so secrets.env is in
     // scope. Null falls back to process env alone, which keeps the many test call sites and
     // any read-only tooling working unchanged.
-    public static LoadedStack LoadStack(string stackDir, SecretsEnv? vars = null)
+    // `lenientVars` leaves an unresolved `${VAR}` in place instead of failing — for read-only
+    // renderers (the dashboard) that consume metadata only. See ShapeVars.Expand.
+    public static LoadedStack LoadStack(string stackDir, SecretsEnv? vars = null, bool lenientVars = false)
     {
         if (!Directory.Exists(stackDir))
             throw new DirectoryNotFoundException($"Stack directory not found: {stackDir}");
@@ -46,7 +48,7 @@ public sealed class ShapeLoader
             // Remember where the shape came from, so provisioners can read sibling assets
             // (e.g. the podman path's quadlet files) rather than requiring them inline.
             shape.SourceDir = stackDir;
-            ShapeVars.Expand(shape.Spec.Config, vars, file);
+            ShapeVars.Expand(shape.Spec.Config, vars, file, lenientVars);
             members.Add(shape);
         }
 
@@ -58,7 +60,7 @@ public sealed class ShapeLoader
             var shape = Yaml.Deserialize<VmShape>(File.ReadAllText(file));
             if (!string.Equals(shape.Kind, "VM", StringComparison.Ordinal)) continue;
             if (stack?.Spec.Defaults is { } d) MergeVm(d, shape.Spec);
-            ShapeVars.Expand(shape.Spec.Config, vars, file);
+            ShapeVars.Expand(shape.Spec.Config, vars, file, lenientVars);
             vmMembers.Add(shape);
         }
 
