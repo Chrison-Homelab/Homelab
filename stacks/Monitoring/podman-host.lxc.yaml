@@ -149,6 +149,12 @@ spec:
       # Homepage widget credentials (ADR-0012) — consumed by quadlets/homepage.container.
       pulse_api_token: PULSE_API_TOKEN
       homeassistant_token: HOMEASSISTANT_TOKEN
+      bazarr_api_key: BAZARR_API_KEY
+      seerr_api_key: SEERR_API_KEY
+      plex_token: PLEX_TOKEN
+      abs_api_key: ABS_API_KEY
+      qbit_user: QBIT_USER
+      qbit_password: QBIT_PASSWORD
 
     # ── Dashboard host (ADR-0012). Marks THIS shape as where `homelab-infra dashboard
     #    --deploy` delivers the rendered services.yaml: <assetsTarget>/<services>, then restarts
