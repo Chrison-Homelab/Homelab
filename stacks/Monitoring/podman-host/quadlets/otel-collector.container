@@ -19,6 +19,10 @@ PublishPort=4317:4317
 PublishPort=4318:4318
 PublishPort=8889:8889
 Volume=/home/podman/monitoring/config/otel-collector.yml:/etc/otelcol/config.yml:ro
+# Bearer token for the authenticated :4318 receiver, mounted as a FILE rather than an env
+# var: bearertokenauthextension reads it with `filename:`, which keeps the value out of
+# the rendered config (that tree is committed) and out of the process environment.
+Secret=otel_bearer_token,type=mount,target=/run/secrets/otel_bearer_token
 Exec=--config=/etc/otelcol/config.yml
 AutoUpdate=registry
 

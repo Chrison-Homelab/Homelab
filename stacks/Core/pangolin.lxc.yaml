@@ -330,6 +330,26 @@ spec:
       #      SSH resource here only stops it being re-created. It must be deleted ONCE by hand in
       #      Pangolin, or two front doors to the same shell stay open. Same footgun as the
       #      lab-zone Home Assistant twin above.
+      # OTel collector's OTLP/HTTP receiver (:4318) — Claude Code telemetry from the Mac
+      # and the work laptop (#517 follow-up).
+      #
+      # sso: false is REQUIRED and is not a shortcut: Claude Code sends a static
+      # `Authorization: Bearer` header and cannot complete the SSO interstitial, so an
+      # SSO-gated resource would simply reject every export.
+      #
+      # What makes that acceptable here — unlike the sso:false media apps, which fall back
+      # to their own login page — is that the receiver itself authenticates. The collector
+      # runs bearertokenauthextension on :4318 (see Monitoring/.../otel-collector.yml), so
+      # an unauthenticated POST is rejected at the collector, not merely unhelpful.
+      # If that extension is ever removed, THIS RESOURCE MUST GO WITH IT: without it this
+      # hostname is an open write path into Prometheus, Tempo and Loki.
+      #
+      # A NAME, not an address (#303) — same as Pulse above, resolvable from CT 2013.
+      - name: OTel Collector (Claude Code telemetry)
+        subdomain: otel
+        zone: lab
+        sso: false
+        target: { ip: monitoring.homelab.chrison.internal, port: 4318, method: http }
       - name: Shell host
         subdomain: shell
         zone: lab

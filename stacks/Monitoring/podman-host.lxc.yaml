@@ -112,5 +112,9 @@ spec:
       unifi_api_key: UNIFI_API_KEY
       # Grafana's alert contact point posts here (HA automation webhook).
       ha_alert_webhook_url: HA_ALERT_WEBHOOK_URL
+      # Gates the OTLP/HTTP receiver on :4318, which Pangolin publishes as
+      # otel.lab.chrison.dev for Claude Code telemetry. The :4317 gRPC receiver stays
+      # unauthenticated for PowerOrchestrator on the LAN.
+      otel_bearer_token: OTEL_BEARER_TOKEN
       authentik_grafana_client_id: AUTHENTIK_GRAFANA_CLIENT_ID
       authentik_grafana_client_secret: AUTHENTIK_GRAFANA_CLIENT_SECRET
