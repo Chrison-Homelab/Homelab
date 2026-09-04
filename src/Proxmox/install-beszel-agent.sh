@@ -59,6 +59,8 @@ PORT="45876"
 TOKEN_FILE=""
 KEY_FILE=""
 TOKEN_STDIN=false
+SYSTEM_NAME=""
+SMART_INTERVAL="15m"
 MODE="install"
 DRY_RUN=false
 
@@ -79,6 +81,8 @@ while [ $# -gt 0 ]; do
     --key-file)    KEY_FILE="${2:?--key-file needs a path}"; shift 2 ;;
     --hub-url)     HUB_URL="${2:?--hub-url needs a value}"; shift 2 ;;
     --port)        PORT="${2:?--port needs a value}"; shift 2 ;;
+    --system-name) SYSTEM_NAME="${2:?--system-name needs a value}"; shift 2 ;;
+    --smart-interval) SMART_INTERVAL="${2:?--smart-interval needs a value}"; shift 2 ;;
     --uninstall)   MODE="uninstall"; shift ;;
     --dry-run)     DRY_RUN=true; shift ;;
     -h|--help)     sed -n '2,52p' "$0"; exit 0 ;;
@@ -140,6 +144,36 @@ if [ "$TOKEN_STDIN" = true ]; then TOKEN_SRC="stdin"
 elif [ -n "$TOKEN_FILE" ];  then TOKEN_SRC="$TOKEN_FILE"
 else                             TOKEN_SRC="environment"; fi
 note "token: (from $TOKEN_SRC, not argv)"
+[ -n "$SYSTEM_NAME" ] && note "name:  $SYSTEM_NAME (SYSTEM_NAME; the LXCs are all literally hostname 'podman-host')"
+
+
+# ── SMART_INTERVAL ──────────────────────────────────────────────────────────────
+# The agent does NOT poll SMART on its own timer. `smartManager.Refresh` is called from
+# agent/handlers.go, i.e. only when the HUB asks, and the hub asks on the interval the
+# agent advertises. With no SMART_INTERVAL set, disk health was collected once at agent
+# start and then sat unchanged for 45+ minutes — which reads as "SMART is broken" when it
+# is really "nobody has asked yet". Setting it explicitly makes the cadence ours.
+
+# ── two host shapes, detected rather than declared ──────────────────────────────
+# A PVE NODE has physical disks and no podman: the agent stays as upstream's
+# unprivileged `beszel` user and gets CAP_SYS_RAWIO so it can read SMART.
+#
+# A PODMAN HOST (the quadlet LXCs — Monitoring 4001, Media 5114, SmartHome 6004,
+# DevOps 3006) has no physical disks at all, so CAP_SYS_RAWIO would buy nothing. What it
+# does have is a ROOTLESS podman socket, which is what Beszel reads container stats from.
+#
+# That socket cannot be reached by adding `beszel` to a group: /run/user/1000 is mode
+# 0700, so the parent directory blocks traversal no matter what the socket itself allows.
+# Only root or the owning user can get in. Running the agent AS `podman` is the
+# lower-privilege of the two, and it is the user that already owns every container here.
+PODMAN_UID="$(id -u podman 2>/dev/null || true)"
+PODMAN_SOCK="/run/user/${PODMAN_UID:-0}/podman/podman.sock"
+if [ -n "$PODMAN_UID" ] && [ -S "$PODMAN_SOCK" ]; then
+  IS_PODMAN_HOST=true
+  note "podman host: reading containers from $PODMAN_SOCK as user 'podman'"
+else
+  IS_PODMAN_HOST=false
+fi
 
 if [ "$DRY_RUN" = true ]; then
   note "would run: /tmp/beszel-install.sh -k '<hub key>' -url '$HUB_URL' -p '$PORT'   (no -t)"
@@ -158,7 +192,15 @@ rm -f /tmp/beszel-install.sh
 
 # ── token into a mode-600 EnvironmentFile, referenced from a drop-in ────────────
 umask 077
-printf 'TOKEN=%s\nHUB_URL=%s\n' "$TOKEN" "$HUB_URL" > "$ENV_FILE"
+{
+  printf 'TOKEN=%s\nHUB_URL=%s\n' "$TOKEN" "$HUB_URL"
+  # All four podman hosts share the hostname `podman-host` — generic by deliberate
+  # convention in the stack yamls — so without this they are indistinguishable in the
+  # hub. Their machine-ids DO differ, so fingerprints do not collide; this is purely
+  # about the display name. Read by the agent as SYSTEM_NAME (agent/client.go).
+  [ -n "$SYSTEM_NAME" ] && printf 'SYSTEM_NAME=%s\n' "$SYSTEM_NAME"
+  [ -n "$SMART_INTERVAL" ] && printf 'SMART_INTERVAL=%s\n' "$SMART_INTERVAL"
+} > "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 chown root:root "$ENV_FILE"
 
@@ -191,9 +233,22 @@ EnvironmentFile=$ENV_FILE
 #
 # This is a real grant, but a small delta: the disk group already confers read/write on
 # the raw block devices. Running the agent as root instead would be strictly worse.
+EOF
+
+if [ "$IS_PODMAN_HOST" = true ]; then
+  cat >> "$DROPIN" <<EOF
+# Podman host: no physical disks, so no CAP_SYS_RAWIO. Run as the socket's owner and
+# point Beszel's Docker client at podman's Docker-compatible API.
+User=podman
+Group=podman
+Environment=DOCKER_HOST=unix://$PODMAN_SOCK
+EOF
+else
+  cat >> "$DROPIN" <<EOF
 AmbientCapabilities=CAP_SYS_RAWIO
 CapabilityBoundingSet=CAP_SYS_RAWIO
 EOF
+fi
 chmod 644 "$DROPIN"
 
 systemctl daemon-reload
@@ -232,6 +287,21 @@ fi
 # the warning below could never fire and this check would always claim success.
 AGENTLOG="$(journalctl -u beszel-agent.service --since "-2 min" --no-pager -o cat 2>/dev/null || true)"
 case "$AGENTLOG" in *"no valid SMART data found"*) SMART_ERR=true ;; *) SMART_ERR=false ;; esac
+
+if [ "$IS_PODMAN_HOST" = true ]; then
+  # Containers are the point here, not disks — assert on what the agent will actually read.
+  NCONT="$(curl -s --max-time 5 --unix-socket "$PODMAN_SOCK" http://d/v1.41/containers/json 2>/dev/null \
+            | grep -o '"Id"' | wc -l | tr -d ' ' || echo 0)"
+  if [ "${NCONT:-0}" -gt 0 ]; then
+    note "verified: podman socket reachable, $NCONT running container(s) visible"
+  else
+    printf 'WARNING: the podman socket returned no containers — Beszel will show none.\n' >&2
+    printf '  Check: curl --unix-socket %s http://d/v1.41/containers/json\n' "$PODMAN_SOCK" >&2
+  fi
+  echo "Done. Agent active; check the hub at $HUB_URL"
+  exit 0
+fi
+
 if [ "$SMART_ERR" = true ]; then
   printf 'WARNING: agent reports "no valid SMART data found" — SMART is NOT being collected.\n' >&2
   printf '  Check that the drop-in granted CAP_SYS_RAWIO:\n' >&2

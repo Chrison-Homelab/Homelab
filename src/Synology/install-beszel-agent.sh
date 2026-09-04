@@ -64,6 +64,7 @@ HUB_URL="${BESZEL_HUB_URL:-http://monitoring.homelab.chrison.internal:8090}"
 PORT="45876"
 VERSION=""                       # empty = latest
 SMARTCTL="/usr/local/bin/smartctl-7"
+SMART_INTERVAL="15m"
 TOKEN_FILE=""
 KEY_FILE=""
 TOKEN_STDIN=false
@@ -90,6 +91,7 @@ while [ $# -gt 0 ]; do
     --port)          PORT="${2:?--port needs a value}"; shift 2 ;;
     --version)       VERSION="${2:?--version needs a value}"; shift 2 ;;
     --smartctl-path) SMARTCTL="${2:?--smartctl-path needs a path}"; shift 2 ;;
+    --smart-interval) SMART_INTERVAL="${2:?--smart-interval needs a value}"; shift 2 ;;
     --uninstall)     MODE="uninstall"; shift ;;
     --dry-run)       DRY_RUN=true; shift ;;
     -h|--help)       sed -n '2,60p' "$0"; exit 0 ;;
@@ -180,6 +182,14 @@ install -m 755 -o root -g root "$STAGE/beszel-agent" "$BIN"
 mkdir -p "$SHIM_DIR"
 ln -sf "$SMARTCTL" "$SHIM_DIR/smartctl"
 
+
+# ── SMART_INTERVAL ──────────────────────────────────────────────────────────────
+# The agent does NOT poll SMART on its own timer. `smartManager.Refresh` is called from
+# agent/handlers.go, i.e. only when the HUB asks, and the hub asks on the interval the
+# agent advertises. With no SMART_INTERVAL set, disk health was collected once at agent
+# start and then sat unchanged for 45+ minutes — which reads as "SMART is broken" when it
+# is really "nobody has asked yet". Setting it explicitly makes the cadence ours.
+
 # ── SMART_DEVICES: force -d sat on drives that --scan mislabels as scsi ─────────
 # `smartctl --scan` on DSM reports every drive as "-d scsi", and Beszel trusts that
 # type and picks its SCSI parser. The SCSI parser finds no ATA attributes, so the hub
@@ -217,6 +227,7 @@ umask 077
 {
   printf 'TOKEN=%s\nHUB_URL=%s\nKEY="%s"\nLISTEN=%s\n' "$TOKEN" "$HUB_URL" "$KEY" "$PORT"
   [ -n "$SMART_DEVICES" ] && printf 'SMART_DEVICES=%s\n' "$SMART_DEVICES"
+  [ -n "$SMART_INTERVAL" ] && printf 'SMART_INTERVAL=%s\n' "$SMART_INTERVAL"
 } > "$ENV_FILE"
 chmod 600 "$ENV_FILE"; chown root:root "$ENV_FILE"
 
