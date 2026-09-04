@@ -60,13 +60,18 @@ public sealed record OrchestratorOptions
             ["nuc-01"] = "b8:ae:ed:72:82:fe",
         };
 
-    /// <summary>Legacy /23 node addresses (the cluster's management IPs).</summary>
+    /// <summary>
+    /// Node addresses BY NAME — the UniFi local-DNS records, never IPs. The nodes moved from the
+    /// legacy /23 to VLAN 1000 (#37) and these defaults still carried the old addresses, so with
+    /// no ORCH_NODE_ADDRS override the orchestrator was addressing nodes that no longer existed.
+    /// A re-address is now a UniFi reservation edit, which is the whole point of the names.
+    /// </summary>
     public static IReadOnlyDictionary<string, string> DefaultNodeAddresses { get; } =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            ["desktop-01"] = "192.168.179.2",
-            ["hpe-01"] = "192.168.179.3",
-            ["nuc-01"] = "192.168.179.1",
+            ["desktop-01"] = "desktop-01.homelab.chrison.internal",
+            ["hpe-01"] = "hpe-01.homelab.chrison.internal",
+            ["nuc-01"] = "nuc-01.homelab.chrison.internal",
         };
 
     /// <summary>Build options from environment variables, falling back to the defaults above.</summary>
