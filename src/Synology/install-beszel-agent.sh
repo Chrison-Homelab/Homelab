@@ -180,8 +180,44 @@ install -m 755 -o root -g root "$STAGE/beszel-agent" "$BIN"
 mkdir -p "$SHIM_DIR"
 ln -sf "$SMARTCTL" "$SHIM_DIR/smartctl"
 
+# ── SMART_DEVICES: force -d sat on drives that --scan mislabels as scsi ─────────
+# `smartctl --scan` on DSM reports every drive as "-d scsi", and Beszel trusts that
+# type and picks its SCSI parser. The SCSI parser finds no ATA attributes, so the hub
+# records state=UNKNOWN, temp=0, hours=0 for every disk — and the agent logs NOTHING,
+# because from its point of view the scan succeeded. Measured on DS1813-01 /dev/sda:
+#   -d scsi -> ata_smart_attributes: False, smart_status: None, temperature: 0
+#   -d sat  -> ata_smart_attributes: True,  PASSED,             temperature: 38, 43953h
+#
+# Beszel never retries with -d sat (the Pulse agent does, which is why Pulse reads these
+# disks fine). The supported override is a "path:type" hint in SMART_DEVICES, so probe
+# each drive and pin the type we proved works, rather than assuming all of them.
+probe_sat_devices() {
+  local found="" dev out
+  for dev in /dev/sd?; do
+    [ -e "$dev" ] || continue
+    # NOTE: capture first, then match. `smartctl ... | grep -q` looks correct and is
+    # NOT: grep -q exits on the first match, smartctl dies with SIGPIPE (rc 141), and
+    # `set -o pipefail` turns that into a failed pipeline — so every device is silently
+    # missed. Measured: rc=141 on all four drives.
+    out="$("$SMARTCTL" -j -a -d sat "$dev" 2>/dev/null || true)"
+    case "$out" in
+      *'"ata_smart_attributes"'*) found="${found:+$found,}${dev}:sat" ;;
+    esac
+  done
+  printf '%s' "$found"
+}
+SMART_DEVICES="$(probe_sat_devices)"
+if [ -n "$SMART_DEVICES" ]; then
+  note "SMART_DEVICES: $SMART_DEVICES"
+else
+  printf 'WARNING: no drive answered smartctl -d sat — disk health will read UNKNOWN.\n' >&2
+fi
+
 umask 077
-printf 'TOKEN=%s\nHUB_URL=%s\nKEY="%s"\nLISTEN=%s\n' "$TOKEN" "$HUB_URL" "$KEY" "$PORT" > "$ENV_FILE"
+{
+  printf 'TOKEN=%s\nHUB_URL=%s\nKEY="%s"\nLISTEN=%s\n' "$TOKEN" "$HUB_URL" "$KEY" "$PORT"
+  [ -n "$SMART_DEVICES" ] && printf 'SMART_DEVICES=%s\n' "$SMART_DEVICES"
+} > "$ENV_FILE"
 chmod 600 "$ENV_FILE"; chown root:root "$ENV_FILE"
 
 # Our own unit — upstream's installer cannot run here (see the header). Deliberately
@@ -225,15 +261,30 @@ if grep -q "$TOKEN" "$UNIT" 2>/dev/null; then
 fi
 note "verified: token is only in $ENV_FILE (mode 600), not the unit"
 
-# SMART is the entire point of putting an agent on the NAS, so check it rather than
-# assume — "no valid SMART data found" leaves a healthy-looking agent and empty panels.
+# SMART is the entire point of putting an agent on the NAS, so check it.
+#
+# NOTE ON WHAT THIS CAN AND CANNOT PROVE. An empty agent log is NOT evidence of success:
+# when --scan mislabels the drives as scsi, the agent parses nothing, logs nothing, and
+# the hub silently shows UNKNOWN/0°C/0h. That false reassurance is exactly how this was
+# missed the first time round. So assert on the DATA, not on the absence of errors.
 sleep 5
-if journalctl -u beszel-agent.service --since "-2 min" --no-pager -o cat 2>/dev/null \
-     | grep -q "no valid SMART data found"; then
-  printf 'WARNING: agent reports "no valid SMART data found" — disk health is NOT being collected.\n' >&2
-  printf '  Check the shim:  sudo -u root env PATH=%s smartctl -j -a /dev/sda | head\n' "$SHIM_DIR" >&2
+AGENTLOG="$(journalctl -u beszel-agent.service --since "-2 min" --no-pager -o cat 2>/dev/null || true)"
+case "$AGENTLOG" in *"no valid SMART data found"*) SMART_ERR=true ;; *) SMART_ERR=false ;; esac
+if [ "$SMART_ERR" = true ]; then
+  printf 'WARNING: agent reports "no valid SMART data found" — disk health is NOT collected.\n' >&2
+elif [ -z "$SMART_DEVICES" ]; then
+  printf 'WARNING: no SATA devices were pinned, so the hub will show UNKNOWN for every disk.\n' >&2
 else
-  note "verified: no SMART collection errors in the agent log"
+  # Positive check: the exact command the agent runs for the first pinned device.
+  FIRST_DEV="${SMART_DEVICES%%:*}"
+  PROBE="$("$SMARTCTL" -j -a -d sat "$FIRST_DEV" 2>/dev/null || true)"
+  case "$PROBE" in *'"ata_smart_attributes"'*) OK=true ;; *) OK=false ;; esac
+  if [ "$OK" = true ]; then
+    note "verified: $FIRST_DEV returns ATA attributes under the pinned -d sat type"
+    note "  confirm end-to-end in the hub — a disk showing UNKNOWN/0°C means it did not land"
+  else
+    printf 'WARNING: %s returned no ATA attributes under -d sat.\n' "$FIRST_DEV" >&2
+  fi
 fi
 
 echo "Done. Agent active; check the hub at $HUB_URL"
