@@ -1,0 +1,15 @@
+# Bookmarks — things that are not homelab services. Static.
+- Repo:
+    - Homelab:
+        - abbr: HL
+          href: https://github.com/Chrison-Homelab/Homelab
+    - Issues:
+        - abbr: IS
+          href: https://github.com/Chrison-Homelab/Homelab/issues
+- Docs:
+    - ADRs:
+        - abbr: AD
+          href: https://github.com/Chrison-Homelab/Homelab/tree/main/docs/adr
+    - Pangolin:
+        - abbr: PG
+          href: https://pangolin.chrison.dev

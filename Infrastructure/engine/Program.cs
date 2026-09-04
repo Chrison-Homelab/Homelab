@@ -30,6 +30,11 @@ using Homelab.Infrastructure.Unifi;
 //                                         #   be converged or the member fails (#306).
 //   homelab-infra validate <path>        # validate a shape file / stack dir / nodes dir
 //                                         #   against shape.schema.json (CI plan gate)
+//   homelab-infra dashboard <stacks-dir> [--out f] [--check] [--deploy]
+//                                         # render Homepage services.yaml from every stack's
+//                                         #   metadata.services (ADR-0012); --deploy pushes it
+//                                         #   to the host declaring config.dashboard; --check
+//                                         #   exits 3 on an undeclared public route / secret
 //
 // PVE config comes from environment variables:
 //   PROXMOX_BASE_URL   e.g. https://hpe-01.homelab.chrison.internal:8006/api2/json
@@ -55,8 +60,10 @@ switch (command)
         return await RunUnifiReservationReport(args);
     case "validate":
         return RunValidate(args);
+    case "dashboard":
+        return await Homelab.Infrastructure.Dashboard.DashboardCommand.RunAsync(args, new NodeExec(), Console.Out, Console.Error);
     default:
-        Console.Error.WriteLine($"Unknown command '{command}'. Supported: discover, discover-diff, discover-unifi, converge, converge-unifi, unifi-reservations, validate");
+        Console.Error.WriteLine($"Unknown command '{command}'. Supported: discover, discover-diff, discover-unifi, converge, converge-unifi, unifi-reservations, validate, dashboard");
         return 1;
 }
 

@@ -27,12 +27,16 @@ public static class ShapeVars
 
     // Expands every `${VAR}` under `config`, in place. `origin` only names the file in
     // the error. Returns the number of substitutions made.
-    public static int Expand(Dictionary<string, object?> config, SecretsEnv vars, string origin)
+    //
+    // `lenient` is for READ-ONLY renderers that never act on config — the dashboard render
+    // runs on a runner with no secrets.env and only needs metadata; an unresolved `${VAR}` is
+    // left as its literal text instead of failing the load. Converge never passes it.
+    public static int Expand(Dictionary<string, object?> config, SecretsEnv vars, string origin, bool lenient = false)
     {
         var missing = new SortedSet<string>(StringComparer.Ordinal);
         var count = 0;
         WalkMap(config, vars, missing, ref count);
-        if (missing.Count > 0)
+        if (missing.Count > 0 && !lenient)
             throw new InvalidOperationException(
                 $"shape '{origin}' references unset variable(s): {string.Join(", ", missing)}. " +
                 "These are config values kept out of the public repo — run scripts/secrets-sync.sh " +

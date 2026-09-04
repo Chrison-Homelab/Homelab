@@ -1,0 +1,49 @@
+# Homepage — the homelab dashboard (ADR-0012, #47). UI on :3010 (3000 is Grafana).
+#
+# CONFIG IS NOT HAND-WRITTEN. settings.yaml / widgets.yaml / bookmarks.yaml are static assets
+# under podman-host/assets/homepage/. services.yaml — the actual list of services — is RENDERED
+# from every shape's `metadata.services` across all stacks by `homelab-infra dashboard` and
+# pushed here by the `dashboard` workflow on every merge to main (and by `./build.sh Dashboard`).
+# Editing services.yaml on the host is pointless; the next render overwrites it.
+#
+# Runs as container-root, which rootless podman maps to the `podman` user — same as pulse —
+# so the config dir it writes (logs/, a cache) is owned by the user that owns the tree.
+#
+# Secrets arrive as HOMEPAGE_VAR_<NAME> and are referenced in the rendered services.yaml as
+# {{HOMEPAGE_VAR_<NAME>}}; Homepage proxies every widget call server-side, so the key never
+# reaches the browser. `homelab-infra dashboard --check` fails if a shape's widget names a
+# secret that is not exported below — this file and the shapes' `keyFrom:` must agree.
+
+[Unit]
+Description=Homepage (homelab dashboard)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=ghcr.io/gethomepage/homepage:latest
+ContainerName=homepage
+Network=monitoring.network
+PublishPort=3010:3000
+Volume=/home/podman/monitoring/homepage:/app/config
+AutoUpdate=registry
+
+# Host-header allowlist Homepage enforces (required since v1). LAN name + address, dashboard port.
+Environment=HOMEPAGE_ALLOWED_HOSTS=monitoring.homelab.chrison.internal:3010,10.10.204.35:3010,home.homelab.chrison.internal:3010
+
+# Widget credentials — names only here; values come from podman secrets seeded from secrets.env
+# via the shape's config.secrets. Keep this list in step with the shapes' widget.*From fields.
+Secret=sonarr_api_key,type=env,target=HOMEPAGE_VAR_SONARR_API_KEY
+Secret=radarr_api_key,type=env,target=HOMEPAGE_VAR_RADARR_API_KEY
+Secret=prowlarr_api_key,type=env,target=HOMEPAGE_VAR_PROWLARR_API_KEY
+Secret=unifi_api_key,type=env,target=HOMEPAGE_VAR_UNIFI_API_KEY
+Secret=pulse_api_token,type=env,target=HOMEPAGE_VAR_PULSE_API_TOKEN
+Secret=homeassistant_token,type=env,target=HOMEPAGE_VAR_HOMEASSISTANT_TOKEN
+Secret=grafana_admin_password,type=env,target=HOMEPAGE_VAR_GF_SECURITY_ADMIN_PASSWORD
+
+[Service]
+ExecStartPre=/usr/bin/mkdir -p /home/podman/monitoring/homepage
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

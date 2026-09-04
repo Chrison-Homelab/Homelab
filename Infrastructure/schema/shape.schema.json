@@ -38,6 +38,30 @@
         "description": {
           "type": "string",
           "description": "Optional human note about this shape."
+        },
+        "services": {
+          "type": "array",
+          "description": "What this guest offers a human — one entry per UI — for the generated dashboard (ADR-0012). Rendered into Homepage's services.yaml by `homelab-infra dashboard`; a new app appears the moment its shape declares one. `url` is the INTERNAL address; the public URL and its SSO gate are derived by name from the Pangolin resources / cloudflared ingress, never declared twice.",
+          "items": {
+            "type": "object",
+            "required": ["name", "url"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string", "description": "Display name. Also the match key (case/punctuation-insensitive) against Pangolin resource names/subdomains and cloudflared ingress hostnames." },
+              "group": { "type": "string", "description": "Dashboard group. Defaults to the owning stack's name." },
+              "url": { "type": "string", "format": "uri", "description": "Internal (LAN) URL — the tile's link and its health probe." },
+              "icon": { "type": "string", "description": "dashboard-icons slug (e.g. 'sonarr') or any Homepage icon reference. Defaults to the lowercased name." },
+              "description": { "type": "string" },
+              "public": { "type": "string", "format": "uri", "description": "Explicit public URL, only when derivation by name cannot match." },
+              "widget": {
+                "type": "object",
+                "required": ["type"],
+                "additionalProperties": true,
+                "description": "A Homepage service widget, verbatim (gethomepage.dev/widgets). Any key ending in `From` (keyFrom, passwordFrom, usernameFrom) names a SECRET the dashboard host's quadlet exports as HOMEPAGE_VAR_<NAME> — never a value. `url` defaults to the service url.",
+                "properties": { "type": { "type": "string" } }
+              }
+            }
+          }
         }
       }
     },

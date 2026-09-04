@@ -1,0 +1,30 @@
+# Homepage settings — static. The service list itself is services.yaml, which is RENDERED
+# from the shapes (ADR-0012); do not add services here or there by hand.
+title: Homelab
+theme: dark
+color: slate
+headerStyle: boxed
+hideVersion: true
+statusStyle: dot
+target: _self
+quicklaunch:
+  searchDescriptions: true
+  hideInternetSearch: true
+layout:
+  # Groups are the stack names (or an explicit `group:` on the service). Rows of 4 keep the
+  # arr fleet readable; everything else is small enough for a column.
+  Media:
+    style: row
+    columns: 4
+  Core:
+    style: row
+    columns: 3
+  Monitoring:
+    style: row
+    columns: 3
+  SmartHome:
+    style: row
+    columns: 3
+  DevOps:
+    style: row
+    columns: 3
