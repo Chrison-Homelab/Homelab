@@ -39,6 +39,12 @@ Secret=unifi_api_key,type=env,target=HOMEPAGE_VAR_UNIFI_API_KEY
 Secret=pulse_api_token,type=env,target=HOMEPAGE_VAR_PULSE_API_TOKEN
 Secret=homeassistant_token,type=env,target=HOMEPAGE_VAR_HOMEASSISTANT_TOKEN
 Secret=grafana_admin_password,type=env,target=HOMEPAGE_VAR_GF_SECURITY_ADMIN_PASSWORD
+Secret=bazarr_api_key,type=env,target=HOMEPAGE_VAR_BAZARR_API_KEY
+Secret=seerr_api_key,type=env,target=HOMEPAGE_VAR_SEERR_API_KEY
+Secret=plex_token,type=env,target=HOMEPAGE_VAR_PLEX_TOKEN
+Secret=abs_api_key,type=env,target=HOMEPAGE_VAR_ABS_API_KEY
+Secret=qbit_user,type=env,target=HOMEPAGE_VAR_QBIT_USER
+Secret=qbit_password,type=env,target=HOMEPAGE_VAR_QBIT_PASSWORD
 
 [Service]
 ExecStartPre=/usr/bin/mkdir -p /home/podman/monitoring/homepage
