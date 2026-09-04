@@ -14,6 +14,15 @@ on:
       - 'stacks/**'
       - 'Infrastructure/engine/Dashboard/**'
       - '.github/workflows/dashboard.yml'
+  # The hourly submodule bump is how a stack repo's change reaches main — and it merges with
+  # the workflow's own GITHUB_TOKEN, whose pushes never trigger `on: push` in other workflows.
+  # So run after it completes (this fires regardless of the token that pushed), and hourly as
+  # a backstop; the deploy is a sha-compared no-op when nothing changed, so both are cheap.
+  workflow_run:
+    workflows: [bump-submodules]
+    types: [completed]
+  schedule:
+    - cron: '30 * * * *'
   workflow_dispatch:
 jobs:
   render-and-push:
