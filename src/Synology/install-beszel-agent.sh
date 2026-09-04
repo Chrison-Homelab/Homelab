@@ -65,6 +65,7 @@ PORT="45876"
 VERSION=""                       # empty = latest
 SMARTCTL="/usr/local/bin/smartctl-7"
 SMART_INTERVAL="15m"
+EXCLUDE_MDRAID=true
 TOKEN_FILE=""
 KEY_FILE=""
 TOKEN_STDIN=false
@@ -91,6 +92,7 @@ while [ $# -gt 0 ]; do
     --port)          PORT="${2:?--port needs a value}"; shift 2 ;;
     --version)       VERSION="${2:?--version needs a value}"; shift 2 ;;
     --smartctl-path) SMARTCTL="${2:?--smartctl-path needs a path}"; shift 2 ;;
+    --keep-mdraid)   EXCLUDE_MDRAID=false; shift ;;
     --smart-interval) SMART_INTERVAL="${2:?--smart-interval needs a value}"; shift 2 ;;
     --uninstall)     MODE="uninstall"; shift ;;
     --dry-run)       DRY_RUN=true; shift ;;
@@ -223,11 +225,35 @@ else
   printf 'WARNING: no drive answered smartctl -d sat — disk health will read UNKNOWN.\n' >&2
 fi
 
+
+# ── EXCLUDE_SMART: drop the md* arrays, keep the physical disks ─────────────────
+# DSM builds md0 (system) and md1 (swap) as RAID1 across every bay the chassis HAS,
+# not every bay that is POPULATED. On a DS1813+ with 4 of 8 bays filled that is
+# `[8/4] [UUUU____]` — "clean, degraded" with **Failed Devices: 0** and every present
+# member `in_sync`. Beszel reports those as FAILED, which is alarming and wrong. It is
+# the Synology form of the QNAP bug fixed in henrygd/beszel#2065.
+#
+# We do not want array health from here anyway — the physical disks are the point, and
+# real array state is better read from DSM itself. So exclude every md* device.
+#
+# Enumerated, not hard-coded: EXCLUDE_SMART is an exact-match set with no wildcard
+# support (`filterExcludedDevices` does a map lookup on device.Name), so a hard-coded
+# list would silently stop covering a newly created array.
+EXCLUDE_SMART=""
+if [ "$EXCLUDE_MDRAID" = true ]; then
+  for m in /dev/md*; do
+    [ -b "$m" ] || continue
+    EXCLUDE_SMART="${EXCLUDE_SMART:+$EXCLUDE_SMART,}$m"
+  done
+  [ -n "$EXCLUDE_SMART" ] && note "excluding mdraid: $EXCLUDE_SMART"
+fi
+
 umask 077
 {
   printf 'TOKEN=%s\nHUB_URL=%s\nKEY="%s"\nLISTEN=%s\n' "$TOKEN" "$HUB_URL" "$KEY" "$PORT"
   [ -n "$SMART_DEVICES" ] && printf 'SMART_DEVICES=%s\n' "$SMART_DEVICES"
   [ -n "$SMART_INTERVAL" ] && printf 'SMART_INTERVAL=%s\n' "$SMART_INTERVAL"
+  [ -n "$EXCLUDE_SMART" ] && printf 'EXCLUDE_SMART=%s\n' "$EXCLUDE_SMART"
 } > "$ENV_FILE"
 chmod 600 "$ENV_FILE"; chown root:root "$ENV_FILE"
 
