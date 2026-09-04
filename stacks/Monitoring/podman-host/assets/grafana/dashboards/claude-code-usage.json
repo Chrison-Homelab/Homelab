@@ -9,7 +9,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "refresh": "1m",
   "time": {
     "from": "now-7d",
@@ -510,7 +510,7 @@
     {
       "type": "timeseries",
       "title": "Sessions started",
-      "description": "Per-bucket growth within live sessions. A one-shot `claude -p` run reports once and shows nothing here \u2014 see the totals above for those.",
+      "description": "Sessions whose series first appears in the bucket. increase() cannot be used here: a backfilled session is a single sample of 1 and a live session's counter never climbs above 1 either, so increase() reads 0 for both. Counting newly-appearing series works for live and backfilled sessions alike.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -528,7 +528,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (exported_instance) (increase(claude_code_session_count_total{exported_instance=~\"$machine\"}[$__interval]))",
+          "expr": "count by (exported_instance) (\n  max_over_time(claude_code_session_count_total{exported_instance=~\"$machine\"}[$__interval])\n  unless\n  max_over_time(claude_code_session_count_total{exported_instance=~\"$machine\"}[$__interval] offset $__interval)\n)",
           "legendFormat": "{{exported_instance}}",
           "range": true,
           "refId": "A"
