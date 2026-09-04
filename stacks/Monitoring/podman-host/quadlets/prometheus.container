@@ -41,6 +41,21 @@ Volume=/home/podman/monitoring/config/rules:/etc/prometheus/rules:ro
 Volume=/home/podman/monitoring/data/prometheus:/prometheus
 AutoUpdate=registry
 
+# Exec REPLACES the image's default command, so the two flags it ships with are restated
+# here verbatim (verified with `podman inspect --format '{{json .Config.Cmd}}'`) rather
+# than assumed — dropping --config.file would silently start Prometheus on its own default
+# config and quietly scrape nothing.
+#
+# Retention raised 15d -> 400d for Claude Code usage history. This is cheap: Prometheus
+# was using 182 MB for 15 days, so a year is on the order of 4-5 GB. The size cap is the
+# safety valve — it bounds the TSDB regardless of how many series arrive, so a runaway
+# cardinality cannot fill the CT and take Grafana, Loki and Pulse down with it.
+#
+# ⚠ Exec= is a [Container] key. Putting it next to ExecStartPre in [Service] parses
+# without error and is silently ignored by the quadlet generator — the container just
+# keeps the image default.
+Exec=--config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --storage.tsdb.retention.time=400d --storage.tsdb.retention.size=12GB
+
 [Service]
 ExecStartPre=/usr/bin/mkdir -p /home/podman/monitoring/data/prometheus
 Restart=always
