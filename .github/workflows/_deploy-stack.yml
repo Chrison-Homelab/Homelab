@@ -126,6 +126,10 @@ jobs:
       HA_ALERT_WEBHOOK_URL: ${{ secrets.HA_ALERT_WEBHOOK_URL }}
       PULSE_API_TOKEN: ${{ secrets.PULSE_API_TOKEN }}
       HOMEASSISTANT_TOKEN: ${{ secrets.HOMEASSISTANT_TOKEN }}
+      BAZARR_API_KEY: ${{ secrets.BAZARR_API_KEY }}
+      SEERR_API_KEY: ${{ secrets.SEERR_API_KEY }}
+      PLEX_TOKEN: ${{ secrets.PLEX_TOKEN }}
+      ABS_API_KEY: ${{ secrets.ABS_API_KEY }}
       UNIFI_LOCAL_HOST: '192.168.178.1'
       UNIFI_BASE_URL: 'https://192.168.178.1/proxy/network/integration'
       UNIFI_VERIFY_TLS: 'false'
