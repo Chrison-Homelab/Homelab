@@ -780,7 +780,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
                 : $"edge '{edge}': leave stock Traefik (Let's Encrypt public ingress)";
             yield return "restart pangolin + gerbil if config changed (idempotent via managed marker)";
         }
-        yield return "reconcile declared resources via the integration API (add-only by fullDomain)";
+        yield return "reconcile declared resources via the integration API (add-only by fullDomain; per-resource access rules reconciled where declared)";
         foreach (var idp in DeclaredIdps(s))
             yield return $"reconcile identity provider '{idp.Name}' + its claim→role mapping via the integration API";
     }
@@ -1336,7 +1336,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
                     ? tarr.EnumerateArray().Count() : 0);
         }
 
-        int total = 0, created = 0, retargeted = 0, regated = 0;
+        int total = 0, created = 0, retargeted = 0, regated = 0, ruled = 0;
         var notes = new List<string>();
         foreach (var it in items)
         {
@@ -1416,6 +1416,11 @@ public sealed class PangolinProvisioner : IAppProvisioner
                     notes.Add($"{fqdn}: ssl {live.Ssl}→{publicWildcard}, sso {live.Sso}→{sso}");
                     regated++;
                 }
+
+                var (rnotes, rchanged, rfail) = await ReconcileRulesAsync(pg, live.Id, rd, fqdn, ct);
+                if (rfail is not null) return (null, false, rfail);
+                notes.AddRange(rnotes);
+                if (rchanged) ruled++;
                 continue;
             }
 
@@ -1434,12 +1439,113 @@ public sealed class PangolinProvisioner : IAppProvisioner
             // ssl: public-wildcard → Traefik terminates TLS (true); cloudflared → CF does (false).
             // sso: gate the resource behind Pangolin auth unless it explicitly opts out.
             await pg.CallAsync("POST", $"/resource/{resourceId}", JsonSerializer.Serialize(new { ssl = publicWildcard, sso }), ct);
+            var (cnotes, cchanged, cfail) = await ReconcileRulesAsync(pg, resourceId, rd, fqdn, ct);
+            if (cfail is not null) return (null, false, cfail);
+            notes.AddRange(cnotes);
+            if (cchanged) ruled++;
             created++;
         }
 
-        var summary = $"{total} resource(s) declared, {created} created, {retargeted} retargeted, {regated} re-gated";
+        var summary = $"{total} resource(s) declared, {created} created, {retargeted} retargeted, {regated} re-gated, {ruled} rule set(s) changed";
         if (notes.Count > 0) summary += "\n      " + string.Join("\n      ", notes);
-        return (summary, created + retargeted + regated > 0, null);
+        return (summary, created + retargeted + regated + ruled > 0, null);
+    }
+
+    // Reconcile one resource's ACCESS RULES — the per-path / per-IP layer Pangolin evaluates
+    // BEFORE the sso/pincode/password gates (badger verifySession → checkRules, when the
+    // resource's applyRules is on). This is how a native client that cannot render the SSO
+    // interstitial — Ruddarr talking to Sonarr/Radarr with an X-Api-Key header — gets through
+    // on `/api/*` while the UI on the SAME hostname stays behind SSO. Declared per resource:
+    //
+    //   rules:
+    //     - { action: ACCEPT, match: PATH, value: "/api/*" }
+    //
+    // `action` is Pangolin's own enum, kept verbatim so the shape and the UI never disagree:
+    // ACCEPT = BYPASS auth (let it through), DROP = block outright, PASS = fall through to the
+    // normal auth gates. `priority` defaults to the list position (ascending, first match
+    // wins); `enabled` defaults true. A `*` segment matches whole segments at any depth, so
+    // "/api/*" covers /api/v3/series/12 — but matching is segment-based, so "/api*" would NOT.
+    //
+    // Keyed by (match, value): declared-but-absent → create; present-but-different
+    // (action/priority/enabled) → update; LIVE RULES NOT DECLARED HERE ARE LEFT ALONE and
+    // reported — the same add-only stance the resource list takes. applyRules (without which
+    // rules are inert) is switched on only for a resource that declares rules, and only after
+    // they exist. A resource declaring no rules costs no extra calls and is not touched, so the
+    // dozen SSO-only entries behave exactly as before.
+    private static async Task<(List<string> notes, bool changed, string? failed)> ReconcileRulesAsync(
+        PangolinClient pg, int resourceId, System.Collections.IDictionary rd, string fqdn, CancellationToken ct)
+    {
+        var notes = new List<string>();
+        if (rd["rules"] is not IEnumerable<object> declared) return (notes, false, null);
+
+        var wanted = new List<(string Action, string Match, string Value, int Priority, bool Enabled)>();
+        var i = 0;
+        foreach (var o in declared)
+        {
+            i++;
+            if (o is not System.Collections.IDictionary r) continue;
+            var action = r["action"]?.ToString()?.ToUpperInvariant() ?? "";
+            var match = r["match"]?.ToString()?.ToUpperInvariant() ?? "";
+            var value = r["value"]?.ToString() ?? "";
+            // A malformed rule is a security-relevant config error — fail the apply rather than
+            // silently skipping it and leaving the resource in an undeclared state.
+            if (action is not ("ACCEPT" or "DROP" or "PASS"))
+                return (notes, false, $"pangolin: {fqdn} rule {i}: action '{action}' is not ACCEPT|DROP|PASS");
+            if (match.Length == 0 || value.Length == 0)
+                return (notes, false, $"pangolin: {fqdn} rule {i}: match and value are required");
+            var priority = int.TryParse(r["priority"]?.ToString(), out var pr) ? pr : i;
+            var enabled = !(r["enabled"] is { } en && bool.TryParse(en.ToString(), out var eb) && !eb);
+            wanted.Add((action, match, value, priority, enabled));
+        }
+        if (wanted.Count == 0) return (notes, false, null);
+
+        var (lok, lroot) = await pg.CallAsync("GET", $"/resource/{resourceId}/rules", null, ct);
+        if (!lok) return (notes, false, $"pangolin: GET rules failed for {fqdn} — cannot reconcile safely");
+        var live = new Dictionary<(string Match, string Value), (int Id, string Action, int Priority, bool Enabled)>();
+        foreach (var lr in DataArray(lroot, "rules"))
+        {
+            if (!lr.TryGetProperty("ruleId", out var rid)) continue;
+            var m = lr.TryGetProperty("match", out var mv) ? (mv.GetString() ?? "").ToUpperInvariant() : "";
+            var v = lr.TryGetProperty("value", out var vv) ? vv.GetString() ?? "" : "";
+            var a = lr.TryGetProperty("action", out var av) ? (av.GetString() ?? "").ToUpperInvariant() : "";
+            var p = lr.TryGetProperty("priority", out var pv) && pv.TryGetInt32(out var pi) ? pi : 0;
+            live[(m, v)] = (rid.GetInt32(), a, p, Truthy(lr, "enabled"));
+        }
+
+        var changed = false;
+        foreach (var w in wanted)
+        {
+            var body = JsonSerializer.Serialize(new { action = w.Action, match = w.Match, value = w.Value, priority = w.Priority, enabled = w.Enabled });
+            if (live.Remove((w.Match, w.Value), out var l))
+            {
+                if (l.Action == w.Action && l.Priority == w.Priority && l.Enabled == w.Enabled) continue;
+                var (uok, _) = await pg.CallAsync("POST", $"/resource/{resourceId}/rule/{l.Id}", body, ct);
+                if (!uok) return (notes, false, $"pangolin: failed to update rule {w.Match} {w.Value} on {fqdn}");
+                notes.Add($"{fqdn}: rule {w.Match} {w.Value}: {l.Action}/p{l.Priority}/{(l.Enabled ? "on" : "off")} → {w.Action}/p{w.Priority}/{(w.Enabled ? "on" : "off")}");
+            }
+            else
+            {
+                var (cok, _) = await pg.CallAsync("PUT", $"/resource/{resourceId}/rule", body, ct);
+                if (!cok) return (notes, false, $"pangolin: failed to create rule {w.Match} {w.Value} on {fqdn}");
+                notes.Add($"{fqdn}: rule added {w.Action} {w.Match} {w.Value}");
+            }
+            changed = true;
+        }
+        foreach (var (k, l) in live)
+            notes.Add($"{fqdn}: undeclared live rule {l.Action} {k.Match} {k.Value} — left alone, delete by hand if unwanted");
+
+        // applyRules gates the whole layer and the embedded resource list omits it, so it costs
+        // one detail call — only for resources that declare rules.
+        var (dok, droot) = await pg.CallAsync("GET", $"/resource/{resourceId}", null, ct);
+        if (!dok) return (notes, false, $"pangolin: GET resource failed for {fqdn}");
+        if (!Truthy(Data(droot), "applyRules"))
+        {
+            var (aok, _) = await pg.CallAsync("POST", $"/resource/{resourceId}", JsonSerializer.Serialize(new { applyRules = true }), ct);
+            if (!aok) return (notes, false, $"pangolin: failed to enable applyRules on {fqdn}");
+            notes.Add($"{fqdn}: rules enabled (applyRules on)");
+            changed = true;
+        }
+        return (notes, changed, null);
     }
 
     // What a live Pangolin resource looks like, as far as reconciliation cares.
