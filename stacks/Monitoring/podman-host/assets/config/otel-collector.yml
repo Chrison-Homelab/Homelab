@@ -35,6 +35,31 @@ receivers:
 processors:
   batch: {}
 
+  # Claude Code stamps EVERY metric with session.id, and a new session means a new label
+  # value forever — unbounded cardinality straight into the TSDB. Measured on a single
+  # throwaway session: 17 labels per series, 6 new series. At a few dozen sessions a day
+  # that is tens of thousands of series that no query ever groups by.
+  #
+  # user.id (a 64-char hash), user.account_id, user.account_uuid and organization.id are
+  # dropped as well: they are constant per account, so they add width to every series and
+  # distinguish nothing.
+  #
+  # KEPT deliberately: model, type (input/output/cacheRead/cacheCreation), terminal.type,
+  # query_source, start_type — the things worth grouping by — plus user.email and
+  # service.instance.id, which are how the work laptop and this Mac are told apart.
+  #
+  # Scoped to claude_code.* so PowerOrchestrator's metrics are untouched.
+  attributes/claude_code:
+    include:
+      match_type: regexp
+      metric_names: ["^claude_code\\..*"]
+    actions:
+      - { key: session.id, action: delete }
+      - { key: user.id, action: delete }
+      - { key: user.account_id, action: delete }
+      - { key: user.account_uuid, action: delete }
+      - { key: organization.id, action: delete }
+
 exporters:
   # Prometheus scrapes these (see assets/config/prometheus.yml → job 'otel-collector').
   prometheus:
@@ -52,7 +77,7 @@ service:
   pipelines:
     metrics:
       receivers: [otlp, otlp/auth]
-      processors: [batch]
+      processors: [attributes/claude_code, batch]
       exporters: [prometheus]
     traces:
       receivers: [otlp, otlp/auth]

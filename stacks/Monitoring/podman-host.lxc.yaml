@@ -49,7 +49,12 @@ spec:
   ctid: 4001             # in-block (4000–4099); 4000 is the Docker host this replaces
   cores: 2               # matches CT 4000
   memory: 4096           # MB — Prometheus TSDB + Loki + Tempo + Grafana + collector + Pulse
-  disk: 30               # GB — matches CT 4000; 3.9 GB of state today, grows with retention
+  disk: 50               # GB — raised from 30 (was 73% full). Measured breakdown at the time:
+                         # tempo 11 GB of traces, pulse 377 MB, prometheus 182 MB, grafana
+                         # 116 MB, beszel 8 MB — plus ~9 GB of OS and container images.
+                         # NOTE this is hpe-01's LOCAL SSD (local-lvm thin pool), not the
+                         # NAS: a TSDB on NFS is explicitly unsupported by Prometheus.
+                         # Pool headroom when raised: 319 GB pool, 58% used.
 
   # DHCP reservation + the local DNS name (#416). `monitoring.homelab.chrison.internal`
   # is a per-client record ON this reservation, so it is what scrape targets and the
