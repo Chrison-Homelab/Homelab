@@ -41,9 +41,9 @@ metadata:
       description: Pangolin's edge proxy
     # PowerOrchestrator (#191) is a systemd service on nuc-01 itself — no guest, no shape of its
     # own. Pangolin is what exposes it (the `power` resource below), so its dashboard entry lives
-    # here rather than being invented as a shape. Still on the legacy address (#37).
+    # here rather than being invented as a shape. By the node's UniFi name, never an address.
     - name: Power Orchestrator
-      url: http://192.168.179.1:8080
+      url: http://nuc-01.homelab.chrison.internal:8080
       icon: mdi-power
       description: Wake / sleep / arm the nodes — runs on nuc-01, not in a guest
 
@@ -256,14 +256,16 @@ spec:
         subdomain: traefik
         zone: lab
         target: { ip: localhost, port: 8080, method: http }
-      # PowerOrchestrator dashboard/control API (#191) — systemd service on nuc-01's legacy
-      # IP; CT 2013 reaches it cross-VLAN via the 10.10.0.1 gateway. sso is REQUIRED here: the
-      # control API (Wake/Sleep/Arm) has no native auth (#238).
+      # PowerOrchestrator dashboard/control API (#191) — a systemd service on nuc-01 itself,
+      # bound to 0.0.0.0:8080. Targeted BY NAME: the node's UniFi record, like Pulse and Home
+      # Assistant below. It sat on the legacy 192.168.179.1 long after the nodes moved to VLAN
+      # 1000 (#37), so power.lab was a dead route — the runbook's Phase-5 sweep item, done here.
+      # sso is REQUIRED: the control API (Wake/Sleep/Arm) has no native auth (#238).
       - name: Power Orchestrator
         subdomain: power
         zone: lab
         sso: true
-        target: { ip: 192.168.179.1, port: 8080, method: http }
+        target: { ip: nuc-01.homelab.chrison.internal, port: 8080, method: http }
       # Home Assistant (SmartHome stack) — replaces the raw :8123 UniFi port-forward with
       # SSO-gated ingress. sso REQUIRED (it controls the whole smart home).
       #

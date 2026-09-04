@@ -21,7 +21,7 @@ public sealed class OrchestratorOptionsTests
         Assert.Empty(opts.PresenceMacs);
         // Seeded registries mirror wake-node.sh.
         Assert.Equal("18:c0:4d:de:9f:82", opts.NodeMacs["desktop-01"]);
-        Assert.Equal("192.168.179.2", opts.NodeAddresses["desktop-01"]);
+        Assert.Equal("desktop-01.homelab.chrison.internal", opts.NodeAddresses["desktop-01"]);   // by UniFi name, never an IP
     }
 
     [Fact]
