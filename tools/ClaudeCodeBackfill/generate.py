@@ -25,12 +25,23 @@ usage: generate.py <out-prefix> [exclude-sessions-file] [cutoff-epoch]
 import json, os, sys, glob, datetime, collections
 
 ROOT = os.path.expanduser("~/.claude/projects")
-HOST = "Christians-MacBook-Air"
-EMAIL = "chris.simon@myfoodbag.co.nz"
+
+# The machine identity is REQUIRED and not guessed. It must match, exactly, the
+# service.instance.id in that machine's ~/.claude/settings.json OTEL_RESOURCE_ATTRIBUTES
+# -- Prometheus stores it as exported_instance, and the dashboard groups on it. Defaulting
+# to the local hostname would be the silent-wrong-data failure: a laptop whose settings say
+# "MFB-1234" and whose backfill says "MFB-1234.local" shows up as two machines that each
+# hold half the history, and nothing errors.
+HOST = os.environ.get("BACKFILL_INSTANCE")
+if not HOST:
+    sys.exit("BACKFILL_INSTANCE is not set. Use the exact service.instance.id from that\n"
+             "machine's ~/.claude/settings.json, e.g.:\n"
+             "  BACKFILL_INSTANCE=Christians-MacBook-Air python3 generate.py /tmp/cc\n")
+EMAIL = os.environ.get("BACKFILL_EMAIL", "")
 
 exclude = set()
 if len(sys.argv) > 2 and sys.argv[2] not in ("", "-"):
-    exclude = {l.strip() for l in open(sys.argv[2]) if l.strip()}
+    exclude = {l.strip() for l in open(sys.argv[2], encoding="utf-8") if l.strip()}
 
 # default: last completed 2h boundary, which is always below the running head's minTime
 import time as _time
@@ -53,7 +64,7 @@ after_cutoff = 0
 bad = 0
 
 for f in files:
-    for line in open(f, errors="replace"):
+    for line in open(f, encoding="utf-8", errors="replace"):
         try:
             d = json.loads(line)
         except Exception:
@@ -114,18 +125,19 @@ def lbl(**kw):
 COMMON = dict(exported_instance=HOST, exported_job="claude-code",
               instance="otel-collector:8889", job="otel-collector",
               otel_scope_name="com.anthropic.claude_code",
-              service_instance_id=HOST, user_email=EMAIL,
-              backfill="transcripts")
+              service_instance_id=HOST, backfill="transcripts")
+if EMAIL:
+    COMMON["user_email"] = EMAIL
 
 out = sys.argv[1]
-with open(out + ".tokens.om", "w") as fh:
+with open(out + ".tokens.om", "w", encoding="utf-8", newline="\n") as fh:
     fh.write("# TYPE claude_code_token_usage_tokens counter\n")
     for t, (sid, model, typ), v in samples:
         fh.write("claude_code_token_usage_tokens_total{%s} %d %.3f\n"
                  % (lbl(session_id=sid, model=model, type=typ, **COMMON), v, t))
     fh.write("# EOF\n")
 
-with open(out + ".sessions.om", "w") as fh:
+with open(out + ".sessions.om", "w", encoding="utf-8", newline="\n") as fh:
     fh.write("# TYPE claude_code_session_count counter\n")
     for sid, t in sorted(sess_first.items(), key=lambda x: x[1]):
         fh.write("claude_code_session_count_total{%s} 1 %.3f\n"
@@ -137,6 +149,7 @@ for k, v in running.items():
     tot[k[2]] += v
 span = (min(s[0] for s in samples), max(s[0] for s in samples))
 fmt = lambda x: datetime.datetime.fromtimestamp(x, datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
+print("instance         %s" % HOST)
 print("cutoff           %s UTC  (samples at/after: %d dropped)"
       % (datetime.datetime.fromtimestamp(CUTOFF, datetime.timezone.utc).strftime("%Y-%m-%d %H:%M"),
          after_cutoff))
