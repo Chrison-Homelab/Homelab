@@ -1,13 +1,36 @@
-# OpenTelemetry Collector — receives OTLP from the power-orchestrator (and any future
-# OTLP emitters) and fans out: metrics → Prometheus (scraped off :8889), traces → Tempo,
-# logs → Loki. See tools/PowerOrchestrator/README.md.
+# OpenTelemetry Collector — fans OTLP out to Prometheus (metrics, scraped off :8889),
+# Tempo (traces) and Loki (logs). See tools/PowerOrchestrator/README.md.
+#
+# ── TWO RECEIVERS, ON PURPOSE ───────────────────────────────────────────────────
+# :4317 gRPC is UNAUTHENTICATED and LAN-only. PowerOrchestrator (#191) points
+# OTEL_EXPORTER_OTLP_ENDPOINT at it, so adding auth here would silently break that
+# telemetry — the collector would start fine and the data would just stop arriving.
+#
+# :4318 HTTP requires a bearer token, because that is the one published through Pangolin
+# as otel.lab.chrison.dev for Claude Code telemetry. Without auth that hostname would be
+# an open WRITE path into Prometheus, Tempo AND Loki — anyone scanning could inject
+# metrics and log lines, and fill a 30 GB CT that is already 72% used.
+#
+# The token is read from a podman secret mounted under /run/secrets, never from this file:
+# this config is rendered from the repo by config.assets, so a literal token here would be
+# committed in plaintext.
+extensions:
+  bearertokenauth:
+    filename: /run/secrets/otel_bearer_token
+
 receivers:
+  # LAN, unauthenticated. Deliberately gRPC-only now — see the note above.
   otlp:
     protocols:
       grpc:
         endpoint: 0.0.0.0:4317
+  # Public path via Pangolin, bearer-token authenticated.
+  otlp/auth:
+    protocols:
       http:
         endpoint: 0.0.0.0:4318
+        auth:
+          authenticator: bearertokenauth
 
 processors:
   batch: {}
@@ -25,16 +48,17 @@ exporters:
     endpoint: http://loki:3100/otlp
 
 service:
+  extensions: [bearertokenauth]
   pipelines:
     metrics:
-      receivers: [otlp]
+      receivers: [otlp, otlp/auth]
       processors: [batch]
       exporters: [prometheus]
     traces:
-      receivers: [otlp]
+      receivers: [otlp, otlp/auth]
       processors: [batch]
       exporters: [otlp/tempo]
     logs:
-      receivers: [otlp]
+      receivers: [otlp, otlp/auth]
       processors: [batch]
       exporters: [otlphttp/loki]
