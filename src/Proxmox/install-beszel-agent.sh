@@ -227,8 +227,12 @@ fi
 # to miss because the agent stays healthy and the disk simply shows no health at all.
 # Checked rather than trusted, because an empty panel and a working one look identical
 # until you go looking.
-if journalctl -u beszel-agent.service --since "-2 min" --no-pager -o cat 2>/dev/null \
-     | grep -q "no valid SMART data found"; then
+# Capture then match: `journalctl | grep -q` under `set -o pipefail` reports the
+# pipeline as FAILED when grep exits early and journalctl takes SIGPIPE (rc 141), so
+# the warning below could never fire and this check would always claim success.
+AGENTLOG="$(journalctl -u beszel-agent.service --since "-2 min" --no-pager -o cat 2>/dev/null || true)"
+case "$AGENTLOG" in *"no valid SMART data found"*) SMART_ERR=true ;; *) SMART_ERR=false ;; esac
+if [ "$SMART_ERR" = true ]; then
   printf 'WARNING: agent reports "no valid SMART data found" — SMART is NOT being collected.\n' >&2
   printf '  Check that the drop-in granted CAP_SYS_RAWIO:\n' >&2
   printf '    systemctl show beszel-agent.service -p AmbientCapabilities\n' >&2
