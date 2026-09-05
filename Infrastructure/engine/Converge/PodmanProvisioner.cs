@@ -339,12 +339,18 @@ public sealed class PodmanProvisioner : IAppProvisioner
         try { assets = ReadAssets(s); }
         catch (Exception ex) { return (null, ex.Message); }
         if (assets.Count == 0) return (null, null);
+        return await PushFilesAsync(ctx.Exec, node, ctid, user, AssetsTarget(s), assets);
+    }
 
-        var target = AssetsTarget(s);
-
+    // The chunked push itself, for any list of files → <target>/<rel>. Shared with the
+    // dashboard deploy (ADR-0012), which delivers ONE rendered file outside a converge.
+    internal static async Task<(string? Msg, string? Failed)> PushFilesAsync(
+        INodeExec exec, string node, string ctid, string user, string target,
+        IReadOnlyList<(string Rel, string B64, bool Exec)> assets)
+    {
         // The deploy script also does this (idempotently) — but assets land first, so the
         // user and directory have to exist by now.
-        var prep = await ctx.Exec.InContainerAsync(node, ctid, string.Join("\n", new[]
+        var prep = await exec.InContainerAsync(node, ctid, string.Join("\n", new[]
         {
             "set -e",
             $"id -u {user} >/dev/null 2>&1 || useradd -m -s /bin/bash {user}",
@@ -353,12 +359,12 @@ public sealed class PodmanProvisioner : IAppProvisioner
         if (!prep.Ok) return (null, $"preparing assets dir {target} failed: {prep.Stderr}");
 
         var chunks = 0;
-        foreach (var (rel, b64, exec) in assets)
+        foreach (var (rel, b64, isExec) in assets)
         {
             var dirPart = Path.GetDirectoryName(rel)?.Replace('\\', '/');
             if (!string.IsNullOrEmpty(dirPart))
             {
-                var mk = await ctx.Exec.InContainerAsync(node, ctid,
+                var mk = await exec.InContainerAsync(node, ctid,
                     $"install -d -o {user} -g {user} -m 755 {target}/{dirPart}");
                 if (!mk.Ok) return (null, $"creating {target}/{dirPart} failed: {mk.Stderr}");
             }
@@ -369,23 +375,23 @@ public sealed class PodmanProvisioner : IAppProvisioner
             {
                 var part = b64.Substring(off, Math.Min(AssetChunkBytes, b64.Length - off));
                 var redirect = off == 0 ? ">" : ">>";
-                var put = await ctx.Exec.InContainerAsync(node, ctid,
+                var put = await exec.InContainerAsync(node, ctid,
                     $"printf '%s' '{part}' {redirect} {target}/{rel}.b64");
                 if (!put.Ok) return (null, $"writing {rel} (offset {off}) failed: {put.Stderr}");
                 chunks++;
             }
 
-            var fin = await ctx.Exec.InContainerAsync(node, ctid, string.Join("\n", new[]
+            var fin = await exec.InContainerAsync(node, ctid, string.Join("\n", new[]
             {
                 "set -e",
                 $"base64 -d < {target}/{rel}.b64 > {target}/{rel}",
                 $"rm -f {target}/{rel}.b64",
-                $"chmod {(exec ? "0755" : "0644")} {target}/{rel}",
+                $"chmod {(isExec ? "0755" : "0644")} {target}/{rel}",
             }));
             if (!fin.Ok) return (null, $"decoding {rel} failed: {fin.Stderr}");
         }
 
-        var own = await ctx.Exec.InContainerAsync(node, ctid, $"chown -R {user}:{user} {target}");
+        var own = await exec.InContainerAsync(node, ctid, $"chown -R {user}:{user} {target}");
         if (!own.Ok) return (null, $"chown {target} failed: {own.Stderr}");
 
         return ($"rendered {assets.Count} asset file(s) → {target} ({chunks} chunk(s))", null);

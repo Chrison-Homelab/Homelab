@@ -386,6 +386,99 @@ entries:
     identifiers: { target: !KeyOf forgejo-app, group: !KeyOf grp-devops-admins }
     attrs: { order: 1, enabled: true }
 
+  # ── Passkey-first login (#245) ────────────────────────────────────────────────────
+  # Makes a passkey a FIRST factor on the existing login page, with password as the
+  # fallback. Additive: nobody who has not enrolled a passkey sees any change.
+  #
+  # WHY THIS IS THREE SMALL ENTRIES AND NOT A NEW FLOW. The stock authentication flow
+  # ALREADY contains the whole passwordless mechanism — authentik ships two expression
+  # policies on it, both bound with `failure_result: true`:
+  #
+  #   * default-authentication-flow-password-stage, on the PASSWORD binding:
+  #       return not hasattr(flow_plan.context.get("pending_user"), "backend")
+  #     A user authenticated at identification already carries a backend, so the password
+  #     stage is skipped for them and runs for everyone else.
+  #   * default-authentication-flow-authenticator-validate-stage, on the MFA binding:
+  #       return not (flow_plan.context.get("auth_method") == "auth_webauthn_pwl")
+  #     A passkey login is already user-verified, so the second factor is not asked twice.
+  #
+  # The ONLY missing piece is `webauthn_stage` on the identification stage. Building a
+  # parallel "passwordless flow" instead would duplicate a flow that authentik maintains,
+  # and would have to be kept in step with it forever.
+  #
+  # ⚠ WE ARE EDITING TWO OBJECTS OWNED BY AUTHENTIK'S OWN DEFAULT BLUEPRINTS
+  # (`default-authentication-identification`, `default-authenticator-webauthn-setup`).
+  # That is safe for a specific reason worth knowing before copying this pattern: a
+  # blueprint writes ONLY the attrs it declares and leaves every other field untouched.
+  # The stock entries declare `user_fields` and `configure_flow`/`friendly_name`
+  # respectively — neither declares what we set below — so an authentik upgrade re-applying
+  # its defaults will not revert this. Verified against the 2026.8 default blueprints, not
+  # assumed. If a future release starts declaring these fields, this silently loses.
+  #
+  # NOT `passwordless_flow`. That field exists and does something different: it renders a
+  # separate link BELOW the login form leading to its own flow. `webauthn_stage` instead
+  # uses the browser's conditional-UI ("autofill") path, so the passkey is offered inside
+  # the normal username box and there is no second door to reason about.
+
+  # 1. The validation stage used as the first factor. Restricted to WebAuthn only — this
+  #    is not the MFA stage and must never offer TOTP or static codes as a way IN.
+  - model: authentik_stages_authenticator_validate.authenticatorvalidatestage
+    id: passkey-validation
+    identifiers: { name: homelab-passkey-validation }
+    attrs:
+      device_classes: [webauthn]
+      # SKIP, NOT DENY. `deny` here would refuse everyone who has not enrolled a passkey —
+      # which, on the day this first applies, is every account including yours.
+      not_configured_action: skip
+      # REQUIRED, not the `preferred` default. User verification is what makes a passkey a
+      # genuine single-factor login rather than "something you have" alone, and it is the
+      # condition under which authentik sets auth_method = auth_webauthn_pwl — the value the
+      # stock policy above reads to skip the MFA stage. Left at `preferred`, an authenticator
+      # may return an unverified assertion and the login is weaker than the password it replaced.
+      webauthn_user_verification: required
+
+  # 2. Offer it at identification. `webauthn_stage` is the entire behavioural change.
+  #
+  # ⚠ `user_fields` IS RE-DECLARED HERE AND MUST NOT BE REMOVED, even though it changes
+  # nothing and the live stage already has exactly these two values. Blueprints apply an
+  # entry with `partial=True`, so an unlisted field keeps its stored value — but
+  # IdentificationStageSerializer.validate() reads the INCOMING dict, not the merged model:
+  #
+  #     sources = attrs.get("sources", [])
+  #     user_fields = attrs.get("user_fields", [])
+  #     if len(user_fields) < 1 and len(sources) < 1:
+  #         raise ValidationError("When no user fields are selected, at least one source ...")
+  #
+  # So a partial update that omits `user_fields` fails that check against an empty dict while
+  # the stage plainly has both fields set, and rejects the WHOLE blueprint file with it (#497).
+  # That is what happened on the first deploy of this block.
+  #
+  # The log makes it worse than it needs to be: the entry is logged with
+  # `webauthn_stage: <KeyOf> (failed to resolve: ...)`, which reads like the reference is
+  # broken. It is not — YAMLTag.__repr__ resolves against an empty Blueprint() purely to
+  # render itself for the log, so a KeyOf ALWAYS prints that way in an error. The real cause
+  # is the non_field_errors line underneath it.
+  - model: authentik_stages_identification.identificationstage
+    identifiers: { name: default-authentication-identification }
+    attrs:
+      user_fields: [email, username]
+      webauthn_stage: !KeyOf passkey-validation
+
+  # 3. Make newly-enrolled credentials DISCOVERABLE, so they can be used without first
+  #    typing a username. Both fields default to `preferred`, and `preferred` is the trap
+  #    here: an authenticator is free to create a non-resident credential, which works fine
+  #    as a second factor and then cannot be offered by the browser's passkey picker at all
+  #    — producing a passkey that exists, works, and never appears on the login page.
+  #
+  #    ⚠ APPLIES TO NEW ENROLMENTS ONLY. Anything already registered keeps the requirements
+  #    it was created under. There are no WebAuthn devices enrolled yet, which is precisely
+  #    why this lands before the first one rather than after.
+  - model: authentik_stages_authenticator_webauthn.authenticatorwebauthnstage
+    identifiers: { name: default-authenticator-webauthn-setup }
+    attrs:
+      resident_key_requirement: required
+      user_verification: required
+
   # ── Retire the previous title-case groups ─────────────────────────────────────────
   # A blueprint keys objects by `identifiers`, so changing `name` does NOT rename a group —
   # it creates a second one and orphans the first, complete with its members. The akadmin

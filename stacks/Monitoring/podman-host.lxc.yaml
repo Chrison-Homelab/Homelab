@@ -43,6 +43,38 @@ metadata:
   name: podman-host
   stack: Monitoring
   tags: [podman, quadlet, container-host, adr-0009]
+  # What this host offers a human, for the dashboard (ADR-0012). One entry per UI; `group`
+  # defaults to the stack. A `widget` is a Homepage service widget; `keyFrom`/`passwordFrom`
+  # name a SECRET (as exported by quadlets/homepage.container), never a value. Widget URLs use
+  # container names because Homepage sits on monitoring.network with them.
+  services:
+    - name: Grafana
+      url: http://monitoring.homelab.chrison.internal:3000
+      icon: grafana
+      description: Dashboards over Prometheus, Tempo and Loki
+      widget: { type: grafana, version: 2, url: http://grafana:3000, username: admin, passwordFrom: GF_SECURITY_ADMIN_PASSWORD }
+    - name: Prometheus
+      url: http://monitoring.homelab.chrison.internal:9091
+      icon: prometheus
+      description: Metrics and alert rules
+      widget: { type: prometheus, url: http://prometheus:9090 }
+    - name: Alertmanager
+      url: http://monitoring.homelab.chrison.internal:9093
+      icon: alertmanager
+      description: The alert bus (ADR-0011)
+    - name: Pulse
+      url: http://monitoring.homelab.chrison.internal:7655
+      icon: pulse
+      description: Proxmox and NAS fleet monitoring
+      widget: { type: pulse, version: 2, url: http://pulse:7655, keyFrom: PULSE_API_TOKEN }
+    - name: Cockpit
+      url: https://monitoring.homelab.chrison.internal:9090
+      icon: cockpit
+      description: Host console for CT 4001
+    - name: Homepage
+      url: http://monitoring.homelab.chrison.internal:3010
+      icon: homepage
+      description: This dashboard, rendered from the shapes
 
 spec:
   app: podman            # community-scripts ct/podman.sh + the `podman` provisioner
@@ -123,3 +155,15 @@ spec:
       otel_bearer_token: OTEL_BEARER_TOKEN
       authentik_grafana_client_id: AUTHENTIK_GRAFANA_CLIENT_ID
       authentik_grafana_client_secret: AUTHENTIK_GRAFANA_CLIENT_SECRET
+      # Homepage widget credentials (ADR-0012) — consumed by quadlets/homepage.container.
+      pulse_api_token: PULSE_API_TOKEN
+      homeassistant_token: HOMEASSISTANT_TOKEN
+
+    # ── Dashboard host (ADR-0012). Marks THIS shape as where `homelab-infra dashboard
+    #    --deploy` delivers the rendered services.yaml: <assetsTarget>/<services>, then restarts
+    #    <unit> as the podman user. Rendering is deliberately NOT part of converge — a converge of
+    #    this host restarts every monitoring unit, and a new app elsewhere must not do that. The
+    #    `dashboard` workflow (push to main touching stacks/**) and `./build.sh Dashboard` do it.
+    dashboard:
+      services: homepage/services.yaml
+      unit: homepage.service

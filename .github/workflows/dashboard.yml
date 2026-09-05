@@ -1,0 +1,49 @@
+name: dashboard
+# The homelab dashboard is RENDERED from the shapes (ADR-0012, #47). Every merge to main that
+# touches a stack re-renders Homepage's services.yaml and pushes it to the dashboard host —
+# one file, one unit restart, only when the content changed. This is the mechanism that keeps
+# the dashboard current when a new app is declared; nobody edits the dashboard.
+#
+# Deliberately NOT a stack converge: converging the Monitoring host restarts every unit on it.
+# After the push, --check fails the run if a public route has no declaring shape or a widget
+# names a secret the host does not export — visible, but the dashboard has already updated.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'stacks/**'
+      - 'Infrastructure/engine/Dashboard/**'
+      - '.github/workflows/dashboard.yml'
+  # The hourly submodule bump is how a stack repo's change reaches main — and it merges with
+  # the workflow's own GITHUB_TOKEN, whose pushes never trigger `on: push` in other workflows.
+  # So run after it completes (this fires regardless of the token that pushed), and hourly as
+  # a backstop; the deploy is a sha-compared no-op when nothing changed, so both are cheap.
+  workflow_run:
+    workflows: [bump-submodules]
+    types: [completed]
+  schedule:
+    - cron: '30 * * * *'
+  workflow_dispatch:
+jobs:
+  render-and-push:
+    runs-on: [self-hosted, homelab]
+    concurrency:
+      group: dashboard
+      cancel-in-progress: true          # only the newest render matters
+    env:
+      NODE_ADDR_HPE_01: 'hpe-01.homelab.chrison.internal'
+      NODE_ADDR_NUC_01: 'nuc-01.homelab.chrison.internal'
+      NODE_ADDR_DESKTOP_01: 'desktop-01.homelab.chrison.internal'
+      NODE_SSH_KEY: /home/runner/.ssh/id_ed25519
+    steps:
+      - uses: actions/checkout@v6
+      - name: Fetch stack submodules (shapes live here; vendor/* C# repos skipped)
+        env:
+          TOKEN: ${{ secrets.SUBMODULES_RO_PAT }}
+        run: |
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+          paths=$(git config --file .gitmodules --get-regexp path | awk '{print $2}' | grep '^stacks/')
+          git submodule update --init $paths
+          git config --global --unset-all url."https://x-access-token:${TOKEN}@github.com/".insteadOf || true
+      - name: Render, push to the dashboard host, check
+        run: ./build.sh Dashboard

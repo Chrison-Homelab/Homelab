@@ -124,6 +124,8 @@ jobs:
       # value even when the podman secret already exists on the host, so a missing passthrough
       # here fails the WHOLE stack converge, not just alertmanager.
       HA_ALERT_WEBHOOK_URL: ${{ secrets.HA_ALERT_WEBHOOK_URL }}
+      PULSE_API_TOKEN: ${{ secrets.PULSE_API_TOKEN }}
+      HOMEASSISTANT_TOKEN: ${{ secrets.HOMEASSISTANT_TOKEN }}
       UNIFI_LOCAL_HOST: '192.168.178.1'
       UNIFI_BASE_URL: 'https://192.168.178.1/proxy/network/integration'
       UNIFI_VERIFY_TLS: 'false'

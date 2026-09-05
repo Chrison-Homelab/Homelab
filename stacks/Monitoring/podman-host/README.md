@@ -23,6 +23,7 @@ Replaces the Docker host **CT 4000**. ADR-0009 Phase 2b ([#303](https://github.c
 | `tempo.container` | `tempo` | `datasources.yml` → `http://tempo:3200` (uid 10001) |
 | `loki.container` | `loki` | `datasources.yml` → `http://loki:3100` (uid 10001) |
 | `pulse.container` | `pulse` | — (uid 1000) |
+| `homepage.container` | `homepage` | widgets reach `pulse:7655`, `grafana:3000`, `prometheus:9090` by name; its `services.yaml` is rendered, see ADR-0012 |
 | `exportarr-{radarr,sonarr,prowlarr}` | same | scraped at `exportarr-<app>:{9708,9709,9710}` |
 | `unpoller.container` | `unpoller` | scraped at `unpoller:9130` (stateless — no data dir, no `UserNS`) |
 | `alertmanager.container` | `alertmanager` | the alert bus (ADR-0011); Prometheus sends to `alertmanager:9093` (uid 65534) |

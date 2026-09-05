@@ -1,0 +1,12 @@
+# Info widgets (the top bar) — static.
+- resources:
+    label: CT 4001
+    cpu: true
+    memory: true
+    disk: /
+- datetime:
+    text_size: xl
+    format:
+      dateStyle: medium
+      timeStyle: short
+      hour12: false

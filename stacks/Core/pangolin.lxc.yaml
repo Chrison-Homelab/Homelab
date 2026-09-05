@@ -30,6 +30,22 @@ metadata:
   name: pangolin
   stack: Core
   tags: [network, proxy, sso, remote-access, docker]
+  services:
+    - name: Pangolin
+      url: https://pangolin.chrison.dev
+      icon: pangolin
+      description: SSO front door and public ingress for *.lab / *.arr / *.iot
+    - name: Traefik
+      url: https://traefik.lab.chrison.dev
+      icon: traefik
+      description: Pangolin's edge proxy
+    # PowerOrchestrator (#191) is a systemd service on nuc-01 itself — no guest, no shape of its
+    # own. Pangolin is what exposes it (the `power` resource below), so its dashboard entry lives
+    # here rather than being invented as a shape. By the node's UniFi name, never an address.
+    - name: Power Orchestrator
+      url: http://nuc-01.homelab.chrison.internal:8080
+      icon: mdi-power
+      description: Wake / sleep / arm the nodes — runs on nuc-01, not in a guest
 
 spec:
   app: debian            # plain base CT (ct/debian.sh) — Docker-capable via nesting+keyctl below
@@ -224,20 +240,32 @@ spec:
     # sso defaults ON (the auth gate); set `sso: false` only for native clients that can't do
     # the SSO interstitial (e.g. Plex, audiobookshelf). A new service is just an entry here +
     # a grey-cloud A record (handled by converge) — no per-host cert, no per-host cloudflared ingress.
+    #
+    # `rules:` (optional, per resource) is the THIRD option between sso:true and sso:false —
+    # Pangolin access rules, evaluated before the SSO gate, keyed by (match, value) and
+    # reconciled the same way (create / update in place / undeclared live rules reported, never
+    # deleted). action is Pangolin's own enum: ACCEPT = bypass auth, DROP = block, PASS = fall
+    # through to SSO. A `*` segment matches any depth, so "/api/*" covers /api/v3/series/12.
+    # Use it where a native client speaks the app's API with its own credential (an API key
+    # header) but a human at the same hostname should still meet SSO. Anything ACCEPTed is
+    # reachable from the internet with only the APP's check on that path in front of it, so
+    # only bypass paths the app itself authenticates.
     resources:
       # Pangolin's own Traefik dashboard — first migrated UI (kept from #136).
       - name: Traefik Dashboard
         subdomain: traefik
         zone: lab
         target: { ip: localhost, port: 8080, method: http }
-      # PowerOrchestrator dashboard/control API (#191) — systemd service on nuc-01's legacy
-      # IP; CT 2013 reaches it cross-VLAN via the 10.10.0.1 gateway. sso is REQUIRED here: the
-      # control API (Wake/Sleep/Arm) has no native auth (#238).
+      # PowerOrchestrator dashboard/control API (#191) — a systemd service on nuc-01 itself,
+      # bound to 0.0.0.0:8080. Targeted BY NAME: the node's UniFi record, like Pulse and Home
+      # Assistant below. It sat on the legacy 192.168.179.1 long after the nodes moved to VLAN
+      # 1000 (#37), so power.lab was a dead route — the runbook's Phase-5 sweep item, done here.
+      # sso is REQUIRED: the control API (Wake/Sleep/Arm) has no native auth (#238).
       - name: Power Orchestrator
         subdomain: power
         zone: lab
         sso: true
-        target: { ip: 192.168.179.1, port: 8080, method: http }
+        target: { ip: nuc-01.homelab.chrison.internal, port: 8080, method: http }
       # Home Assistant (SmartHome stack) — replaces the raw :8123 UniFi port-forward with
       # SSO-gated ingress. sso REQUIRED (it controls the whole smart home).
       #
@@ -288,14 +316,40 @@ spec:
       #    ⚠ Anything listed sso:false is reachable from the public internet with only the
       #      APP's login in front of it. Only do this where the app genuinely has one.
       - { name: Prowlarr,       subdomain: prowlarr,       zone: arr, target: { ip: 10.10.201.184, port: 9696,  method: http } }
-      - { name: Sonarr,         subdomain: sonarr,         zone: arr, target: { ip: 10.10.250.29,  port: 8989,  method: http } }
-      - { name: Radarr,         subdomain: radarr,         zone: arr, target: { ip: 10.10.48.217,  port: 7878,  method: http } }
+      # Sonarr + Radarr keep SSO on the UI but BYPASS it on the API paths, so a native client
+      # (Ruddarr on iOS) can talk to them with its X-Api-Key header — an API client cannot
+      # complete the SSO interstitial, and the arr apps only accept the key in a header or query
+      # string, not a cookie. Safe because both enforce the API key on /api/* REGARDLESS of
+      # their UI auth setting (verified live: 401 without a key, 200 with, while
+      # authenticationRequired is still disabledForLocalAddresses — see #246). /ping is the
+      # unauthenticated health probe Ruddarr uses to detect the instance; it returns nothing
+      # but {"status":"OK"}. Ruddarr loads posters from TMDB (`images[].remoteUrl`), not from
+      # /MediaCover, so nothing else needs opening. Point Ruddarr at the normal hostname
+      # (https://sonarr.arr.chrison.dev) — a separate api.<app>.arr name was ruled out because a
+      # wildcard cert covers one label only, so *.arr does not cover api.sonarr.arr.
+      - name: Sonarr
+        subdomain: sonarr
+        zone: arr
+        target: { ip: 10.10.250.29, port: 8989, method: http }
+        rules:
+          - { action: ACCEPT, match: PATH, value: "/api/*" }   # API-key-authenticated by Sonarr itself
+          - { action: ACCEPT, match: PATH, value: "/ping" }    # health probe, no data
+      - name: Radarr
+        subdomain: radarr
+        zone: arr
+        target: { ip: 10.10.48.217, port: 7878, method: http }
+        rules:
+          - { action: ACCEPT, match: PATH, value: "/api/*" }
+          - { action: ACCEPT, match: PATH, value: "/ping" }
       - { name: Bazarr,         subdomain: bazarr,         zone: arr, target: { ip: 10.10.102.133, port: 6767,  method: http } }
       - { name: qBittorrent,    subdomain: qbittorrent,    zone: arr, target: { ip: 10.10.110.115, port: 8090,  method: http } }
       - { name: Seerr,          subdomain: seerr,          zone: arr, sso: false, target: { ip: 10.10.15.6,    port: 5055,  method: http } }
       - { name: Tracearr,       subdomain: tracearr,       zone: arr, target: { ip: 10.10.202.145, port: 3000,  method: http } }
       - { name: RomM,           subdomain: romm,           zone: arr, target: { ip: 10.10.202.240, port: 80,    method: http } }
-      - { name: Youtarr,        subdomain: youtarr,        zone: arr, target: { ip: 10.10.73.250,  port: 3087,  method: http } }
+      # Youtarr moved to the Media podman host (CT 5114) in #302; the old CT 5113 is retired and
+      # its address no longer answers. Found by the dashboard's exposed-but-undeclared check
+      # (ADR-0012). Targeted by NAME like Pulse/Home Assistant — resolvable from CT 2013.
+      - { name: Youtarr,        subdomain: youtarr,        zone: arr, target: { ip: media.homelab.chrison.internal, port: 3087, method: http } }
       - { name: Audiobookshelf, subdomain: audiobookshelf, zone: arr, sso: false, target: { ip: 10.10.182.200, port: 13378, method: http } }
       - { name: Shelfmark,      subdomain: shelfmark,      zone: arr, target: { ip: 10.10.142.183, port: 8084,  method: http } }
 

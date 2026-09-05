@@ -323,7 +323,7 @@ The addresses are hard-coded in more places than the cluster:
 | `secrets.env` / `secrets.env.template` | `PROXMOX_BASE_URL` (`192.168.179.3:8006` is the self-signed fallback) |
 | **Core cloudflared tunnel** | `proxmox.chrison.dev` → `https://192.168.179.1:8006` — **breaks at Phase 4**, not Phase 3. Repoint to `10.0.0.11`, or retire the name in favour of per-node names via Pangolin (`nuc-01.proxmox.…`) |
 | `src/Proxmox/wake-node.sh` | baked-in MAC/address registry |
-| Pangolin resource *Power Orchestrator* | → `192.168.179.1:8080`; repoint in `stacks/Core/pangolin.lxc.yaml`, then `converge stacks/Core --only pangolin --apply` (works since [#309](https://github.com/Chrison-Homelab/Homelab/issues/309)) |
+| Pangolin resource *Power Orchestrator* | ✅ **done 2026-09-05** — repointed to `nuc-01.homelab.chrison.internal:8080` (by name) in `stacks/Core/pangolin.lxc.yaml`; it had been a dead route since Phase 4. Was: → `192.168.179.1:8080`; repoint, then `converge stacks/Core --only pangolin --apply` (works since [#309](https://github.com/Chrison-Homelab/Homelab/issues/309)) |
 | `~/.ssh/config` and this repo's tooling | `converge` and `proxmoxsharp` reach nodes by address |
 | `docs/Devices.md`, `docs/Network.md` | node inventory |
 | UniFi | old DHCP reservations for the legacy addresses |
