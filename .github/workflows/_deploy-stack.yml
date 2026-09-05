@@ -99,7 +99,7 @@ jobs:
       # blueprint reads the env var directly and the value is a Plex credential, not an
       # authentik one.
       PLEX_OWNER_TOKEN: ${{ secrets.PLEX_OWNER_TOKEN }}
-      PLEX_MACHINE_IDENTIFIER: ${{ secrets.PLEX_MACHINE_IDENTIFIER }}
+      PLEX_SERVER_CLIENT_IDENTIFIER: ${{ secrets.PLEX_SERVER_CLIENT_IDENTIFIER }}
       # DevOps stack. The github-runner member derives its registration token from this PAT,
       # and it had never been passed to the runner — the same gap as the four monitoring
       # secrets in #490, found the same way: the first live apply of that stack in a while.

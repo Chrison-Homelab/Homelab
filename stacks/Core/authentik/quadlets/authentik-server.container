@@ -81,7 +81,7 @@ Secret=authentik_grafana_client_secret,type=env,target=AUTHENTIK_GRAFANA_CLIENT_
 Secret=authentik_forgejo_client_id,type=env,target=AUTHENTIK_FORGEJO_CLIENT_ID
 Secret=authentik_forgejo_client_secret,type=env,target=AUTHENTIK_FORGEJO_CLIENT_SECRET
 Secret=authentik_plex_owner_token,type=env,target=PLEX_OWNER_TOKEN
-Secret=authentik_plex_machine_identifier,type=env,target=PLEX_MACHINE_IDENTIFIER
+Secret=authentik_plex_server_client_identifier,type=env,target=PLEX_SERVER_CLIENT_IDENTIFIER
 # Must match ContainerName= on the postgres unit — resolved by aardvark-dns on the shared
 # network, not by anything in this file.
 Environment=AUTHENTIK_POSTGRESQL__HOST=authentik-postgresql
