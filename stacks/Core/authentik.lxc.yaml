@@ -150,5 +150,7 @@ spec:
       # Plex identity SOURCE (#316) — not a client pair. plex_owner_token is a credential
       # for the whole Plex ACCOUNT (authentik calls /api/v2/friends with it); the machine
       # identifier is not secret but is kept out of this PUBLIC repo like HOME_WAN_IP.
+      authentik_audiobookshelf_client_id: AUTHENTIK_AUDIOBOOKSHELF_CLIENT_ID
+      authentik_audiobookshelf_client_secret: AUTHENTIK_AUDIOBOOKSHELF_CLIENT_SECRET
       authentik_plex_token: PLEX_TOKEN
       authentik_plex_server_client_identifier: PLEX_SERVER_CLIENT_IDENTIFIER
