@@ -454,7 +454,7 @@ entries:
       allow_friends: false
       allowed_servers:
         - !Env PLEX_SERVER_CLIENT_IDENTIFIER
-      plex_token: !Env PLEX_OWNER_TOKEN
+      plex_token: !Env PLEX_TOKEN
       # IDENTIFIER, not email_link. Linking on email would let a Plex account with an address
       # matching an existing authentik user take that user over — including akadmin. Plex does
       # verify its addresses, but the blast radius of being wrong is the admin account, and
