@@ -437,10 +437,31 @@ entries:
       # may return an unverified assertion and the login is weaker than the password it replaced.
       webauthn_user_verification: required
 
-  # 2. Offer it at identification. This one field is the entire behavioural change.
+  # 2. Offer it at identification. `webauthn_stage` is the entire behavioural change.
+  #
+  # ⚠ `user_fields` IS RE-DECLARED HERE AND MUST NOT BE REMOVED, even though it changes
+  # nothing and the live stage already has exactly these two values. Blueprints apply an
+  # entry with `partial=True`, so an unlisted field keeps its stored value — but
+  # IdentificationStageSerializer.validate() reads the INCOMING dict, not the merged model:
+  #
+  #     sources = attrs.get("sources", [])
+  #     user_fields = attrs.get("user_fields", [])
+  #     if len(user_fields) < 1 and len(sources) < 1:
+  #         raise ValidationError("When no user fields are selected, at least one source ...")
+  #
+  # So a partial update that omits `user_fields` fails that check against an empty dict while
+  # the stage plainly has both fields set, and rejects the WHOLE blueprint file with it (#497).
+  # That is what happened on the first deploy of this block.
+  #
+  # The log makes it worse than it needs to be: the entry is logged with
+  # `webauthn_stage: <KeyOf> (failed to resolve: ...)`, which reads like the reference is
+  # broken. It is not — YAMLTag.__repr__ resolves against an empty Blueprint() purely to
+  # render itself for the log, so a KeyOf ALWAYS prints that way in an error. The real cause
+  # is the non_field_errors line underneath it.
   - model: authentik_stages_identification.identificationstage
     identifiers: { name: default-authentication-identification }
     attrs:
+      user_fields: [email, username]
       webauthn_stage: !KeyOf passkey-validation
 
   # 3. Make newly-enrolled credentials DISCOVERABLE, so they can be used without first
