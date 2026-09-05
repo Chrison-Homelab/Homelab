@@ -95,6 +95,8 @@ jobs:
       AUTHENTIK_GRAFANA_CLIENT_SECRET: ${{ secrets.AUTHENTIK_GRAFANA_CLIENT_SECRET }}
       AUTHENTIK_FORGEJO_CLIENT_ID: ${{ secrets.AUTHENTIK_FORGEJO_CLIENT_ID }}
       AUTHENTIK_FORGEJO_CLIENT_SECRET: ${{ secrets.AUTHENTIK_FORGEJO_CLIENT_SECRET }}
+      AUTHENTIK_AUDIOBOOKSHELF_CLIENT_ID: ${{ secrets.AUTHENTIK_AUDIOBOOKSHELF_CLIENT_ID }}
+      AUTHENTIK_AUDIOBOOKSHELF_CLIENT_SECRET: ${{ secrets.AUTHENTIK_AUDIOBOOKSHELF_CLIENT_SECRET }}
       # Plex identity source (#316). Named PLEX_* rather than AUTHENTIK_PLEX_* because the
       # blueprint reads the env var directly and the value is a Plex credential, not an
       # authentik one.

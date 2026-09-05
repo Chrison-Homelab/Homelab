@@ -80,6 +80,8 @@ Secret=authentik_grafana_client_id,type=env,target=AUTHENTIK_GRAFANA_CLIENT_ID
 Secret=authentik_grafana_client_secret,type=env,target=AUTHENTIK_GRAFANA_CLIENT_SECRET
 Secret=authentik_forgejo_client_id,type=env,target=AUTHENTIK_FORGEJO_CLIENT_ID
 Secret=authentik_forgejo_client_secret,type=env,target=AUTHENTIK_FORGEJO_CLIENT_SECRET
+Secret=authentik_audiobookshelf_client_id,type=env,target=AUTHENTIK_AUDIOBOOKSHELF_CLIENT_ID
+Secret=authentik_audiobookshelf_client_secret,type=env,target=AUTHENTIK_AUDIOBOOKSHELF_CLIENT_SECRET
 Secret=authentik_plex_token,type=env,target=PLEX_TOKEN
 Secret=authentik_plex_server_client_identifier,type=env,target=PLEX_SERVER_CLIENT_IDENTIFIER
 # Must match ContainerName= on the postgres unit — resolved by aardvark-dns on the shared
