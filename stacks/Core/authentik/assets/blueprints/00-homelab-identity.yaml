@@ -386,6 +386,67 @@ entries:
     identifiers: { target: !KeyOf forgejo-app, group: !KeyOf grp-devops-admins }
     attrs: { order: 1, enabled: true }
 
+  # ⚠ ORDER MATTERS: this block sits ABOVE the passkey block because the identification
+  # stage entry there resolves `!KeyOf plex-source`, and KeyOf requires the referenced
+  # entry to have been APPLIED already — it looks for an entry with that id AND a model
+  # instance, so a forward reference fails at apply time, not at parse time.
+  # ── Plex: identity SOURCE (#316) ──────────────────────────────────────────────────
+  # A SOURCE, not a client. Plex speaks neither OIDC nor SAML, and does not have to: it
+  # terminates here, and every downstream app keeps talking OIDC to authentik and knows
+  # nothing about Plex. This is what #467 means by "providers terminate at the IdP once" —
+  # the alternative was a bespoke Plex→OIDC shim on the auth path for the whole house.
+  #
+  # ADMISSION IS AN `OR`, AND BOTH HALVES SURPRISE. Read off api/source.py at 2026.8:
+  #
+  #     friends_allowed = False
+  #     if source.allow_friends:
+  #         friends_allowed = owner_api.check_friends_overlap(identifier)
+  #     servers_allowed = auth_api.check_server_overlap()
+  #     if any([friends_allowed, servers_allowed]):   # OR
+  #
+  #   * `allowed_servers` EMPTY DOES NOT "ALLOW EVERY SERVER", whatever the field help says.
+  #     check_server_overlap iterates the USER's servers and tests membership in this list;
+  #     an empty list matches nothing and the check is simply dead. Left empty, admission
+  #     would rest entirely on the friends list.
+  #   * `allow_friends` DEFAULTS TO TRUE and is broader than "uses my server" — it admits
+  #     anyone on the owner's Plex FRIENDS list, including people who share no server.
+  #
+  # So `allow_friends: false` here is a deliberate narrowing, not an omission. The intent is
+  # "has access to MY server", and `allowed_servers` is the only check that says that.
+  #
+  # ⚠ AUTHENTICATED IS NOT AUTHORISED, and this source is exactly why that matters. A new
+  # Plex user is enrolled by `default-source-enrollment` into NO GROUP, matches no policy
+  # binding above, and reaches nothing at all. Access is granted deliberately afterwards by
+  # putting them in `family` or `guests`. Removing someone from the Plex server does NOT
+  # delete their account — decided on #316, because they may be family and the group model,
+  # not Plex membership, should own that call.
+  #
+  # ⚠ BUT THE ACCOUNT SURVIVING IS NOT ACCESS SURVIVING. Both checks run on EVERY login, so
+  # once someone is off the server they cannot authenticate; the account persists, inert,
+  # with its groups intact. Anyone who should keep access after leaving the Plex server needs
+  # a second auth method (password or passkey) on their authentik account.
+  #
+  # `plex_token` is the OWNER's token — authentik calls /api/v2/friends and /api/v2/user with
+  # it. Plex cannot issue a narrower one, so it is a credential for the whole Plex account and
+  # lives in Secrets Manager like any other.
+  - model: authentik_sources_plex.plexsource
+    id: plex-source
+    identifiers: { slug: plex }
+    attrs:
+      name: Plex
+      enabled: true
+      allow_friends: false
+      allowed_servers:
+        - !Env PLEX_MACHINE_IDENTIFIER
+      plex_token: !Env PLEX_OWNER_TOKEN
+      # IDENTIFIER, not email_link. Linking on email would let a Plex account with an address
+      # matching an existing authentik user take that user over — including akadmin. Plex does
+      # verify its addresses, but the blast radius of being wrong is the admin account, and
+      # nothing here needs email linking to work.
+      user_matching_mode: identifier
+      authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
+      enrollment_flow: !Find [authentik_flows.flow, [slug, default-source-enrollment]]
+
   # ── Passkey-first login (#245) ────────────────────────────────────────────────────
   # Makes a passkey a FIRST factor on the existing login page, with password as the
   # fallback. Additive: nobody who has not enrolled a passkey sees any change.
@@ -463,6 +524,12 @@ entries:
     attrs:
       user_fields: [email, username]
       webauthn_stage: !KeyOf passkey-validation
+      # A source is NOT offered on the login page just by existing — it has to be listed
+      # here. That is how its absence was found: the live flow returned `sources: []` while
+      # this file's own comments described a Plex source as though it were running.
+      # ⚠ REPLACES the list rather than appending, so every source we want must be named.
+      sources: [!KeyOf plex-source]
+      show_source_labels: true
 
   # 3. Make newly-enrolled credentials DISCOVERABLE, so they can be used without first
   #    typing a username. Both fields default to `preferred`, and `preferred` is the trap
