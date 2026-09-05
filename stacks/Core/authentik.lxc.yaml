@@ -147,3 +147,8 @@ spec:
       authentik_grafana_client_secret: AUTHENTIK_GRAFANA_CLIENT_SECRET
       authentik_forgejo_client_id: AUTHENTIK_FORGEJO_CLIENT_ID
       authentik_forgejo_client_secret: AUTHENTIK_FORGEJO_CLIENT_SECRET
+      # Plex identity SOURCE (#316) — not a client pair. plex_owner_token is a credential
+      # for the whole Plex ACCOUNT (authentik calls /api/v2/friends with it); the machine
+      # identifier is not secret but is kept out of this PUBLIC repo like HOME_WAN_IP.
+      authentik_plex_owner_token: PLEX_OWNER_TOKEN
+      authentik_plex_machine_identifier: PLEX_MACHINE_IDENTIFIER
