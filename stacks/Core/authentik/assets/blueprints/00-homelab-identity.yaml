@@ -471,8 +471,17 @@ entries:
   #    — producing a passkey that exists, works, and never appears on the login page.
   #
   #    ⚠ APPLIES TO NEW ENROLMENTS ONLY. Anything already registered keeps the requirements
-  #    it was created under. There are no WebAuthn devices enrolled yet, which is precisely
-  #    why this lands before the first one rather than after.
+  #    it was created under, so this wants to land before the first enrolment rather than after.
+  #
+  #    It did not, as it happens: a Bitwarden and an Apple Passwords credential were both
+  #    registered on 2026-09-05, before this applied at 12:29. Neither needed re-enrolling, and
+  #    the reason is the useful part — both are PASSKEY PROVIDERS, which always create a
+  #    discoverable credential whatever the relying party asks for. `preferred` only decides the
+  #    outcome for an authenticator that can also make a non-discoverable one, typically a
+  #    hardware key. User verification is separately enforced at ASSERTION time by
+  #    homelab-passkey-validation above, so credentials enrolled under `preferred` still have to
+  #    verify the user at login. Do not read that as "the setting does not matter" — it decides
+  #    the outcome for the next YubiKey-shaped thing that gets enrolled.
   - model: authentik_stages_authenticator_webauthn.authenticatorwebauthnstage
     identifiers: { name: default-authenticator-webauthn-setup }
     attrs:

@@ -127,24 +127,45 @@ The recovery session is a full login as that user. Do the repair, then:
   `stacks/Core/authentik/assets/blueprints/` and converge. Repairing it in the UI leaves the
   estate and git disagreeing, and the next converge reverts your fix.
 
+## 4. Sign out — the recovery session does not expire on its own
+
+⚠ **This step is easy to skip and the reason is not obvious.** `UseTokenView` sets
+`SESSION_KEY_BRAND_SAFE_MODE` on the session, and **nothing in authentik ever clears it** —
+the flag appears in exactly three non-test files: `brands/models.py` defines it,
+`recovery/views.py` sets it, `brands/utils.py` reads it. So the session keeps its
+*"Recovery session is active. Custom branding is disabled."* banner for as long as it lives.
+
+Logging in again does **not** replace it. A fresh login creates a *new* session and leaves the
+recovery one open in whichever window still holds it — which is how one was left running
+overnight on 2026-09-05, still the most recently used session of the two.
+
+Django's `logout()` flushes the session, so **signing out is what actually ends it.** If the
+window is gone, kill it by id: **Directory → Users → `akadmin` → Sessions**, and delete the
+right one.
+
+While that session is active, custom branding is suppressed — so anything you judge about
+branding from that window is not what other users see.
+
 ---
 
 ## Verification checklist
 
-Run this **as a drill**, not only in an emergency. Tick all five:
+Run this **as a drill**, not only in an emergency. Tick all six:
 
 - [ ] The `runuser` command prints a link (not a podman error)
 - [ ] The link logs you in as `akadmin` in a private window
 - [ ] The "Used recovery-link to authenticate." banner appears
 - [ ] Re-opening the same link returns 404 (single-use confirmed)
 - [ ] An expired key is refused — mint with duration `1`, wait, confirm 404
+- [ ] **Signed out afterwards**, and the safe-mode banner is gone
 
 ### Test log
 
 | Date | By | Result | Notes |
 |---|---|---|---|
-| 2026-09-05 | Chris | ❌ failed — wrong user | Ran `podman exec` as root from `/root`; `no such container`. Not an authentik fault. Retry with the `runuser` form above. |
-| | | | |
+| 2026-09-05 | Chris | ❌ failed — wrong user | Ran `podman exec` as root from `/root`; `no such container`. Not an authentik fault. |
+| 2026-09-05 | Chris | ✅ **passed** | `runuser` form printed the link; it logged in as `akadmin` with the expected banner. Recovery path proven — closes the last open item on [#469](https://github.com/Chrison-Homelab/Homelab/issues/469). |
+| 2026-09-06 | Chris | ⚠ follow-up | Safe-mode banner still showing the next morning: the recovery session had never been signed out. Sign-out cleared it. Step 4 added above. |
 
 ---
 
