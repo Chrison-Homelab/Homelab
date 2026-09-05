@@ -49,6 +49,10 @@ public sealed record OrchestratorOptions
     public IReadOnlyDictionary<string, string> NodeMacs { get; init; } = DefaultNodeMacs;
 
     /// <summary>node-name → IP, for the SSH poweroff. Seeded to the legacy /23 addresses.</summary>
+    /// <summary>Where to read corosync.conf for the quorum precondition (ORCH_COROSYNC_CONF). The
+    /// orchestrator runs on a cluster node, so the default is the live pmxcfs copy.</summary>
+    public string CorosyncConfPath { get; init; } = "/etc/pve/corosync.conf";
+
     public IReadOnlyDictionary<string, string> NodeAddresses { get; init; } = DefaultNodeAddresses;
 
     /// <summary>Mirror of the wake-node.sh NODE_MACS registry.</summary>
@@ -96,6 +100,7 @@ public sealed record OrchestratorOptions
             WolBroadcast = NonEmpty(get("ORCH_WOL_BROADCAST")) ?? "255.255.255.255",
             NodeMacs = macs,
             NodeAddresses = addrs,
+            CorosyncConfPath = get("ORCH_COROSYNC_CONF") is { Length: > 0 } cc ? cc : "/etc/pve/corosync.conf",
         };
     }
 

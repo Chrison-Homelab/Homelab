@@ -96,8 +96,18 @@ public sealed class PowerLoop(
         var awaySince = _policies.Values.Select(p => p.AwaySince).FirstOrDefault(a => a is not null);
         state.Update(new StatusReport(
             options.Armed, now, presenceState.PresentCount, presenceState.PresentMacs,
-            awaySince, reports, ArmGuard.Preconditions()));
+            awaySince, reports, ArmGuard.Evaluate(nodeStates, options.ManagedNodes, ReadCorosyncConf())));
     }
+
+    // Best-effort read each poll; an unreadable file is reported by the guard as UNMET, never assumed.
+    private string? ReadCorosyncConf()
+    {
+        try { return File.Exists(options.CorosyncConfPath) ? File.ReadAllText(options.CorosyncConfPath) : null; }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "cannot read {Path}", options.CorosyncConfPath);
+            return null;
+        }    }
 
     private async Task ActAsync(Decision decision, string node, CancellationToken ct)
     {

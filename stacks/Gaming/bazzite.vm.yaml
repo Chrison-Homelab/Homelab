@@ -58,6 +58,7 @@ spec:
 
   network:
     bridge: vmbr0
+    vlan: 1010            # Homelab VLAN — declared so converge and the live tag agree
     # net0 virtio (existing MAC bc:24:11:03:32:13 preserved on adopt)
 
   # --- the whole point: GPU passthrough via a Proxmox PCI resource mapping ---
