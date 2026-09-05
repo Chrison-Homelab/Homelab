@@ -414,6 +414,21 @@ entries:
   # So `allow_friends: false` here is a deliberate narrowing, not an omission. The intent is
   # "has access to MY server", and `allowed_servers` is the only check that says that.
   #
+  # ⚠ AND `allow_friends: true` IS CURRENTLY BROKEN UPSTREAM, WHICH IS THE STRONGER REASON.
+  # plex.tv now answers GET /api/v2/friends with **HTTP 410 Gone** and an empty body —
+  # verified live from CT 5008 with the owner token on 2026-09-06. authentik's get_friends()
+  # calls raise_for_status(), and unlike check_server_overlap — which wraps its call and turns
+  # a failure into a clean 404 — check_friends_overlap has NO exception handling at all. So
+  # with allow_friends on, EVERY Plex login raises rather than being denied. Turning it on to
+  # "be more permissive" would take the whole source down.
+  #
+  # ⚠ `allowed_servers` HOLDS THE *PROCESSED* IDENTIFIER. Plex's Preferences.xml carries both
+  # `MachineIdentifier` (a UUID) and `ProcessedMachineIdentifier` (40 hex chars), and plex.tv
+  # reports the PROCESSED one as a resource's `clientIdentifier` — which is what
+  # check_server_overlap compares against. The UUID is the more plausible-looking of the two
+  # and matches nothing; combined with allow_friends off, that is a source that admits NOBODY
+  # while looking perfectly configured. Confirmed against live /api/v2/resources, not assumed.
+  #
   # ⚠ AUTHENTICATED IS NOT AUTHORISED, and this source is exactly why that matters. A new
   # Plex user is enrolled by `default-source-enrollment` into NO GROUP, matches no policy
   # binding above, and reaches nothing at all. Access is granted deliberately afterwards by
@@ -426,9 +441,10 @@ entries:
   # with its groups intact. Anyone who should keep access after leaving the Plex server needs
   # a second auth method (password or passkey) on their authentik account.
   #
-  # `plex_token` is the OWNER's token — authentik calls /api/v2/friends and /api/v2/user with
-  # it. Plex cannot issue a narrower one, so it is a credential for the whole Plex account and
-  # lives in Secrets Manager like any other.
+  # `plex_token` is the OWNER's token. With allow_friends off, authentik uses it only for
+  # /api/v2/user; the friends call it would otherwise make is the one that now 410s. Plex
+  # cannot issue a narrower token, so it is a credential for the whole Plex account and lives
+  # in Secrets Manager like any other. Read from PlexOnlineToken in Preferences.xml on CT 5008.
   - model: authentik_sources_plex.plexsource
     id: plex-source
     identifiers: { slug: plex }
@@ -437,7 +453,7 @@ entries:
       enabled: true
       allow_friends: false
       allowed_servers:
-        - !Env PLEX_MACHINE_IDENTIFIER
+        - !Env PLEX_SERVER_CLIENT_IDENTIFIER
       plex_token: !Env PLEX_OWNER_TOKEN
       # IDENTIFIER, not email_link. Linking on email would let a Plex account with an address
       # matching an existing authentik user take that user over — including akadmin. Plex does
