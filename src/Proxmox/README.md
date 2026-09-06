@@ -97,3 +97,18 @@ When adding new scripts:
 3. Add error handling and input validation
 4. Test in the development container
 5. Update documentation in [docs/Scripts.md](../../docs/Scripts.md)
+
+## upgrade-guests.sh / .ps1
+
+Apply pending OS package upgrades inside every **running** LXC on a node, non-interactively
+(keeps local config on conflicts; per-guest log in `/var/log/homelab-upgrade.log`). `--dry-run`
+only reports pending / security / reboot-required counts — the manual half of #436.
+
+```bash
+ssh root@hpe-01.homelab.chrison.internal 'bash -s -- --dry-run' < src/Proxmox/upgrade-guests.sh
+ssh root@hpe-01.homelab.chrison.internal 'bash -s -- --reboot'  < src/Proxmox/upgrade-guests.sh
+```
+
+OS packages only. community-scripts apps update via their own `update`; container images via
+`podman auto-update` (timer) or the docker member's compose pull; the node via `apt dist-upgrade`
+plus a planned reboot. Those stay separate, deliberate acts.
