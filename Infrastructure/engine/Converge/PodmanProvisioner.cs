@@ -183,7 +183,17 @@ public sealed class PodmanProvisioner : IAppProvisioner
         // this converge" from "was already in that state". Read from the container rather
         // than the engine host: the comparison is against timestamps the container itself
         // writes, and the two clocks are not the same clock.
-        var sinceRes = await ctx.Exec.InContainerAsync(node, ctid, "date -u '+%Y-%m-%d %H:%M:%S'");
+        //
+        // ⚠ THE `+00` IS LOAD-BEARING AND ITS ABSENCE IS SILENT. This is UTC, but an
+        // offset-less literal does not say so, and the consumer resolves it in ITS OWN
+        // timezone — Postgres parses '2026-09-06 00:01:18' against the session TimeZone, and
+        // the authentik container sets TZ=Pacific/Auckland. The stamp then lands ~12 hours
+        // EARLIER than the instant meant, so `last_applied < '{{since}}'` is false for any
+        // apply that happened today and the freshness clause never fires. The check silently
+        // degrades to "is it successful right now" — the exact stale-read it exists to catch.
+        // Found when a converge reported a passing verify over a blueprint it had shipped but
+        // authentik had not yet applied (#539).
+        var sinceRes = await ctx.Exec.InContainerAsync(node, ctid, "date -u '+%Y-%m-%d %H:%M:%S+00'");
         var since = sinceRes.Ok ? sinceRes.Stdout.Trim() : "";
 
         // Assets BEFORE the deploy script: units must never start before the configs they
@@ -269,7 +279,11 @@ public sealed class PodmanProvisioner : IAppProvisioner
     // stale-read failure the mechanism is meant to catch.
     // Substituted for {{since}} when a run changed nothing, so the freshness clause becomes
     // vacuously true and the check reduces to "is it successful right now".
-    internal const string EpochSince = "1970-01-01 00:00:00";
+    //
+    // Carries the same explicit `+00` as a real stamp. Nothing depends on it at the epoch —
+    // every plausible timestamp is after 1970 in any timezone — but the two must stay the
+    // same shape, or the next person copies the offset-less one back into the live path.
+    internal const string EpochSince = "1970-01-01 00:00:00+00";
 
     internal readonly record struct VerifyStep(string Name, string Run, int Retries, int IntervalSeconds);
 

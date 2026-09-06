@@ -1368,8 +1368,24 @@ public sealed class ConvergeCoreTests
 
         var rendered = PodmanProvisioner.RenderVerify(run, PodmanProvisioner.EpochSince);
 
-        Assert.Contains("last_applied < '1970-01-01 00:00:00'", rendered, StringComparison.Ordinal);
+        Assert.Contains("last_applied < '1970-01-01 00:00:00+00'", rendered, StringComparison.Ordinal);
         Assert.Contains("status <> 'successful'", rendered, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Verify_SinceCarriesAnExplicitUtcOffset()
+    {
+        // The stamp is taken with `date -u`, but UTC that does not SAY it is UTC is resolved
+        // by the consumer in the consumer's timezone. Postgres parses an offset-less literal
+        // against the session TimeZone, and the authentik container runs TZ=Pacific/Auckland,
+        // so the stamp lands ~12 hours early and `last_applied < since` is false for anything
+        // applied today. The clause stops firing and the check quietly weakens to "is it
+        // successful right now" — which is how a converge passed verify over a blueprint it
+        // had shipped but authentik had not yet applied (#539).
+        //
+        // Asserted on the constant because the live stamp is produced by a shell call: if the
+        // two ever diverge in shape, this is the cheaper place to notice.
+        Assert.EndsWith("+00", PodmanProvisioner.EpochSince, StringComparison.Ordinal);
     }
 
     [Fact]
