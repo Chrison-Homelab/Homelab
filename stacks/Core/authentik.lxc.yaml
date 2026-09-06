@@ -152,5 +152,7 @@ spec:
       # identifier is not secret but is kept out of this PUBLIC repo like HOME_WAN_IP.
       authentik_audiobookshelf_client_id: AUTHENTIK_AUDIOBOOKSHELF_CLIENT_ID
       authentik_audiobookshelf_client_secret: AUTHENTIK_AUDIOBOOKSHELF_CLIENT_SECRET
+      authentik_romm_client_id: AUTHENTIK_ROMM_CLIENT_ID
+      authentik_romm_client_secret: AUTHENTIK_ROMM_CLIENT_SECRET
       authentik_plex_token: PLEX_TOKEN
       authentik_plex_server_client_identifier: PLEX_SERVER_CLIENT_IDENTIFIER
