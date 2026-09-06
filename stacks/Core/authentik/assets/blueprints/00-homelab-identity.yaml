@@ -644,9 +644,23 @@ entries:
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
         - !KeyOf abs-groups-scope
-      # TWO URIs, not the four upstream lists. The other two are `/audiobookshelf/`-prefixed
-      # for installs served on a SUBPATH; ours is the root of its own subdomain, so those
-      # would be redirect targets that can never be reached — surface for nothing.
+      # ALL FOUR that upstream lists, and the `/audiobookshelf/` pair is NOT redundant here.
+      # This was originally trimmed to two on the reasoning that a subpath variant cannot be
+      # reached by an install served at the root of its own subdomain. That reasoning is
+      # wrong, and the field name is what makes it wrong:
+      #
+      #   `authOpenIDSubfolderForRedirectURLs` does not describe how ABS is SERVED. It is
+      #   prepended when ABS BUILDS its callback —
+      #       new URL(`${authOpenIDSubfolderForRedirectURLs}/auth/openid/callback`, hostUrl)
+      #   — and the settings UI DEFAULTS it to the app's routerBasePath when it has never
+      #   been set (authentication.vue: `=== undefined ? this.$config.routerBasePath : ...`).
+      #   Ours therefore persisted as `/audiobookshelf` without anyone choosing it, and the
+      #   redirect_uri sent to authentik carries that prefix.
+      #
+      # A mismatch here is an `invalid_redirect_uri` at the very end of an otherwise correct
+      # login, which reads like a broken client rather than one extra path segment. Both
+      # forms are registered so the login works whichever way that dropdown is left, and so
+      # changing it later cannot silently break authentication.
       #
       # `mobile-redirect` is NOT optional and is easy to read as web-only duplication: the
       # phone apps come back through it, and it is the server that then hands off to
@@ -657,6 +671,10 @@ entries:
           url: https://audiobookshelf.arr.chrison.dev/auth/openid/callback
         - matching_mode: strict
           url: https://audiobookshelf.arr.chrison.dev/auth/openid/mobile-redirect
+        - matching_mode: strict
+          url: https://audiobookshelf.arr.chrison.dev/audiobookshelf/auth/openid/callback
+        - matching_mode: strict
+          url: https://audiobookshelf.arr.chrison.dev/audiobookshelf/auth/openid/mobile-redirect
 
   - model: authentik_core.application
     id: audiobookshelf-app
