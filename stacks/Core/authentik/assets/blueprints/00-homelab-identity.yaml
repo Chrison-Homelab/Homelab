@@ -702,6 +702,92 @@ entries:
     identifiers: { target: !KeyOf audiobookshelf-app, group: !KeyOf grp-family }
     attrs: { order: 2, enabled: true }
 
+  # ── RomM: OAuth2/OIDC provider (#485) ─────────────────────────────────────────────
+  # Second household-facing migration. Unlike Audiobookshelf, RomM is configured ENTIRELY
+  # from environment variables, so its half is real IaC in the Media stack rather than a UI
+  # step — which is why it follows ABS rather than leading.
+  #
+  # SAME SCOPE TRAP AS ABS, INDEPENDENTLY ARRIVED AT. RomM builds its scope request as
+  #     "scope": f"openid profile email {OIDC_CLAIM_ROLES}".strip()
+  # so the claim name is ALSO a scope name here. Two apps, two codebases, the same design —
+  # assume it of the next one and check rather than be surprised.
+  #
+  # A SEPARATE MAPPING FROM ABS'"'"'s, DELIBERATELY, even though both could read one `groups`
+  # scope. Sharing it would mean an edit made for one app silently re-roles the other, and
+  # the two have different vocabularies and different role counts. A distinct scope name per
+  # application costs one entry and keeps the blast radius at one app.
+  #
+  # WHY IT TRANSLATES RATHER THAN EMITTING OUR NAMES. RomM can map role values itself
+  # (OIDC_ROLE_ADMIN etc.), which looks like it removes the need — but each is a SINGLE
+  # string tested with `OIDC_ROLE_ADMIN in roles`, so only ONE group can mean admin. Our
+  # model has two (`homelab-admins` as the superset, `media-admins` for this stack), and that
+  # cannot be expressed. Collapsing them here keeps the superset convention intact.
+  #
+  # ⚠ A NON-MATCH IS A 403, NOT A DOWNGRADE:
+  #     else: raise HTTPException(403, "User has not been granted any roles for this application.")
+  # so every group bound to the application below must come out of this mapping as something
+  # RomM recognises. `family` must therefore map to `user`, not to nothing.
+  - model: authentik_providers_oauth2.scopemapping
+    id: romm-roles-scope
+    identifiers: { name: "RomM roles" }
+    attrs:
+      scope_name: romm_roles
+      description: "Collapses the homelab groups into the single admin value RomM can express."
+      expression: |
+        groups = [group.name for group in request.user.groups.all()]
+        if "homelab-admins" in groups or "media-admins" in groups:
+            return {"romm_roles": ["admin"]}
+        return {"romm_roles": ["user"]}
+
+  - model: authentik_providers_oauth2.oauth2provider
+    id: romm-provider
+    identifiers: { name: RomM }
+    attrs:
+      client_type: confidential
+      client_id: !Env AUTHENTIK_ROMM_CLIENT_ID
+      client_secret: !Env AUTHENTIK_ROMM_CLIENT_SECRET
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      include_claims_in_id_token: true
+      grant_types:
+        - authorization_code
+        - refresh_token
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+        - !KeyOf romm-roles-scope
+      # ONE URI, and unlike Audiobookshelf that is not a guess to be regretted: RomM takes the
+      # callback as an absolute OIDC_REDIRECT_URI we set ourselves, so there is no second form
+      # it can decide to send. The path is fixed by its router — `@router.get("/oauth/openid")`
+      # under main.py's `prefix="/api"`.
+      redirect_uris:
+        - matching_mode: strict
+          url: https://romm.arr.chrison.dev/api/oauth/openid
+
+  - model: authentik_core.application
+    id: romm-app
+    identifiers: { slug: romm }
+    attrs:
+      name: RomM
+      provider: !KeyOf romm-provider
+      meta_launch_url: https://romm.arr.chrison.dev
+      meta_description: Game library. Household-facing.
+      policy_engine_mode: any
+
+  # Every bound group must map to a role RomM recognises, or its members authenticate and are
+  # then refused with a 403 — see the mapping above. All three do.
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf romm-app, group: !KeyOf grp-homelab-admins }
+    attrs: { order: 0, enabled: true }
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf romm-app, group: !KeyOf grp-media-admins }
+    attrs: { order: 1, enabled: true }
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf romm-app, group: !KeyOf grp-family }
+    attrs: { order: 2, enabled: true }
+
   # ── Retire the previous title-case groups ─────────────────────────────────────────
   # A blueprint keys objects by `identifiers`, so changing `name` does NOT rename a group —
   # it creates a second one and orphans the first, complete with its members. The akadmin
