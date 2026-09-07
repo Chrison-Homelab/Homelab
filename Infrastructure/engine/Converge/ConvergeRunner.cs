@@ -161,6 +161,9 @@ public sealed class ConvergeRunner
             foreach (var step in UnifiReservationReconciler.PlanSteps(s))
                 Console.WriteLine($"    unifi: {step}");
 
+            if (sp.Ctid is not null)
+                Console.WriteLine($"    baseline:  {SecurityUpdatesReconciler.PlanStep(s)}");
+
             foreach (var step in registry.For(sp.Provisioner ?? sp.App).PlanSteps(s))
                 Console.WriteLine($"    post-create: {step}");
 
@@ -242,6 +245,7 @@ public sealed class ConvergeRunner
         var creator = new CommunityScriptsCreator(exec);
         var reconciler = new CtConfigReconciler(exec);
         var mountReconciler = new MountReconciler(exec);
+        var securityUpdates = new SecurityUpdatesReconciler(exec);
         // Reservations reconcile against the network controller, not Proxmox — no UniFi
         // credentials just means those steps report SKIPPED (see the reconciler).
         using var reservations = new UnifiReservationReconciler(
@@ -381,6 +385,29 @@ public sealed class ConvergeRunner
                     }
                 }
                 catch (Exception ex) { Console.WriteLine($"    mounts FAILED: {ex.Message}"); failed++; Console.WriteLine(); continue; }
+            }
+
+            // Baseline (#436): unattended SECURITY updates inside the guest. Every LXC, before its
+            // app provisioner, never fatal to the member — a guest that cannot install a package
+            // still gets its app converged, and the failure is printed where it will be read.
+            if (sp.Node is not null && sp.Ctid is not null)
+            {
+                try
+                {
+                    var upd = await securityUpdates.ReconcileAsync(s, ct);
+                    switch (upd.Outcome)
+                    {
+                        case ApplyOutcome.Applied:
+                            applied++; Console.WriteLine($"    baseline APPLIED: {upd.Message}"); break;
+                        case ApplyOutcome.Failed:
+                            failed++; Console.WriteLine($"    baseline FAILED: {upd.Message}"); break;
+                        case ApplyOutcome.Skipped:
+                            Console.WriteLine($"    baseline SKIPPED: {upd.Message}"); break;
+                        default:
+                            Console.WriteLine($"    baseline: {upd.Message}"); break;
+                    }
+                }
+                catch (Exception ex) { Console.WriteLine($"    baseline FAILED: {ex.Message}"); failed++; }
             }
 
             // Guard: required env secrets must be present.

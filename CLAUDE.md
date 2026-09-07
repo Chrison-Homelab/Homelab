@@ -202,6 +202,22 @@ bw get password "Homelab Schema Read PAT" | gh secret set SCHEMA_RO_PAT --org Ch
 The caller passes it through as `schema_token` (underscore — GitHub secret ids
 forbid hyphens). Setting org secrets needs org-admin; scope the PAT to `contents:read`.
 
+## Updates: what is automatic and what is a person's act (#436)
+
+Every LXC converges to a **baseline**: `unattended-upgrades`, **security pocket only**, no
+automatic reboot (`SecurityUpdatesReconciler`, before the app provisioner). Opt a shape out
+with `spec.config.securityUpdates: false` — it shows as OPTED OUT in the plan. Roll it out or
+re-check fleet-wide without converging every stack:
+`dotnet run --project Infrastructure/engine -- security-updates stacks --apply`.
+
+- **Apps** update themselves where they can: the arr provisioners turn on the built-in
+  updater (`updateAutomatically`); podman hosts run `podman auto-update`; the rest is
+  community-scripts `update` inside the CT (interactive; needs a real TERM), by a person.
+- **Non-security OS packages and dist-upgrades** are a person's act:
+  `src/Proxmox/upgrade-guests.sh` (`--dry-run` reports pending / security / reboot-required).
+- **Nodes** (Proxmox packages, kernel reboots): manual, one node at a time, wait for the node
+  to actually go down before probing that it is back.
+
 ## The dashboard is rendered from the shapes — declare, never edit (ADR-0012)
 
 Homepage at `http://monitoring.homelab.chrison.internal:3010` is **generated** from every shape's
