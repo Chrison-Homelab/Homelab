@@ -29,6 +29,18 @@ jobs:
       DOTNET_ROOT: /usr/local/dotnet                      # .NET SDK pre-installed on the runner
     steps:
       - uses: actions/checkout@v6
+      # The engine tests read stack content (ShellProvisionerTests asserts on
+      # stacks/DevOps/shell-assets/Brewfile), so the stack submodules must be present. Without
+      # this the test only passed when an earlier deploy job had left them in the shared
+      # workspace — a dependency on the runner's history, not on the checkout.
+      - name: Fetch stack submodules (shapes + assets live here; vendor/* C# repos skipped)
+        env:
+          TOKEN: ${{ secrets.SUBMODULES_RO_PAT }}
+        run: |
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+          paths=$(git config --file .gitmodules --get-regexp path | awk '{print $2}' | grep '^stacks/')
+          git submodule update --init $paths
+          git config --global --unset-all url."https://x-access-token:${TOKEN}@github.com/".insteadOf || true
       # TestEngine depends on CompileEngine, so this both builds and tests. It also fails
       # loudly if zero tests are discovered — `dotnet test` exits 0 on an empty run, which
       # would otherwise make a renamed test project look like a passing gate.
