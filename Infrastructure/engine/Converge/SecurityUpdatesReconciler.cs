@@ -75,10 +75,16 @@ public sealed class SecurityUpdatesReconciler
         "// cleared and pinned here; Ubuntu's security + ESM names are included so the same file\n" +
         "// is right on both. No automatic reboot: the reboot-required flag is reported by\n" +
         "// upgrade-guests.sh --dry-run and acted on by a person.\n" +
+        "// Two lists, two grammars: Origins-Pattern takes key=value patterns (Debian's own default\n" +
+        "// lives there), Allowed-Origins takes distro:archive (Ubuntu's). Mixing them makes\n" +
+        "// unattended-upgrade abort at startup with 'Unable to parse Allowed-Origins'.\n" +
         "#clear Unattended-Upgrade::Allowed-Origins;\n" +
-        "Unattended-Upgrade::Allowed-Origins {\n" +
+        "#clear Unattended-Upgrade::Origins-Pattern;\n" +
+        "Unattended-Upgrade::Origins-Pattern {\n" +
         "  \"origin=Debian,codename=${distro_codename},label=Debian-Security\";\n" +
         "  \"origin=Debian,codename=${distro_codename}-security,label=Debian-Security\";\n" +
+        "};\n" +
+        "Unattended-Upgrade::Allowed-Origins {\n" +
         "  \"${distro_id}:${distro_codename}-security\";\n" +
         "  \"${distro_id}ESMApps:${distro_codename}-apps-security\";\n" +
         "  \"${distro_id}ESM:${distro_codename}-infra-security\";\n" +
