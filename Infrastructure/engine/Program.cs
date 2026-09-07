@@ -30,6 +30,11 @@ using Homelab.Infrastructure.Unifi;
 //                                         #   be converged or the member fails (#306).
 //   homelab-infra validate <path>        # validate a shape file / stack dir / nodes dir
 //                                         #   against shape.schema.json (CI plan gate)
+//   homelab-infra security-updates <stacks-dir> [--apply]
+//                                         # unattended-upgrades baseline (#436) on every running
+//                                         #   LXC across all stacks — plan, or --apply. Same
+//                                         #   reconciler converge runs per member; this is the
+//                                         #   fleet-wide rollout without converging every stack
 //   homelab-infra dashboard <stacks-dir> [--out f] [--check] [--deploy]
 //                                         # render Homepage services.yaml from every stack's
 //                                         #   metadata.services (ADR-0012); --deploy pushes it
@@ -60,10 +65,12 @@ switch (command)
         return await RunUnifiReservationReport(args);
     case "validate":
         return RunValidate(args);
+    case "security-updates":
+        return await Homelab.Infrastructure.Converge.SecurityUpdatesCommand.RunAsync(args, new NodeExec(), Console.Out, Console.Error);
     case "dashboard":
         return await Homelab.Infrastructure.Dashboard.DashboardCommand.RunAsync(args, new NodeExec(), Console.Out, Console.Error);
     default:
-        Console.Error.WriteLine($"Unknown command '{command}'. Supported: discover, discover-diff, discover-unifi, converge, converge-unifi, unifi-reservations, validate, dashboard");
+        Console.Error.WriteLine($"Unknown command '{command}'. Supported: discover, discover-diff, discover-unifi, converge, converge-unifi, unifi-reservations, validate, dashboard, security-updates");
         return 1;
 }
 
