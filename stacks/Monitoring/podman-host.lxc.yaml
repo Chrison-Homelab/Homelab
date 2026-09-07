@@ -75,6 +75,10 @@ metadata:
       url: http://monitoring.homelab.chrison.internal:3010
       icon: homepage
       description: This dashboard, rendered from the shapes
+    - name: OTel Collector
+      url: http://monitoring.homelab.chrison.internal:4318
+      icon: opentelemetry
+      description: OTLP/HTTP ingest (Claude Code telemetry → Tempo/Loki); no UI, no auth
 
 spec:
   app: podman            # community-scripts ct/podman.sh + the `podman` provisioner
