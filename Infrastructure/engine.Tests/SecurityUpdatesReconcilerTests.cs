@@ -92,7 +92,13 @@ public sealed class SecurityUpdatesReconcilerTests
         Assert.Contains("Unattended-Upgrade::Automatic-Reboot \"false\"", s);
         Assert.Contains("APT::Periodic::Unattended-Upgrade \"1\"", s);
         Assert.Contains("#clear Unattended-Upgrade::Allowed-Origins;", s);
+        Assert.Contains("#clear Unattended-Upgrade::Origins-Pattern;", s);
         Assert.Contains("label=Debian-Security", s);
+        // key=value patterns go in Origins-Pattern, distro:archive in Allowed-Origins — never mixed.
+        var pattern = s[s.IndexOf("Origins-Pattern {", StringComparison.Ordinal)..s.IndexOf("Allowed-Origins {", StringComparison.Ordinal)];
+        Assert.DoesNotContain("${distro_id}:", pattern);
+        var allowed = s[s.IndexOf("Allowed-Origins {", StringComparison.Ordinal)..s.IndexOf("Automatic-Reboot", StringComparison.Ordinal)];
+        Assert.DoesNotContain("origin=", allowed);
         Assert.Contains("${distro_id}:${distro_codename}-security", s);
         Assert.DoesNotContain("label=Debian\"", s);                 // the plain stable pocket is NOT admitted
         Assert.DoesNotContain("-updates\"", s);
