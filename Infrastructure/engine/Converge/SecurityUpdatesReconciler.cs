@@ -9,9 +9,9 @@ namespace Homelab.Infrastructure.Converge;
 // patched a library unless a person ran apt. This makes Debian's own mechanism part of the
 // baseline every LXC converges to:
 //
-//   * `unattended-upgrades` installed; its DEFAULT origins are the security pocket only
-//     (Debian-Security / ${distro_id}:${codename}-security), which is exactly the policy —
-//     non-security and dist-upgrades stay a deliberate act (src/Proxmox/upgrade-guests.sh).
+//   * `unattended-upgrades` installed with Allowed-Origins PINNED to the security pockets
+//     (Debian's shipped default also admits the plain stable pocket) — non-security and
+//     dist-upgrades stay a deliberate act (src/Proxmox/upgrade-guests.sh).
 //   * Automatic-Reboot OFF. A reboot is a human's decision; the reboot-required flag shows up
 //     in the dry-run report instead.
 //   * The apt-daily timers enabled (they are on by default but nothing ran without the package).
@@ -63,16 +63,26 @@ public sealed class SecurityUpdatesReconciler
     }
 
     // The two managed files. 20auto-upgrades turns the daily run on; 52homelab pins the
-    // behaviour we rely on. Origins are NOT overridden — the package default is security-only.
+    // behaviour we rely on, origins included.
     internal const string AutoUpgrades =
         "APT::Periodic::Update-Package-Lists \"1\";\n" +
         "APT::Periodic::Unattended-Upgrade \"1\";\n" +
         "APT::Periodic::AutocleanInterval \"7\";\n";
 
     internal const string Policy =
-        "// homelab-managed (SecurityUpdatesReconciler). Security pocket only — that is the\n" +
-        "// package's default origin list, deliberately not widened here. No automatic reboot:\n" +
-        "// the reboot-required flag is reported by upgrade-guests.sh --dry-run and acted on by a person.\n" +
+        "// homelab-managed (SecurityUpdatesReconciler). SECURITY POCKETS ONLY. Debian's shipped\n" +
+        "// default also admits the plain stable pocket (point-release updates), so the list is\n" +
+        "// cleared and pinned here; Ubuntu's security + ESM names are included so the same file\n" +
+        "// is right on both. No automatic reboot: the reboot-required flag is reported by\n" +
+        "// upgrade-guests.sh --dry-run and acted on by a person.\n" +
+        "#clear Unattended-Upgrade::Allowed-Origins;\n" +
+        "Unattended-Upgrade::Allowed-Origins {\n" +
+        "  \"origin=Debian,codename=${distro_codename},label=Debian-Security\";\n" +
+        "  \"origin=Debian,codename=${distro_codename}-security,label=Debian-Security\";\n" +
+        "  \"${distro_id}:${distro_codename}-security\";\n" +
+        "  \"${distro_id}ESMApps:${distro_codename}-apps-security\";\n" +
+        "  \"${distro_id}ESM:${distro_codename}-infra-security\";\n" +
+        "};\n" +
         "Unattended-Upgrade::Automatic-Reboot \"false\";\n" +
         "Unattended-Upgrade::Remove-Unused-Dependencies \"true\";\n" +
         "Unattended-Upgrade::Remove-Unused-Kernel-Packages \"true\";\n" +

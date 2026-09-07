@@ -85,12 +85,17 @@ public sealed class SecurityUpdatesReconcilerTests
     [Fact]
     public void Script_PinsThePolicyWeRelyOn()
     {
-        // Security pocket only is the package default and must NOT be widened; no auto-reboot; and
-        // nothing here runs a dist-upgrade — that stays a person's act via upgrade-guests.sh.
+        // Origins are cleared and pinned to the SECURITY pockets — Debian's default also admits
+        // the plain stable pocket; no auto-reboot; and nothing here runs a dist-upgrade — that
+        // stays a person's act via upgrade-guests.sh.
         var s = SecurityUpdatesReconciler.Script;
         Assert.Contains("Unattended-Upgrade::Automatic-Reboot \"false\"", s);
         Assert.Contains("APT::Periodic::Unattended-Upgrade \"1\"", s);
-        Assert.DoesNotContain("Allowed-Origins", s);
+        Assert.Contains("#clear Unattended-Upgrade::Allowed-Origins;", s);
+        Assert.Contains("label=Debian-Security", s);
+        Assert.Contains("${distro_id}:${distro_codename}-security", s);
+        Assert.DoesNotContain("label=Debian\"", s);                 // the plain stable pocket is NOT admitted
+        Assert.DoesNotContain("-updates\"", s);
         Assert.DoesNotContain("dist-upgrade", s);
         Assert.DoesNotContain("apt-get -qq -y upgrade", s);
         Assert.Contains("cmp -s", s);                                // rewrite only on change
