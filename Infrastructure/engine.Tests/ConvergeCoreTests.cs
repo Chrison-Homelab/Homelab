@@ -954,7 +954,26 @@ public sealed class ConvergeCoreTests
         Assert.Contains("- 51820:51820/udp", compose);
     }
 
-    [Fact]
+        [Fact]
+    public void Pangolin_TraefikStatic_LogsErrorsOnly_AndNeverLogsHeaders()
+    {
+        var s = PangolinShape();
+        var st = PangolinProvisioner.BuildTraefikStatic(s, "chrison.dev");
+
+        // Without an access log a client failing auth is invisible from the homelab side:
+        // on 2026-09-12 a known 401 against otel.lab.chrison.dev produced zero Traefik log
+        // lines, so "nothing logged for that client" carried no information at all.
+        Assert.Contains("accessLog:", st);
+        Assert.Contains("\"400-599\"", st);
+
+        // Headers must never be logged. /v1/metrics carries the OTLP bearer token in the
+        // Authorization header; capturing it would leak a live credential into docker logs.
+        Assert.Contains("headers:", st);
+        Assert.Contains("defaultMode: \"drop\"", st);
+        Assert.DoesNotContain("defaultMode: \"keep\"", st);
+    }
+
+[Fact]
     public void Pangolin_TraefikStatic_UsesDnsChallengeWildcards_NotHttpChallenge()
     {
         var s = PangolinWildcardShape();
