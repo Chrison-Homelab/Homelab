@@ -2013,6 +2013,23 @@ public sealed class PangolinProvisioner : IAppProvisioner
             $"      version: \"{badger}\"",
             "log:",
             "  level: \"INFO\"",
+            // Access logging, 4xx/5xx ONLY. The public ingress had no request log at all, so a
+            // client that fails auth was invisible from the homelab side -- established by
+            // control on 2026-09-12, when a known 401 produced zero log lines and "no entries"
+            // therefore proved nothing. Filtering to 400-599 keeps a healthy ingress quiet;
+            // success needs no log line because it shows up as data.
+            //
+            // Headers are DROPPED, deliberately: /v1/metrics carries the OTLP bearer token in
+            // Authorization, and an access log that captured it would turn a debugging aid into
+            // a credential leak in `docker logs`.
+            "accessLog:",
+            "  format: \"json\"",
+            "  filters:",
+            "    statusCodes:",
+            "      - \"400-599\"",
+            "  fields:",
+            "    headers:",
+            "      defaultMode: \"drop\"",
             "certificatesResolvers:",
             "  letsencrypt:",
             "    acme:",
