@@ -59,6 +59,35 @@ On 2026-09-05 this destroyed ~2h of *all* homelab metrics: the transcript of the
 running the backfill extended to the present minute, so the blocks ended at 09:59:47 and
 took the live head with them.
 
+## ⚠ Transcripts expire after 30 days — recovery has a deadline
+
+Claude Code deletes session transcripts under `~/.claude/projects/` after **30 days** by
+default (`cleanupPeriodDays`, documented default 30). Unset means the default is running.
+
+Transcripts are the only copy of anything that did not reach the collector, so **gap
+recovery expires silently**. No warning, no error — the files are simply not there, and
+nothing in Prometheus or the dashboard indicates that a recoverable gap has become
+permanent.
+
+Measured on the work laptop, 2026-09-05 to 2026-09-12: 89 transcripts became 76, with a
+hard floor at 31 days and no taper below it. Forward attrition on that machine — 5 gone
+within a day, 12 within three, 19 within a week, **37 within a fortnight**.
+
+This is a worse failure mode than the two bugs that preceded it, because both of those were
+detectable after the fact. This one destroys the evidence.
+
+Consequences for anyone using this tool:
+
+* **Any backfill must run inside the 30-day window.** The 2026-09-05 to 09-12 outage was
+  recovered with ~23 days to spare. Five weeks of broken telemetry would have been
+  unrecoverable.
+* **Do not assume transcripts are durable.** They are a rolling window, not an archive.
+* The mitigation is `cleanupPeriodDays`. Setting it to `400` aligns transcript retention
+  with this Prometheus's 400d, so a transcript survives as long as the metrics it could
+  repair. Cost measured: ~4.9 GB/year on the Mac, ~2.1 GB/year on the laptop.
+* An exclusion list built from Prometheus is fine, but the *corpus it is compared against*
+  erodes. Ids in the list that match no transcript are expected, not an anomaly.
+
 ## Loading
 
 promtool lives in the prometheus container; CT 4001 on hpe-01 is the monitoring host.
