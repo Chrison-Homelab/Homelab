@@ -43,9 +43,27 @@ exclude = set()
 if len(sys.argv) > 2 and sys.argv[2] not in ("", "-"):
     exclude = {l.strip() for l in open(sys.argv[2], encoding="utf-8") if l.strip()}
 
-# default: last completed 2h boundary, which is always below the running head's minTime
+# Default cutoff: now minus 4h, floored to a 2h boundary.
+#
+# It was "last completed 2h boundary" and that was WRONG -- the comment claimed it is always
+# below the running head's minTime, which is false. Prometheus compacts the head only once it
+# spans more than 1.5x the 2h block range, so the head holds up to ~3h and its minTime can sit
+# ~3h behind now -- well below the last 2h boundary. Measured on 2026-09-12: cutoff resolved to
+# 00:00 UTC while the head started at 22:00 UTC, so the blocks reached 119 minutes INTO the head
+# and loading them would have silently discarded every WAL sample older than the blocks' maxTime.
+# That is the same ~2h homelab-wide loss this guard exists to prevent.
+#
+# 4h clears a 3h head with an hour of margin. The cost is that the most recent few hours are not
+# backfilled -- which is fine, because live telemetry covers them, and a later gap run picks up
+# anything that did not make it.
+#
+# This machine may not be able to reach Prometheus (the work laptop cannot), so the guard cannot
+# query the head directly. IT IS THEREFORE A HEURISTIC, NOT A PROOF. Whoever LOADS the blocks
+# must check the real head before doing so:
+#     curl -s <prom>/metrics | grep ^prometheus_tsdb_head_min_time_seconds
+# and refuse if the blocks' maxTime is not comfortably below it.
 import time as _time
-CUTOFF = float(sys.argv[3]) if len(sys.argv) > 3 else (int(_time.time()) // 7200) * 7200
+CUTOFF = float(sys.argv[3]) if len(sys.argv) > 3 else ((int(_time.time()) - 4*3600) // 7200) * 7200
 
 FIELDS = {"input": "input_tokens", "output": "output_tokens",
           "cacheCreation": "cache_creation_input_tokens",
