@@ -29,9 +29,26 @@ curl -sG http://monitoring.homelab.chrison.internal:9091/api/v1/series \
   > live-sessions.txt
 ```
 
-## ⚠ The cutoff is load-bearing
+## ⚠ The cutoff is load-bearing, and it is only a heuristic
 
-Samples at or after the last completed 2h block boundary are dropped on purpose.
+Samples from the last ~4 hours are dropped on purpose.
+
+It used to be "the last completed 2h boundary", on the claim that this is always below the
+running head's minTime. **That claim is false.** Prometheus compacts the head only once it
+spans more than 1.5x the 2h block range, so the head holds up to ~3h and its minTime can sit
+~3h behind now. Measured on 2026-09-12: the cutoff resolved to 00:00 UTC while the head began
+at 22:00 UTC, so generated blocks reached **119 minutes into the head**.
+
+The generator often runs on a machine that cannot reach Prometheus, so it cannot query the
+head. **The loader must check, every time:**
+
+```
+curl -s http://monitoring.homelab.chrison.internal:9091/metrics \
+  | grep ^prometheus_tsdb_head_min_time_seconds
+```
+
+Refuse to load if the blocks' `maxTime` is not comfortably below that. Either wait for the
+head to compact past it, or regenerate with an explicit earlier cutoff as argv[3].
 
 A block whose `maxTime` reaches into Prometheus's head makes the next restart set the
 head's min-valid-time to that `maxTime` and **silently discard every older WAL sample**.
