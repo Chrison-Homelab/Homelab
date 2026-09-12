@@ -88,6 +88,24 @@ Consequences for anyone using this tool:
 * An exclusion list built from Prometheus is fine, but the *corpus it is compared against*
   erodes. Ids in the list that match no transcript are expected, not an anomaly.
 
+### The gap you cannot see
+
+The dangerous case is the inverse, and it is invisible from every angle. A session that
+**never reached Prometheus** *and* whose **transcript has since expired** leaves no trace
+anywhere:
+
+* not in an exclusion list — that is built from Prometheus, which never saw it;
+* not in the transcripts — they are gone;
+* not in the totals, the dashboard, or any diff between them.
+
+There is no query that finds it and no count that comes out wrong. Reconciling Prometheus
+against transcripts can only ever show what one of them still holds. This is precisely the
+state the 2026-09-05 → 09-12 outage was heading for: exports dead while the clock ran on
+the transcripts that were its only backup.
+
+The practical consequence: **the dashboard going quiet for a machine is an incident, not an
+inconvenience.** After 30 days there is nothing to recover and nothing to tell you so.
+
 ## Loading
 
 promtool lives in the prometheus container; CT 4001 on hpe-01 is the monitoring host.
