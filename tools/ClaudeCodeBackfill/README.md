@@ -29,9 +29,26 @@ curl -sG http://monitoring.homelab.chrison.internal:9091/api/v1/series \
   > live-sessions.txt
 ```
 
-## ⚠ The cutoff is load-bearing
+## ⚠ The cutoff is load-bearing, and it is only a heuristic
 
-Samples at or after the last completed 2h block boundary are dropped on purpose.
+Samples from the last ~4 hours are dropped on purpose.
+
+It used to be "the last completed 2h boundary", on the claim that this is always below the
+running head's minTime. **That claim is false.** Prometheus compacts the head only once it
+spans more than 1.5x the 2h block range, so the head holds up to ~3h and its minTime can sit
+~3h behind now. Measured on 2026-09-12: the cutoff resolved to 00:00 UTC while the head began
+at 22:00 UTC, so generated blocks reached **119 minutes into the head**.
+
+The generator often runs on a machine that cannot reach Prometheus, so it cannot query the
+head. **The loader must check, every time:**
+
+```
+curl -s http://monitoring.homelab.chrison.internal:9091/metrics \
+  | grep ^prometheus_tsdb_head_min_time_seconds
+```
+
+Refuse to load if the blocks' `maxTime` is not comfortably below that. Either wait for the
+head to compact past it, or regenerate with an explicit earlier cutoff as argv[3].
 
 A block whose `maxTime` reaches into Prometheus's head makes the next restart set the
 head's min-valid-time to that `maxTime` and **silently discard every older WAL sample**.
@@ -41,6 +58,53 @@ WAL replay still logs `"WAL replay completed"`, no error is raised, and
 On 2026-09-05 this destroyed ~2h of *all* homelab metrics: the transcript of the session
 running the backfill extended to the present minute, so the blocks ended at 09:59:47 and
 took the live head with them.
+
+## ⚠ Transcripts expire after 30 days — recovery has a deadline
+
+Claude Code deletes session transcripts under `~/.claude/projects/` after **30 days** by
+default (`cleanupPeriodDays`, documented default 30). Unset means the default is running.
+
+Transcripts are the only copy of anything that did not reach the collector, so **gap
+recovery expires silently**. No warning, no error — the files are simply not there, and
+nothing in Prometheus or the dashboard indicates that a recoverable gap has become
+permanent.
+
+Measured on the work laptop, 2026-09-05 to 2026-09-12: 89 transcripts became 76, with a
+hard floor at 31 days and no taper below it. Forward attrition on that machine — 5 gone
+within a day, 12 within three, 19 within a week, **37 within a fortnight**.
+
+This is a worse failure mode than the two bugs that preceded it, because both of those were
+detectable after the fact. This one destroys the evidence.
+
+Consequences for anyone using this tool:
+
+* **Any backfill must run inside the 30-day window.** The 2026-09-05 to 09-12 outage was
+  recovered with ~23 days to spare. Five weeks of broken telemetry would have been
+  unrecoverable.
+* **Do not assume transcripts are durable.** They are a rolling window, not an archive.
+* The mitigation is `cleanupPeriodDays`. Setting it to `400` aligns transcript retention
+  with this Prometheus's 400d, so a transcript survives as long as the metrics it could
+  repair. Cost measured: ~4.9 GB/year on the Mac, ~2.1 GB/year on the laptop.
+* An exclusion list built from Prometheus is fine, but the *corpus it is compared against*
+  erodes. Ids in the list that match no transcript are expected, not an anomaly.
+
+### The gap you cannot see
+
+The dangerous case is the inverse, and it is invisible from every angle. A session that
+**never reached Prometheus** *and* whose **transcript has since expired** leaves no trace
+anywhere:
+
+* not in an exclusion list — that is built from Prometheus, which never saw it;
+* not in the transcripts — they are gone;
+* not in the totals, the dashboard, or any diff between them.
+
+There is no query that finds it and no count that comes out wrong. Reconciling Prometheus
+against transcripts can only ever show what one of them still holds. This is precisely the
+state the 2026-09-05 → 09-12 outage was heading for: exports dead while the clock ran on
+the transcripts that were its only backup.
+
+The practical consequence: **the dashboard going quiet for a machine is an incident, not an
+inconvenience.** After 30 days there is nothing to recover and nothing to tell you so.
 
 ## Loading
 
