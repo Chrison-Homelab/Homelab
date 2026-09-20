@@ -26,6 +26,7 @@ ALERTMANAGER=${ALERTMANAGER:-http://10.10.204.35:9093}
 PROWLARR_CTID=${PROWLARR_CTID:-5100}
 INDEXER_ID=${INDEXER_ID:-17}          # soulvoice-api
 STATE_DIR=${STATE_DIR:-/var/lib/soulvoice-hotswarm}
+MIN_SEEDERS=${MIN_SEEDERS:-1}         # 0 seeders = nobody holds a complete copy
 MIN_LEECHERS=${MIN_LEECHERS:-6}
 MIN_RATIO=${MIN_RATIO:-2.5}           # leechers per (seeders+1)
 MIN_GB=${MIN_GB:-5}                   # small torrents cannot repay the 72h H&R clock
@@ -63,11 +64,11 @@ PYX
   sleep 3
 done
 
-python3 - "$WORK" "$SEEN" "$MIN_LEECHERS" "$MIN_RATIO" "$MIN_GB" <<'PY'
+python3 - "$WORK" "$SEEN" "$MIN_LEECHERS" "$MIN_RATIO" "$MIN_GB" "$MIN_SEEDERS" <<'PY'
 import json, re, sys, time
 
-work, seen_path, min_l, min_r, min_gb = sys.argv[1:6]
-min_l, min_r, min_gb = int(min_l), float(min_r), float(min_gb)
+work, seen_path, min_l, min_r, min_gb, min_s = sys.argv[1:7]
+min_l, min_r, min_gb, min_s = int(min_l), float(min_r), float(min_gb), int(min_s)
 
 rows = list({r.get("guid") or r.get("title"): r for r in json.load(open(f"{work}/r.json"))}.values())
 seen = json.load(open(seen_path))
@@ -85,7 +86,12 @@ for r in rows:
     # Ratio is the signal. MIN_LEECHERS rejects S0/L1 (ratio 1.0, nobody actually
     # waiting); MIN_GB rejects torrents too small to repay a 72h H&R commitment.
     # Age is deliberately NOT filtered - still starved at 100h is still an opening.
-    if l < min_l or l / (s + 1) < min_r or gb < min_gb:
+    #
+    # MIN_SEEDERS rejects zero-seeder torrents. They score well on ratio (no seeds,
+    # some leechers) but nobody holds a complete copy, so the download may never
+    # finish - and an incomplete torrent never starts its H&R clock, never seeds,
+    # and earns nothing while holding a slot.
+    if s < min_s or l < min_l or l / (s + 1) < min_r or gb < min_gb:
         continue
     guid = r.get("guid") or r.get("title")
     if guid in seen:
