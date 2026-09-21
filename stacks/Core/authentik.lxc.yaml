@@ -117,8 +117,22 @@ spec:
       - name: authentik blueprints applied
         run: podman exec authentik-postgresql psql -U authentik -d authentik -t -A -c "select name, status, last_applied from authentik_blueprints_blueprintinstance where path like 'custom/%' and (status <> 'successful' or last_applied < '{{since}}')"
         # Discovery is on a timer, and a first apply after a container restart waits for
-        # migrations — three minutes of headroom, checked every ten seconds.
-        retries: 18
+        # migrations. SEVEN minutes of headroom, checked every ten seconds.
+        #
+        # ⚠ THIS BUDGET SCALES WITH THE BLUEPRINT, AND THE BLUEPRINT ONLY GROWS. It was three
+        # minutes when the file held Pangolin and the groups. By the time it also held Pulse,
+        # Grafana, Forgejo, the passkey stages, the Plex source, Audiobookshelf and RomM, a
+        # single apply_blueprint task took FOUR — so converge gave up on an apply that then
+        # succeeded thirty seconds later, and reported a failed deploy for a change that had
+        # in fact landed (2026-09-21).
+        #
+        # Raising it is the right fix rather than papering over a slow apply: the check asks
+        # "did authentik accept this", and the honest answer takes as long as it takes. But
+        # the next few applications will push it again, so treat a timeout here as a prompt to
+        # measure the apply (the worker logs `apply_blueprint` start/finish) rather than to
+        # bump this number reflexively — a blueprint that takes many minutes to apply is
+        # itself worth knowing about.
+        retries: 42
         intervalSeconds: 10
 
     # podman secrets seeded from secrets.env, add-only. Namespaced `authentik_*` because a
