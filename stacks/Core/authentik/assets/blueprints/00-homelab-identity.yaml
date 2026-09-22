@@ -644,7 +644,25 @@ entries:
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
         - !KeyOf abs-groups-scope
-      # ALL FOUR that upstream lists, and the `/audiobookshelf/` pair is NOT redundant here.
+      # EIGHT: every hostname ABS is reachable on, times both path forms.
+      #
+      # ⚠ ABS DERIVES ITS redirect_uri FROM THE HOST IT WAS REACHED ON — `new URL(..., hostUrl)`
+      # — so the front door you walk through decides the URI it sends. This guest has TWO, and
+      # registering only one is a login that works for whoever tests it and fails for everyone
+      # else:
+      #   * audiobookshelf.chrison.dev      — the apex, via the Media cloudflared tunnel. This
+      #     is the household's door and the one the iOS/Android apps use; its shape file calls
+      #     it out as "the two USER-FACING apps are public".
+      #   * audiobookshelf.arr.chrison.dev  — the Pangolin resource.
+      # Only the `.arr` host was registered at first (#538/#541), which is why the flow passed
+      # a browser test on that hostname and failed with `Redirect URI Error` for real use on
+      # the apex. Both are ours; a redirect URI is only dangerous when someone else controls
+      # the target, so listing every door we own costs nothing and removes the trap.
+      #
+      # ⚠ Adding a new public hostname for this guest means adding its pair HERE too. Nothing
+      # derives these from the tunnel/Pangolin declarations, so the two can silently disagree.
+      #
+      # ALL FOUR that upstream lists per host, and the `/audiobookshelf/` pair is NOT redundant.
       # This was originally trimmed to two on the reasoning that a subpath variant cannot be
       # reached by an install served at the root of its own subdomain. That reasoning is
       # wrong, and the field name is what makes it wrong:
@@ -675,6 +693,14 @@ entries:
           url: https://audiobookshelf.arr.chrison.dev/audiobookshelf/auth/openid/callback
         - matching_mode: strict
           url: https://audiobookshelf.arr.chrison.dev/audiobookshelf/auth/openid/mobile-redirect
+        - matching_mode: strict
+          url: https://audiobookshelf.chrison.dev/auth/openid/callback
+        - matching_mode: strict
+          url: https://audiobookshelf.chrison.dev/auth/openid/mobile-redirect
+        - matching_mode: strict
+          url: https://audiobookshelf.chrison.dev/audiobookshelf/auth/openid/callback
+        - matching_mode: strict
+          url: https://audiobookshelf.chrison.dev/audiobookshelf/auth/openid/mobile-redirect
 
   - model: authentik_core.application
     id: audiobookshelf-app
@@ -682,7 +708,8 @@ entries:
     attrs:
       name: Audiobookshelf
       provider: !KeyOf audiobookshelf-provider
-      meta_launch_url: https://audiobookshelf.arr.chrison.dev
+      # The apex, not the Pangolin host — this is the URL the household uses.
+      meta_launch_url: https://audiobookshelf.chrison.dev
       meta_description: Audiobooks and podcasts. Household-facing.
       policy_engine_mode: any
 
