@@ -1,0 +1,67 @@
+# ntfy — the homelab's notification bus (#466, ADR-0011).
+#
+# Alertmanager and friends publish here; the iOS app subscribes. Home Assistant keeps its
+# own alerting for the house — this is about where a message LANDS, not who decides to send
+# it.
+#
+# Rendered from the repo by config.assets to /home/podman/monitoring/config/ntfy/server.yml
+# and bind-mounted read-only. Verified against ntfy 2.28.0 by running the real image, not
+# from the docs: /etc/ntfy does not exist in that image at all, so every byte of config has
+# to arrive this way.
+
+# Must match EXACTLY what the iOS app has as its Default Server, or push silently fails.
+# Also what ntfy hashes to derive the upstream poll topic.
+base-url: "https://ntfy.lab.chrison.dev"
+listen-http: ":80"
+
+# ── iOS push. The one piece that is not self-contained. ─────────────────────────────────
+# iOS forbids the background processing Android uses, so instant delivery is impossible
+# without a central relay. With this set, every incoming message publishes a `poll_request`
+# to ntfy.sh carrying ONLY the message ID; the phone then fetches the body from US. Upstream
+# and APNs cannot read the message — that is the explicit purpose of the design.
+#
+# What ntfy.sh does observe: our IP, and the timing and volume of alerts. Accepted knowingly
+# (#466). Without this, notifications still arrive — hours late.
+upstream-base-url: "https://ntfy.sh"
+
+# ⚠ Load-bearing, and subtle. The iOS poll-back reads the message BODY from this cache. The
+# default cache is in-memory and lost on restart, so an unlucky restart turns a real alert
+# into an empty "New message" notification with no content. Persist it.
+cache-file: "/var/lib/ntfy/cache.db"
+
+# Traefik (Pangolin) fronts this. Without it every visitor shares one rate-limit bucket,
+# because they all arrive from the proxy's IP.
+behind-proxy: true
+
+# ── Auth ────────────────────────────────────────────────────────────────────────────────
+# deny-all means nothing is readable or writable without an explicit grant below. The
+# instance is published on the public internet, so the default of read-write would make
+# every topic world-readable to anyone who guessed a name.
+auth-file: "/var/lib/ntfy/user.db"
+auth-default-access: "deny-all"
+
+# Topic ACLs are NOT secret, so they live here and stay reviewable in a diff. The users and
+# their tokens ARE, and arrive as NTFY_AUTH_USERS / NTFY_AUTH_TOKENS from podman secrets.
+#
+# `chris` is absent on purpose: admin bypasses ACLs entirely, which is exactly why nothing
+# automated holds an admin token.
+#
+# Topics are named after STACKS rather than inventing a parallel vocabulary. Only `core`
+# fires today (the UniFi rules are all we have); the rest exist so a noisy source can be
+# muted on the phone independently as those stacks grow.
+auth-access:
+  - "alertmanager:core:write-only"
+  - "alertmanager:monitoring:write-only"
+  - "alertmanager:media:write-only"
+  - "alertmanager:smarthome:write-only"
+  - "iphone:core:read-only"
+  - "iphone:monitoring:read-only"
+  - "iphone:media:read-only"
+  - "iphone:smarthome:read-only"
+
+# No template-dir: the `alertmanager` template is COMPILED INTO the binary (verified by
+# strings on /usr/bin/ntfy), so `?template=alertmanager` works with no files to ship. Add a
+# template-dir only if a custom template is ever needed.
+#
+# No web-push-* keys either: those exist only to make the macOS PWA work, and macOS is
+# deliberately out of scope (#466). The phone is the target.

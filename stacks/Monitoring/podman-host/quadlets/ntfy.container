@@ -1,0 +1,40 @@
+# ntfy — notification bus (#466). Published by Pangolin as ntfy.lab.chrison.dev.
+[Unit]
+Description=ntfy (notification bus)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/binwiederhier/ntfy:latest
+ContainerName=ntfy
+Network=monitoring.network
+# 8095 on the host; the container listens on :80. Every other port in the 8000s on this
+# host is taken (8090 beszel, 8889 otel).
+PublishPort=8095:80
+
+# ⚠ NO UserNS=keep-id here, unlike most of its neighbours. This image has an EMPTY
+# Config.User, i.e. it runs as ROOT — verified against the image, not assumed. The default
+# rootless mapping already sends container-root to the `podman` user, so the data dir works
+# as-is; adding keep-id would break it. Same reasoning as snmp_exporter and pulse.
+Volume=/home/podman/monitoring/config/ntfy/server.yml:/etc/ntfy/server.yml:ro
+Volume=/home/podman/monitoring/data/ntfy:/var/lib/ntfy
+
+# Declarative users and tokens. These are AUTHORITATIVE: ntfy deletes any user, ACL or token
+# missing from them on restart, which is what makes this IaC rather than a database someone
+# once poked by hand.
+Secret=ntfy_auth_users,type=env,target=NTFY_AUTH_USERS
+Secret=ntfy_auth_tokens,type=env,target=NTFY_AUTH_TOKENS
+
+# ⚠ Exec= is a [Container] key. In [Service] it parses without error, is silently ignored by
+# the quadlet generator, and the container runs the image default instead — which cost this
+# stack a 15d Prometheus retention that looked like it was set to 400d.
+Exec=serve
+AutoUpdate=registry
+
+[Service]
+ExecStartPre=/usr/bin/mkdir -p /home/podman/monitoring/data/ntfy
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
