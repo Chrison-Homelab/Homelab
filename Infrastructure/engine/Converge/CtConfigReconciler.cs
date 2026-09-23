@@ -2,15 +2,21 @@ using Homelab.Infrastructure.Shapes;
 
 namespace Homelab.Infrastructure.Converge;
 
-// Update lifecycle (issue #101): reconciles host-level CT config that Proxmox can
-// change in place — cores, memory, tags, and NICs — via `pct set`. Idempotent: reads
-// `pct config <ctid>`, computes the delta, and only issues `pct set` for fields
-// that actually differ. A CT whose config already matches is a no-op.
+// Update lifecycle (issue #101, #478): reconciles host-level CT config that Proxmox can
+// change in place — cores, memory, swap, tags, and NICs — via `pct set`, plus rootfs
+// GROWTH via `pct resize`. Idempotent: reads `pct config <ctid>`, computes the delta, and
+// only issues a command for fields that actually differ. A CT whose config already matches
+// is a no-op.
 //
-// Deliberately conservative: only fields that are safe to change live are
-// reconciled. Disk resize and storage moves are NOT touched here (they're
-// disruptive / need their own flows). Anything not declared in the shape
-// is left alone — we never strip config we don't own.
+// Deliberately conservative: only changes that are safe to apply live are made. All of
+// cores/memory/swap and an ext4-on-LVM-thin grow are online and non-disruptive. Anything
+// not declared in the shape is left alone — we never strip config we don't own.
+//
+// Disk (#478): rootfs GROWTH only — `pct resize <ctid> rootfs +<delta>G`. A SHRINK is
+// refused, never attempted: LVM-thin cannot shrink a mounted filesystem and trying is
+// destructive. A declared shrink is surfaced as an operator-resolved condition (Skipped
+// with a ⚠), not silently ignored and not a hard failure that would skip the member's
+// remaining steps. Storage MOVES (a different `storage:`) are still out of scope here.
 //
 // NICs (#383): `spec.networks[]` → netN. The community-scripts create path provisions
 // exactly ONE interface, so a multi-homed member is created with net0 and picks up
@@ -54,6 +60,17 @@ public sealed class CtConfigReconciler
             {
                 sets.Add($"--memory {memory}");
                 changed.Add($"memory {(live ?? "unset")}→{memory}");
+            }
+        }
+
+        // Swap: shape MB == `pct config` swap MB. Set when declared and differs. Live-safe.
+        if (sp.Swap is { } swap)
+        {
+            var live = cfg.GetValueOrDefault("swap");
+            if (live != swap.ToString())
+            {
+                sets.Add($"--swap {swap}");
+                changed.Add($"swap {(live ?? "unset")}→{swap}");
             }
         }
 
@@ -103,13 +120,65 @@ public sealed class CtConfigReconciler
             }
         }
 
+        // Disk: rootfs GROWTH only, via a separate `pct resize` (not a `pct set` field).
+        // Live size is parsed from the rootfs entry, e.g. "local-lvm:vm-3003-disk-0,size=32G".
+        // A shrink is refused and reported; growth issues `pct resize rootfs +<delta>G` — the
+        // '+' is required, an absolute target equal-or-below live is a Proxmox no-op.
+        string? shrinkRefused = null;
+        var growResize = false;
+        if (sp.Disk is { } desiredGb && ParseRootfsSizeGb(cfg.GetValueOrDefault("rootfs")) is { } liveGb)
+        {
+            if (desiredGb > liveGb)
+            {
+                var deltaGb = desiredGb - liveGb;
+                var resize = await _exec.OnNodeAsync(node, $"pct resize {ctid} rootfs +{deltaGb}G", ct);
+                if (!resize.Ok)
+                    return ApplyResult.Failed($"pct resize failed: {resize.Stderr}");
+                growResize = true;
+                changed.Add($"disk {liveGb}G→{desiredGb}G (grew +{deltaGb}G)");
+            }
+            else if (desiredGb < liveGb)
+            {
+                // Never attempt a shrink — LVM-thin can't shrink a mounted fs and trying is
+                // destructive. Surface it so the operator resolves it (fix the shape, or move
+                // the guest deliberately), the way a retired-but-live member is reported.
+                shrinkRefused = $"disk {liveGb}G declared {desiredGb}G — ⚠ SHRINK REFUSED "
+                    + "(LVM-thin cannot shrink a mounted filesystem; resolve by hand or correct the shape)";
+            }
+        }
+
         if (sets.Count == 0)
-            return ApplyResult.NoChange("cores/memory/tags/nics already match");
+        {
+            if (growResize) return ApplyResult.Applied(string.Join(", ", changed));
+            if (shrinkRefused is not null) return ApplyResult.Skipped(shrinkRefused);
+            return ApplyResult.NoChange("cores/memory/swap/tags/nics/disk already match");
+        }
 
         var res = await _exec.OnNodeAsync(node, $"pct set {ctid} {string.Join(' ', sets)}", ct);
-        return res.Ok
-            ? ApplyResult.Applied(string.Join(", ", changed))
-            : ApplyResult.Failed($"pct set failed: {res.Stderr}");
+        if (!res.Ok) return ApplyResult.Failed($"pct set failed: {res.Stderr}");
+
+        // A refused shrink rides along on the message so it isn't lost behind a successful set.
+        var msg = string.Join(", ", changed);
+        if (shrinkRefused is not null) msg += $"; {shrinkRefused}";
+        return ApplyResult.Applied(msg);
+    }
+
+    // Parse the allocated rootfs size in whole GB from a `pct config` rootfs entry, e.g.
+    // "local-lvm:vm-3003-disk-0,size=32G" → 32. Returns null when absent or not expressed
+    // in G (M/T are not something we grow rootfs in; refuse to guess rather than mis-resize).
+    internal static int? ParseRootfsSizeGb(string? rootfs)
+    {
+        if (string.IsNullOrWhiteSpace(rootfs)) return null;
+        foreach (var part in rootfs.Split(','))
+        {
+            var p = part.Trim();
+            if (!p.StartsWith("size=", StringComparison.OrdinalIgnoreCase)) continue;
+            var val = p["size=".Length..].Trim();
+            if (val.EndsWith("G", StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(val[..^1], out var gb)) return gb;
+            return null; // present but not in G — don't guess
+        }
+        return null;
     }
 
     // `pct config <ctid>` prints one `key: value` per line (e.g. "cores: 2",
