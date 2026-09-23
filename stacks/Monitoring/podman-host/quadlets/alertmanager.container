@@ -34,6 +34,11 @@ Volume=/home/podman/monitoring/data/alertmanager:/alertmanager
 # `url_file:` in alertmanager.yml — it never appears in a config file under git.
 Secret=ha_alert_webhook_url,type=mount,target=/run/secrets/ha_alert_webhook_url
 
+# ntfy publish token (#466). Referenced by `credentials_file:` in each receiver's
+# http_config -- Alertmanager cannot set custom headers on a webhook, so bearer auth is
+# the only way to authenticate to ntfy from here. Write-only on the four stack topics.
+Secret=ntfy_alertmanager_token,type=mount,target=/run/secrets/ntfy_alertmanager_token
+
 Exec=--config.file=/etc/alertmanager/alertmanager.yml --storage.path=/alertmanager --web.external-url=http://monitoring.homelab.chrison.internal:9093
 AutoUpdate=registry
 

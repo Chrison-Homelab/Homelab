@@ -1,7 +1,41 @@
 # Alert bus routing (ADR-0011).
 #
-# Home Assistant is a RECEIVER here, not the bus. To swap it out, change the receiver
-# below — no producer knows or cares where alerts end up.
+# Two receivers run in PARALLEL during the ntfy migration (#466): every alert goes to
+# Home Assistant (the incumbent) AND to ntfy, so the two can be compared on a real alert
+# before HA is dropped. Phase 6 deletes the `home-assistant` webhook block from each
+# receiver and the `ha_alert_webhook_url` secret with it.
+#
+# TOPICS follow the stacks, not a new vocabulary: core / monitoring / media / smarthome.
+# The `stack` label on a rule picks the topic; anything unlabelled lands on `core`.
+#
+# ---------------------------------------------------------------------------------------
+# About those %-encoded ntfy URLs
+# ---------------------------------------------------------------------------------------
+# Alertmanager's `webhook_configs` cannot set custom headers, so everything ntfy needs
+# rides in the query string, and `tpl=yes` makes ntfy evaluate the values as Go templates
+# against the Alertmanager payload. Decoded, each URL is:
+#
+#   priority = {{if eq .status "resolved"}}2
+#              {{else if eq .commonLabels.severity "critical"}}5
+#              {{else}}3{{end}}
+#   title    = {{if eq .status "resolved"}}(tick) Resolved
+#              {{else if eq .commonLabels.severity "critical"}}(siren) FIRING
+#              {{else}}(warning) Firing{{end}}: {{.groupLabels.alertname}}
+#              {{if gt (len .alerts) 1}} x{{len .alerts}}{{end}}
+#   message  = {{range .alerts}}{{.annotations.summary}}
+#              {{.annotations.description}}
+#              {{end}}
+#
+# Priority 5 is deliberate: on iOS it bypasses Focus/Do-Not-Disturb, which is the whole
+# reason for a critical tier. Resolved drops to 2 so a recovery never wakes anyone.
+#
+# Verified against the live ntfy 2.28 before committing -- these are not assumptions:
+#   * `priority`, `title` and `message` ARE templated.
+#   * `tags` is NOT. A template there is delivered verbatim as literal tag text, which is
+#     why the emoji lives in the title instead of in `tags`.
+#   * The built-in `?template=alertmanager` formats nicely but IGNORES priority entirely
+#     (both query param and X-Priority header), so it cannot express the critical tier.
+#     That is why this uses `tpl=yes` with explicit templates instead.
 
 global:
   # How long after a producer stops sending before an alert is considered resolved.
@@ -9,7 +43,7 @@ global:
   resolve_timeout: 5m
 
 route:
-  receiver: home-assistant
+  receiver: alerts-core
   # Group by the alert and the thing it is about, so three flapping APs are one
   # notification rather than three.
   group_by: [alertname, name]
@@ -20,18 +54,80 @@ route:
   repeat_interval: 4h
 
   routes:
-    # Critical repeats more often, but still not often enough to be ignorable.
+    # Severity is the OUTER split so `repeat_interval` is stated once and inherited by the
+    # per-stack children below it. Critical repeats more often, but still not often enough
+    # to be ignorable.
     - matchers: ['severity="critical"']
-      receiver: home-assistant
+      receiver: alerts-core
       repeat_interval: 1h
+      routes:
+      - matchers: ['stack=~"media|arr"']
+        receiver: alerts-media
+      - matchers: ['stack="monitoring"']
+        receiver: alerts-monitoring
+      - matchers: ['stack=~"smarthome|iot|hass"']
+        receiver: alerts-smarthome
+
+    # Everything else (warning and below) keeps the 4h repeat from the root.
+    - matchers: ['stack=~"media|arr"']
+      receiver: alerts-media
+    - matchers: ['stack="monitoring"']
+      receiver: alerts-monitoring
+    - matchers: ['stack=~"smarthome|iot|hass"']
+      receiver: alerts-smarthome
 
 receivers:
-  - name: home-assistant
+  - name: alerts-core
     webhook_configs:
-      # url_file, not url — the webhook id is a capability and lives in a podman secret
-      # mounted at this path. Nothing sensitive is in this file.
+      # Incumbent. Unchanged behaviour; removed in phase 6.
       - url_file: /run/secrets/ha_alert_webhook_url
         send_resolved: true
+      # ntfy -> topic "core"
+      - url: "http://ntfy/core?tpl=yes&priority=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D2%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D5%7B%7Belse%7D%7D3%7B%7Bend%7D%7D&title=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D%E2%9C%85%20Resolved%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D%F0%9F%9A%A8%20FIRING%7B%7Belse%7D%7D%E2%9A%A0%EF%B8%8F%20Firing%7B%7Bend%7D%7D%3A%20%7B%7B.groupLabels.alertname%7D%7D%7B%7Bif%20gt%20%28len%20.alerts%29%201%7D%7D%20%C3%97%7B%7Blen%20.alerts%7D%7D%7B%7Bend%7D%7D&message=%7B%7Brange%20.alerts%7D%7D%7B%7B.annotations.summary%7D%7D%0A%7B%7B.annotations.description%7D%7D%0A%7B%7Bend%7D%7D"
+        send_resolved: true
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /run/secrets/ntfy_alertmanager_token
+
+  - name: alerts-monitoring
+    webhook_configs:
+      # Incumbent. Unchanged behaviour; removed in phase 6.
+      - url_file: /run/secrets/ha_alert_webhook_url
+        send_resolved: true
+      # ntfy -> topic "monitoring"
+      - url: "http://ntfy/monitoring?tpl=yes&priority=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D2%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D5%7B%7Belse%7D%7D3%7B%7Bend%7D%7D&title=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D%E2%9C%85%20Resolved%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D%F0%9F%9A%A8%20FIRING%7B%7Belse%7D%7D%E2%9A%A0%EF%B8%8F%20Firing%7B%7Bend%7D%7D%3A%20%7B%7B.groupLabels.alertname%7D%7D%7B%7Bif%20gt%20%28len%20.alerts%29%201%7D%7D%20%C3%97%7B%7Blen%20.alerts%7D%7D%7B%7Bend%7D%7D&message=%7B%7Brange%20.alerts%7D%7D%7B%7B.annotations.summary%7D%7D%0A%7B%7B.annotations.description%7D%7D%0A%7B%7Bend%7D%7D"
+        send_resolved: true
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /run/secrets/ntfy_alertmanager_token
+
+  - name: alerts-media
+    webhook_configs:
+      # Incumbent. Unchanged behaviour; removed in phase 6.
+      - url_file: /run/secrets/ha_alert_webhook_url
+        send_resolved: true
+      # ntfy -> topic "media"
+      - url: "http://ntfy/media?tpl=yes&priority=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D2%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D5%7B%7Belse%7D%7D3%7B%7Bend%7D%7D&title=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D%E2%9C%85%20Resolved%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D%F0%9F%9A%A8%20FIRING%7B%7Belse%7D%7D%E2%9A%A0%EF%B8%8F%20Firing%7B%7Bend%7D%7D%3A%20%7B%7B.groupLabels.alertname%7D%7D%7B%7Bif%20gt%20%28len%20.alerts%29%201%7D%7D%20%C3%97%7B%7Blen%20.alerts%7D%7D%7B%7Bend%7D%7D&message=%7B%7Brange%20.alerts%7D%7D%7B%7B.annotations.summary%7D%7D%0A%7B%7B.annotations.description%7D%7D%0A%7B%7Bend%7D%7D"
+        send_resolved: true
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /run/secrets/ntfy_alertmanager_token
+
+  - name: alerts-smarthome
+    webhook_configs:
+      # Incumbent. Unchanged behaviour; removed in phase 6.
+      - url_file: /run/secrets/ha_alert_webhook_url
+        send_resolved: true
+      # ntfy -> topic "smarthome"
+      - url: "http://ntfy/smarthome?tpl=yes&priority=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D2%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D5%7B%7Belse%7D%7D3%7B%7Bend%7D%7D&title=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D%E2%9C%85%20Resolved%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D%F0%9F%9A%A8%20FIRING%7B%7Belse%7D%7D%E2%9A%A0%EF%B8%8F%20Firing%7B%7Bend%7D%7D%3A%20%7B%7B.groupLabels.alertname%7D%7D%7B%7Bif%20gt%20%28len%20.alerts%29%201%7D%7D%20%C3%97%7B%7Blen%20.alerts%7D%7D%7B%7Bend%7D%7D&message=%7B%7Brange%20.alerts%7D%7D%7B%7B.annotations.summary%7D%7D%0A%7B%7B.annotations.description%7D%7D%0A%7B%7Bend%7D%7D"
+        send_resolved: true
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /run/secrets/ntfy_alertmanager_token
 
 inhibit_rules:
   # A dead gateway takes the APs, the switch and the WAN with it. Without this, one
@@ -42,7 +138,7 @@ inhibit_rules:
       - 'name="Cloud Gateway Ultra"'
     target_matchers:
       - 'stack="unifi"'
-    # No `equal:` — when the gateway is gone, suppress the whole UniFi stack, not just
+    # No `equal:` -- when the gateway is gone, suppress the whole UniFi stack, not just
     # alerts sharing a label with it.
     equal: []
 
