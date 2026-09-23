@@ -1,0 +1,44 @@
+# Backup stack — Proxmox Backup Server, the cluster's backup authority (#513).
+#
+# ONE member: `pbs` (CT 2004 on nuc-01). PBS deduplicates and verifies guest backups and
+# is the target of the nightly cluster backup job. It lives on nuc-01 (always-on, and NOT
+# hpe-01 where most guests run) so a loss of the busy node doesn't take the backups with it.
+#
+# ⚠ WHAT THIS SHAPE DOES AND DOES NOT DECLARE (yet). The engine has no model for a PBS
+#   datastore, the `type pbs` cluster storage, or vzdump backup JOBS, so those remain
+#   hand-made and are documented in stacks/Backup/README.md — a follow-up once the engine
+#   grows a backup-job provisioner. What IS declared and reconciled here: the guest itself
+#   and, most importantly, its DHCP reservation + local DNS record, so the cluster storage
+#   can target `pbs.homelab.chrison.internal` instead of a lease-fragile IP.
+#
+# Validate members against ../../Infrastructure/schema/shape.schema.json.
+# CTID allocation policy: members set ctid EXPLICITLY (omission is an error).
+
+apiVersion: homelab/v1
+kind: Stack
+
+metadata:
+  name: Backup
+  tags: [backup, infra]
+
+spec:
+  ctidRange:
+    start: 2004           # guard rail: PBS is 2004; leave 2005–2009 for backup-adjacent
+    end: 2009             # infra. Clear of Core (2010–2099).
+  defaults:
+    node: nuc-01          # always-on, and deliberately not the busy hpe-01
+    source:
+      channel: stable
+      ref: main
+    os: debian
+    osVersion: 13
+    unprivileged: true
+    storage: local-lvm
+    templateStorage: local
+    onboot: true
+    network:
+      bridge: vmbr0
+      vlan: 1010          # Homelab
+      ipv6: none
+    timezone: Pacific/Auckland
+    tags: [backup, infra]
