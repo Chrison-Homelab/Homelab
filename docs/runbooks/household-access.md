@@ -38,15 +38,19 @@ ACCESS AT ALL."* The `.arr` name is the admin path.
 So a working login can look broken depending on which link someone was sent — the failure is
 silent and identical to a permissions bug.
 
-> ⚠ `tao-simon.family` is a **different zone, and our Cloudflare token cannot read it** — its
-> ingress lives in the Zero Trust dashboard, not in this repo. Nothing here will remind you it
-> exists. It is nonetheless the household's habitual door (#322): it is why the retired Seerr
-> kept taking requests until July while we believed nobody was using it.
+> ⚠ `tao-simon.family` is a **different zone, and our Cloudflare token cannot read its DNS** —
+> but the route is declared in the repo: `stacks/Media/cloudflared.lxc.yaml`, `public: true`,
+> pointing at CT 5112. It is the household's habitual door (#322) — the reason the retired
+> Seerr kept taking requests until July while we believed nobody was using it.
 >
 > **Every public hostname that reaches Audiobookshelf needs four redirect URIs registered in
 > the authentik blueprint.** This has been got wrong twice — #560 added the apex and was
 > believed to be the fix; `tao-simon.family` was still missing, so household sign-ins hit
 > `Redirect URI Error` while an admin testing on `.arr` or the apex saw everything work.
+>
+> The hostname list is not hidden, so check it rather than recall it: the tunnel ingress in
+> `stacks/Media/cloudflared.lxc.yaml` plus the Pangolin resource in
+> `stacks/Core/pangolin.lxc.yaml`. Both were in the repo each time this was missed.
 
 ## Removing someone
 

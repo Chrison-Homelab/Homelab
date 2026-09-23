@@ -651,9 +651,8 @@ entries:
       # and registering only some is a login that works for whoever tests it and fails for
       # everyone else:
       #   * audiobookshelf.tao-simon.family — THE HOUSEHOLD'S ACTUAL DOOR (#322). A separate
-      #     zone, on a token-based tunnel whose ingress lives in the Zero Trust dashboard and
-      #     not in any file here. Our Cloudflare token cannot even read this zone, so nothing
-      #     in this repo will ever hint that it exists — see the warning below.
+      #     zone our Cloudflare token cannot read, but the route itself IS declared here:
+      #     stacks/Media/cloudflared.lxc.yaml, `public: true`, origin 10.10.182.200:13378.
       #   * audiobookshelf.chrison.dev      — the apex, via the Media cloudflared tunnel.
       #   * audiobookshelf.arr.chrison.dev  — the Pangolin resource.
       #
@@ -669,8 +668,15 @@ entries:
       #
       # ⚠ Adding a new public hostname for this guest means adding its FOUR entries HERE too.
       # Nothing derives these from the tunnel/Pangolin declarations, so the two can silently
-      # disagree — and for `tao-simon.family` there is no declaration to disagree with at all.
-      # The only way to catch it is to ask what hostnames actually reach CT 5112.
+      # disagree.
+      #
+      # THE CHECK IS CONCRETE, so do it rather than reasoning about it. The set of hostnames
+      # that reach this app is the union of:
+      #     stacks/Media/cloudflared.lxc.yaml   — tunnel ingress (incl. the tao-simon.family
+      #                                            zone; grep for `audiobookshelf`)
+      #     stacks/Core/pangolin.lxc.yaml       — the `.arr` resource
+      # Every hostname in that union needs four entries below. Both lists are in this repo;
+      # the reason this was missed twice is that nobody diffed them, not that one was hidden.
       #
       # ALL FOUR that upstream lists per host, and the `/audiobookshelf/` pair is NOT redundant.
       # This was originally trimmed to two on the reasoning that a subpath variant cannot be
