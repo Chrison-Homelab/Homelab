@@ -62,6 +62,10 @@ metadata:
       url: http://monitoring.homelab.chrison.internal:9093
       icon: alertmanager
       description: The alert bus (ADR-0011)
+    - name: ntfy
+      url: https://ntfy.lab.chrison.dev
+      icon: ntfy
+      description: Notification bus — where alerts land (#466)
     - name: Pulse
       url: http://monitoring.homelab.chrison.internal:7655
       icon: pulse
