@@ -134,6 +134,15 @@ jobs:
       # here fails the WHOLE stack converge, not just alertmanager.
       HA_ALERT_WEBHOOK_URL: ${{ secrets.HA_ALERT_WEBHOOK_URL }}
       PULSE_API_TOKEN: ${{ secrets.PULSE_API_TOKEN }}
+      # OTLP ingest auth + the ntfy notification bus (#466). All four are declared by the
+      # Monitoring shape but had no passthrough here, so a CI converge of podman-host failed
+      # at apply while a laptop converge succeeded -- the laptop's secrets.env already had
+      # them. Seeding hard-fails on an absent value even when the podman secret already
+      # exists on the host, so one missing line fails the WHOLE stack converge.
+      OTEL_BEARER_TOKEN: ${{ secrets.OTEL_BEARER_TOKEN }}
+      NTFY_AUTH_USERS: ${{ secrets.NTFY_AUTH_USERS }}
+      NTFY_AUTH_TOKENS: ${{ secrets.NTFY_AUTH_TOKENS }}
+      NTFY_ALERTMANAGER_TOKEN: ${{ secrets.NTFY_ALERTMANAGER_TOKEN }}
       HOMEASSISTANT_TOKEN: ${{ secrets.HOMEASSISTANT_TOKEN }}
       BAZARR_API_KEY: ${{ secrets.BAZARR_API_KEY }}
       SEERR_API_KEY: ${{ secrets.SEERR_API_KEY }}
