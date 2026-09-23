@@ -644,23 +644,33 @@ entries:
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
         - !KeyOf abs-groups-scope
-      # EIGHT: every hostname ABS is reachable on, times both path forms.
+      # TWELVE: every hostname ABS is reachable on, times both path forms.
       #
       # ⚠ ABS DERIVES ITS redirect_uri FROM THE HOST IT WAS REACHED ON — `new URL(..., hostUrl)`
-      # — so the front door you walk through decides the URI it sends. This guest has TWO, and
-      # registering only one is a login that works for whoever tests it and fails for everyone
-      # else:
-      #   * audiobookshelf.chrison.dev      — the apex, via the Media cloudflared tunnel. This
-      #     is the household's door and the one the iOS/Android apps use; its shape file calls
-      #     it out as "the two USER-FACING apps are public".
+      # — so the front door you walk through decides the URI it sends. This guest has THREE,
+      # and registering only some is a login that works for whoever tests it and fails for
+      # everyone else:
+      #   * audiobookshelf.tao-simon.family — THE HOUSEHOLD'S ACTUAL DOOR (#322). A separate
+      #     zone, on a token-based tunnel whose ingress lives in the Zero Trust dashboard and
+      #     not in any file here. Our Cloudflare token cannot even read this zone, so nothing
+      #     in this repo will ever hint that it exists — see the warning below.
+      #   * audiobookshelf.chrison.dev      — the apex, via the Media cloudflared tunnel.
       #   * audiobookshelf.arr.chrison.dev  — the Pangolin resource.
-      # Only the `.arr` host was registered at first (#538/#541), which is why the flow passed
-      # a browser test on that hostname and failed with `Redirect URI Error` for real use on
-      # the apex. Both are ours; a redirect URI is only dangerous when someone else controls
-      # the target, so listing every door we own costs nothing and removes the trap.
       #
-      # ⚠ Adding a new public hostname for this guest means adding its pair HERE too. Nothing
-      # derives these from the tunnel/Pangolin declarations, so the two can silently disagree.
+      # THIS TRAP HAS NOW FIRED TWICE, each time one host further out:
+      #   #538/#541 registered only `.arr`, so the flow passed a browser test on that hostname
+      #   and failed with `Redirect URI Error` for real use. #560 added the apex and called it
+      #   fixed. It was not: `tao-simon.family` was never registered, and per #322 that is the
+      #   path the household genuinely uses — it is why the retired Seerr kept collecting
+      #   requests until July while we believed it was unused.
+      #
+      # All three are ours; a redirect URI is only dangerous when someone else controls the
+      # target, so listing every door we own costs nothing and removes the trap.
+      #
+      # ⚠ Adding a new public hostname for this guest means adding its FOUR entries HERE too.
+      # Nothing derives these from the tunnel/Pangolin declarations, so the two can silently
+      # disagree — and for `tao-simon.family` there is no declaration to disagree with at all.
+      # The only way to catch it is to ask what hostnames actually reach CT 5112.
       #
       # ALL FOUR that upstream lists per host, and the `/audiobookshelf/` pair is NOT redundant.
       # This was originally trimmed to two on the reasoning that a subpath variant cannot be
@@ -685,6 +695,14 @@ entries:
       # `audiobookshelf://oauth` (ABS's own Allowed Mobile Redirect URIs setting, not ours).
       # Omit it and the web works while every phone silently fails.
       redirect_uris:
+        - matching_mode: strict
+          url: https://audiobookshelf.tao-simon.family/auth/openid/callback
+        - matching_mode: strict
+          url: https://audiobookshelf.tao-simon.family/auth/openid/mobile-redirect
+        - matching_mode: strict
+          url: https://audiobookshelf.tao-simon.family/audiobookshelf/auth/openid/callback
+        - matching_mode: strict
+          url: https://audiobookshelf.tao-simon.family/audiobookshelf/auth/openid/mobile-redirect
         - matching_mode: strict
           url: https://audiobookshelf.arr.chrison.dev/auth/openid/callback
         - matching_mode: strict
