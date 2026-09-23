@@ -18,7 +18,9 @@ export BWS_ACCESS_TOKEN="${BWS_ACCESS_TOKEN:-$(security find-generic-password -a
 export BWS_SERVER_URL="${BWS_SERVER_URL:-https://vault.bitwarden.eu}"
 PROJECT_ID="ceb88092-7a26-4882-9e7b-b48a000a8f9a"     # SM "Homelab" project (same as secrets-sync.sh)
 NODE="root@hpe-01.homelab.chrison.internal"            # the Media CTs live here
-ABS_URL="http://audiobookshelf.homelab.chrison.internal:13378"
+# Overridable: the name is UniFi's auto-registered DHCP hostname, not a declared record, so it
+# can briefly answer with a destroyed guest's lease (seen 2026-09-23, right after CT 5014 went).
+ABS_URL="${ABS_URL:-http://audiobookshelf.homelab.chrison.internal:13378}"
 REPO="Chrison-Homelab/Homelab"
 
 BAZARR_API_KEY="$(ssh -o BatchMode=yes "$NODE" 'pct exec 5103 -- cat /opt/bazarr/data/config/config.yaml' \
@@ -27,12 +29,16 @@ SEERR_API_KEY="$(ssh -o BatchMode=yes "$NODE" 'pct exec 5105 -- cat /opt/seerr/c
 PLEX_TOKEN="$(ssh -o BatchMode=yes "$NODE" 'pct exec 5008 -- cat "/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Preferences.xml"' \
   | python3 -c 'import sys,re; m=re.search(r"PlexOnlineToken=\"([^\"]+)\"", sys.stdin.read()); print(m.group(1) if m else "")')"
 
+# Minting is NOT idempotent — every call creates another key in Audiobookshelf. So only mint
+# when Secrets Manager has none; secrets.env (sourced above) already carries it if it does.
+if [ -z "${ABS_API_KEY:-}" ]; then
 ACCESS="$(curl -sf -m 10 -X POST "$ABS_URL/login" -H 'Content-Type: application/json' \
   -d "{\"username\":\"$ABS_USER\",\"password\":\"$ABS_PASSWORD\"}" | jq -r '.user.accessToken // .user.token // empty')"
 [ -n "$ACCESS" ] || { echo "ERROR: Audiobookshelf login failed (ABS_USER/ABS_PASSWORD in secrets.env)" >&2; exit 1; }
 USER_ID="$(curl -sf -m 10 "$ABS_URL/api/me" -H "Authorization: Bearer $ACCESS" | jq -r .id)"
 ABS_API_KEY="$(curl -sf -m 10 -X POST "$ABS_URL/api/api-keys" -H "Authorization: Bearer $ACCESS" -H 'Content-Type: application/json' \
   -d "{\"name\":\"homepage-dashboard\",\"userId\":\"$USER_ID\",\"isActive\":true}" | jq -r '.apiKey.apiKey // .apiKey // empty')"
+fi
 
 for k in BAZARR_API_KEY SEERR_API_KEY PLEX_TOKEN ABS_API_KEY; do
   v="${!k}"; [ "${#v}" -ge 16 ] || { echo "ERROR: $k came back empty/short — not stored" >&2; exit 1; }
