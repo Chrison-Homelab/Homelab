@@ -23,19 +23,30 @@ is the deliberate grant.
 Per-stack groups (`media-admins`, `monitoring-admins`, …) exist so access can be granted a
 stack at a time. They are for you, not for the household.
 
-## ⚠ There are two front doors and they behave differently
+## ⚠ There are three front doors and they behave differently
 
-| URL | Route | Works for `family`? |
+| URL | Route | Send it to family? |
 |---|---|---|
-| `audiobookshelf.chrison.dev` | cloudflared tunnel — **the household door**, and what the phone apps use | **Yes** |
-| `audiobookshelf.arr.chrison.dev` | Pangolin resource | Authenticates, then shows nothing |
+| `audiobookshelf.tao-simon.family` | token-based tunnel — **what the household actually uses** | **Yes** |
+| `audiobookshelf.chrison.dev` | Media cloudflared tunnel | Yes — works, but not the habitual one |
+| `audiobookshelf.arr.chrison.dev` | Pangolin resource | No — authenticates, then shows nothing |
 
 Pangolin grants every resource to its **Admin** role only, and `family` maps to Member.
 Its shape says it outright: *"MEMBER IS NOT A DOWNGRADE TO 'LESS ACCESS' — TODAY IT IS NO
-ACCESS AT ALL."* So send people the apex. The `.arr` name is the admin path.
+ACCESS AT ALL."* The `.arr` name is the admin path.
 
-This also means a working login can look broken depending on which link someone was sent —
-the failure is silent and identical to a permissions bug.
+So a working login can look broken depending on which link someone was sent — the failure is
+silent and identical to a permissions bug.
+
+> ⚠ `tao-simon.family` is a **different zone, and our Cloudflare token cannot read it** — its
+> ingress lives in the Zero Trust dashboard, not in this repo. Nothing here will remind you it
+> exists. It is nonetheless the household's habitual door (#322): it is why the retired Seerr
+> kept taking requests until July while we believed nobody was using it.
+>
+> **Every public hostname that reaches Audiobookshelf needs four redirect URIs registered in
+> the authentik blueprint.** This has been got wrong twice — #560 added the apex and was
+> believed to be the fix; `tao-simon.family` was still missing, so household sign-ins hit
+> `Redirect URI Error` while an admin testing on `.arr` or the apex saw everything work.
 
 ## Removing someone
 
