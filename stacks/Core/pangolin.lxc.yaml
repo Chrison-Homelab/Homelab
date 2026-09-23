@@ -406,6 +406,25 @@ spec:
         zone: lab
         sso: false
         target: { ip: monitoring.homelab.chrison.internal, port: 4318, method: http }
+      # ntfy — the notification bus (#466). Published so the iOS app can reach it from off
+      # the LAN; the phone polls US for message bodies after ntfy.sh wakes it, so this
+      # hostname has to be reachable or notifications arrive as empty "New message".
+      #
+      # sso: false, and for the same reason as the OTel collector above rather than the
+      # media apps': the ntfy iOS app authenticates with an `Authorization: Bearer tk_...`
+      # header and cannot complete an SSO interstitial, so an SSO-gated resource would
+      # reject every subscribe.
+      #
+      # What makes that acceptable is that ntfy authenticates itself: server.yml sets
+      # auth-default-access: deny-all with per-topic ACLs, verified live — anonymous
+      # publish AND read both return 403, and a bad token 401. If that ever becomes
+      # read-write, THIS RESOURCE MUST GO WITH IT: every topic would be world-readable to
+      # anyone who guessed a name.
+      - name: ntfy
+        subdomain: ntfy
+        zone: lab
+        sso: false
+        target: { ip: monitoring.homelab.chrison.internal, port: 8095, method: http }
       - name: Shell host
         subdomain: shell
         zone: lab
