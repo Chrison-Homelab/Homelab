@@ -82,16 +82,34 @@ jobs:
         run: |
           set -euo pipefail
           CHANNEL=schema-v1
-          # Delete + recreate so the tag moves cleanly to this commit.
-          gh release delete "$CHANNEL" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
-          gh release create "$CHANNEL" \
+          R="$GITHUB_REPOSITORY"
+          NOTES="Moving channel for \`homelab/v1\` shapes. Pin consumers to \`@$CHANNEL\`. Source commit \`$GITHUB_SHA\`."
+          # NON-DESTRUCTIVE (#396). The old delete + recreate raced GitHub's ASYNC asset
+          # cleanup: deleting the release (with --cleanup-tag) and immediately recreating the
+          # same tag left the new release with its assets stuck in a non-downloadable state, so
+          # `gh release download` on every stack repo returned "no assets to download" and all
+          # their CI broke — while THIS job still reported success. Never delete the release.
+          # Instead: ensure it exists, move the moving-channel tag via the API (no checkout in
+          # this job), and clobber the assets in place.
+          if gh release view "$CHANNEL" --repo "$R" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$R/git/refs/tags/$CHANNEL" -f sha="$GITHUB_SHA" -F force=true >/dev/null
+            gh release edit "$CHANNEL" --repo "$R" --notes "$NOTES"
+          else
+            gh release create "$CHANNEL" --repo "$R" \
+              --title "Shape contract + validator ($CHANNEL — moving, homelab/v1)" \
+              --notes "$NOTES" --target "$GITHUB_SHA" --latest=false
+          fi
+          gh release upload "$CHANNEL" \
             dist/shape.schema.json \
             dist/homelab-validate-linux-x64.tar.gz \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Shape contract + validator ($CHANNEL — moving, homelab/v1)" \
-            --notes "Moving channel for \`homelab/v1\` shapes. Pin consumers to \`@$CHANNEL\`. Source commit \`$GITHUB_SHA\`." \
-            --target "$GITHUB_SHA" \
-            --latest=false
+            --repo "$R" --clobber
+          # Fail loudly if the assets aren't actually retrievable — the old failure mode was a
+          # green job over an empty release. Prove a fresh download sees both.
+          for a in shape.schema.json homelab-validate-linux-x64.tar.gz; do
+            gh release view "$CHANNEL" --repo "$R" --json assets \
+              --jq '.assets[].name' | grep -qx "$a" \
+              || { echo "::error::$CHANNEL is missing asset $a after publish"; exit 1; }
+          done
       - name: Cut an immutable point release (dispatch with a version)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.version != '' }}
         env:
