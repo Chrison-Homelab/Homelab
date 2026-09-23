@@ -157,6 +157,15 @@ spec:
       # otel.lab.chrison.dev for Claude Code telemetry. The :4317 gRPC receiver stays
       # unauthenticated for PowerOrchestrator on the LAN.
       otel_bearer_token: OTEL_BEARER_TOKEN
+      # ntfy declarative auth (#466). Users/tokens are secret; the topic ACLs are not and
+      # live in assets/config/ntfy/server.yml. ntfy deletes anything missing from these on
+      # restart, so they are authoritative, not additive.
+      ntfy_auth_users: NTFY_AUTH_USERS
+      ntfy_auth_tokens: NTFY_AUTH_TOKENS
+      # The same alertmanager token on its own: Alertmanager needs it as a FILE for
+      # http_config.authorization.credentials_file and cannot pick one entry out of the
+      # combined string above.
+      ntfy_alertmanager_token: NTFY_ALERTMANAGER_TOKEN
       authentik_grafana_client_id: AUTHENTIK_GRAFANA_CLIENT_ID
       authentik_grafana_client_secret: AUTHENTIK_GRAFANA_CLIENT_SECRET
       # Homepage widget credentials (ADR-0012) — consumed by quadlets/homepage.container.
