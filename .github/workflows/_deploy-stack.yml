@@ -137,7 +137,9 @@ jobs:
       HOMEASSISTANT_TOKEN: ${{ secrets.HOMEASSISTANT_TOKEN }}
       BAZARR_API_KEY: ${{ secrets.BAZARR_API_KEY }}
       SEERR_API_KEY: ${{ secrets.SEERR_API_KEY }}
-      PLEX_TOKEN: ${{ secrets.PLEX_TOKEN }}
+      # PLEX_TOKEN is deliberately NOT repeated here — it is already passed above for
+      # the Plex identity source (#316), and one definition serves both. A second entry
+      # in the same `env:` map is a duplicate key, which fails the WHOLE workflow parse.
       ABS_API_KEY: ${{ secrets.ABS_API_KEY }}
       UNIFI_LOCAL_HOST: '192.168.178.1'
       UNIFI_BASE_URL: 'https://192.168.178.1/proxy/network/integration'
