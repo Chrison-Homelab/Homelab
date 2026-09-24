@@ -132,7 +132,6 @@ jobs:
       # Alert bus delivery (ADR-0011). Seeding is add-only but HARD-FAILS on an absent source
       # value even when the podman secret already exists on the host, so a missing passthrough
       # here fails the WHOLE stack converge, not just alertmanager.
-      HA_ALERT_WEBHOOK_URL: ${{ secrets.HA_ALERT_WEBHOOK_URL }}
       PULSE_API_TOKEN: ${{ secrets.PULSE_API_TOKEN }}
       # OTLP ingest auth + the ntfy notification bus (#466). All four are declared by the
       # Monitoring shape but had no passthrough here, so a CI converge of podman-host failed

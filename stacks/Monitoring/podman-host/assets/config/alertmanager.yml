@@ -1,9 +1,16 @@
 # Alert bus routing (ADR-0011).
 #
-# Two receivers run in PARALLEL during the ntfy migration (#466): every alert goes to
-# Home Assistant (the incumbent) AND to ntfy, so the two can be compared on a real alert
-# before HA is dropped. Phase 6 deletes the `home-assistant` webhook block from each
-# receiver and the `ha_alert_webhook_url` secret with it.
+# ntfy is the ONLY receiver. Home Assistant was the incumbent and ran in parallel for the
+# ntfy migration (#466); it was dropped once the parallel run showed the two agreed, because
+# every alert was arriving twice on the phone -- once from ntfy and once from HA's own app.
+#
+# HA still does its OWN notifications for smarthome things it observes directly. That is
+# unrelated to this file: those never travelled through Alertmanager. What was removed here
+# is only HA's role as a DELIVERY channel for Alertmanager.
+#
+# The intended long-term direction is the reverse of the old arrangement -- HA publishes its
+# internal alerts INTO Alertmanager (/api/v2/alerts) and they route out to ntfy like anything
+# else, so there is one alert bus and one notification path. See the follow-up issue.
 #
 # TOPICS follow the stacks, not a new vocabulary: core / monitoring / media / smarthome.
 # The `stack` label on a rule picks the topic; anything unlabelled lands on `core`.
@@ -79,9 +86,6 @@ route:
 receivers:
   - name: alerts-core
     webhook_configs:
-      # Incumbent. Unchanged behaviour; removed in phase 6.
-      - url_file: /run/secrets/ha_alert_webhook_url
-        send_resolved: true
       # ntfy -> topic "core"
       - url: "http://ntfy/core?tpl=yes&priority=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D2%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D5%7B%7Belse%7D%7D3%7B%7Bend%7D%7D&title=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D%E2%9C%85%20Resolved%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D%F0%9F%9A%A8%20FIRING%7B%7Belse%7D%7D%E2%9A%A0%EF%B8%8F%20Firing%7B%7Bend%7D%7D%3A%20%7B%7B.groupLabels.alertname%7D%7D%7B%7Bif%20gt%20%28len%20.alerts%29%201%7D%7D%20%C3%97%7B%7Blen%20.alerts%7D%7D%7B%7Bend%7D%7D&message=%7B%7Brange%20.alerts%7D%7D%7B%7B.annotations.summary%7D%7D%0A%7B%7B.annotations.description%7D%7D%0A%7B%7Bend%7D%7D"
         send_resolved: true
@@ -92,9 +96,6 @@ receivers:
 
   - name: alerts-monitoring
     webhook_configs:
-      # Incumbent. Unchanged behaviour; removed in phase 6.
-      - url_file: /run/secrets/ha_alert_webhook_url
-        send_resolved: true
       # ntfy -> topic "monitoring"
       - url: "http://ntfy/monitoring?tpl=yes&priority=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D2%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D5%7B%7Belse%7D%7D3%7B%7Bend%7D%7D&title=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D%E2%9C%85%20Resolved%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D%F0%9F%9A%A8%20FIRING%7B%7Belse%7D%7D%E2%9A%A0%EF%B8%8F%20Firing%7B%7Bend%7D%7D%3A%20%7B%7B.groupLabels.alertname%7D%7D%7B%7Bif%20gt%20%28len%20.alerts%29%201%7D%7D%20%C3%97%7B%7Blen%20.alerts%7D%7D%7B%7Bend%7D%7D&message=%7B%7Brange%20.alerts%7D%7D%7B%7B.annotations.summary%7D%7D%0A%7B%7B.annotations.description%7D%7D%0A%7B%7Bend%7D%7D"
         send_resolved: true
@@ -105,9 +106,6 @@ receivers:
 
   - name: alerts-media
     webhook_configs:
-      # Incumbent. Unchanged behaviour; removed in phase 6.
-      - url_file: /run/secrets/ha_alert_webhook_url
-        send_resolved: true
       # ntfy -> topic "media"
       - url: "http://ntfy/media?tpl=yes&priority=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D2%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D5%7B%7Belse%7D%7D3%7B%7Bend%7D%7D&title=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D%E2%9C%85%20Resolved%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D%F0%9F%9A%A8%20FIRING%7B%7Belse%7D%7D%E2%9A%A0%EF%B8%8F%20Firing%7B%7Bend%7D%7D%3A%20%7B%7B.groupLabels.alertname%7D%7D%7B%7Bif%20gt%20%28len%20.alerts%29%201%7D%7D%20%C3%97%7B%7Blen%20.alerts%7D%7D%7B%7Bend%7D%7D&message=%7B%7Brange%20.alerts%7D%7D%7B%7B.annotations.summary%7D%7D%0A%7B%7B.annotations.description%7D%7D%0A%7B%7Bend%7D%7D"
         send_resolved: true
@@ -118,9 +116,6 @@ receivers:
 
   - name: alerts-smarthome
     webhook_configs:
-      # Incumbent. Unchanged behaviour; removed in phase 6.
-      - url_file: /run/secrets/ha_alert_webhook_url
-        send_resolved: true
       # ntfy -> topic "smarthome"
       - url: "http://ntfy/smarthome?tpl=yes&priority=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D2%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D5%7B%7Belse%7D%7D3%7B%7Bend%7D%7D&title=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D%E2%9C%85%20Resolved%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D%F0%9F%9A%A8%20FIRING%7B%7Belse%7D%7D%E2%9A%A0%EF%B8%8F%20Firing%7B%7Bend%7D%7D%3A%20%7B%7B.groupLabels.alertname%7D%7D%7B%7Bif%20gt%20%28len%20.alerts%29%201%7D%7D%20%C3%97%7B%7Blen%20.alerts%7D%7D%7B%7Bend%7D%7D&message=%7B%7Brange%20.alerts%7D%7D%7B%7B.annotations.summary%7D%7D%0A%7B%7B.annotations.description%7D%7D%0A%7B%7Bend%7D%7D"
         send_resolved: true
