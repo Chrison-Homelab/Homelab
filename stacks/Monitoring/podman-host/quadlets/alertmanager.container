@@ -30,10 +30,6 @@ UserNS=keep-id:uid=65534,gid=65534
 Volume=/home/podman/monitoring/config/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
 Volume=/home/podman/monitoring/data/alertmanager:/alertmanager
 
-# The HA webhook URL is a capability, so it is mounted as a file and referenced by
-# `url_file:` in alertmanager.yml — it never appears in a config file under git.
-Secret=ha_alert_webhook_url,type=mount,target=/run/secrets/ha_alert_webhook_url
-
 # ntfy publish token (#466). Referenced by `credentials_file:` in each receiver's
 # http_config -- Alertmanager cannot set custom headers on a webhook, so bearer auth is
 # the only way to authenticate to ntfy from here. Write-only on the four stack topics.
