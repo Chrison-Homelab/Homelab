@@ -1,0 +1,37 @@
+# Beszel -> Alertmanager adapter (#590).
+#
+# Beszel's generic webhook emits a FLAT JSON object; Alertmanager's /api/v2/alerts needs
+# an ARRAY with nested labels/annotations. Nothing in shoutrrr bridges that, so this small
+# translator sits between them and Beszel joins the alert bus like every other producer
+# (ADR-0011) rather than notifying the phone on its own private path.
+#
+# NO CUSTOM IMAGE ON PURPOSE. The adapter is stdlib-only Python mounted as an asset onto
+# a stock image, so there is nothing to build, publish or keep patched, and the code that
+# runs is the code in the repo rather than a layer someone baked months ago.
+#
+# NOT PUBLISHED. No PublishPort: it is reachable on the monitoring network only, which is
+# why it carries no authentication. Publishing it would make it an unauthenticated way to
+# inject alerts into the bus -- and therefore onto the phone at priority 5.
+#
+# `python3 -u` is load-bearing: without it stdout is block-buffered and `podman logs` stays
+# empty until a buffer fills, which makes a broken adapter look like a silent one.
+
+[Unit]
+Description=Beszel -> Alertmanager adapter
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/python:3.13-alpine
+ContainerName=beszel-adapter
+Network=monitoring.network
+Volume=/home/podman/monitoring/config/beszel-adapter.py:/app/beszel-adapter.py:ro
+Exec=python3 -u /app/beszel-adapter.py
+AutoUpdate=registry
+
+[Service]
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
