@@ -28,3 +28,18 @@ schema_config:
 
 limits_config:
   allow_structured_metadata: true
+
+  # ── Historical log import (#587) ──────────────────────────────────────────────────
+  # Loki rejects samples older than `reject_old_samples_max_age` AT INGEST, and says so
+  # only in its own logs -- the pushing side gets no error it surfaces, so a replay of
+  # old data looks like it succeeded while its oldest lines are silently gone.
+  #
+  # The default is 7d. CT 2013's Traefik access log is being replayed into Loki after
+  # being copied off the host, and it ages in real time while the deploy is scheduled, so
+  # the default put a ~5.5 day clock on a task with no other urgency. 30d removes that
+  # clock without making it unbounded.
+  #
+  # This is deliberately an EXPLICIT value rather than a raised default: the whole point
+  # is not to depend on what the default happens to be.
+  reject_old_samples: true
+  reject_old_samples_max_age: 720h
