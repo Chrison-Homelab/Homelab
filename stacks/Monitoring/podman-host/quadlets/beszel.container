@@ -36,6 +36,17 @@ AutoUpdate=registry
 # agents dial back on as HUB_URL, so a wrong value here breaks enrolment, not just links.
 Environment=APP_URL=http://monitoring.homelab.chrison.internal:8090
 
+# First-user bootstrap (#590). Beszel creates its initial account from these on startup,
+# so the admin login is DECLARED here rather than clicked through a setup wizard and then
+# written down somewhere. Before this there were no Beszel credentials at all -- nothing
+# in Bitwarden, nothing anywhere -- and the hub was simply unreachable to its owner.
+#
+# These create the FIRST user only. Once an account exists they are ignored, so this is
+# not a password-reset mechanism: recovering a lost admin needs a PocketBase superuser
+# reset instead.
+Environment=USER_EMAIL=csimon@chrison.dev
+Secret=beszel_admin_password,type=env,target=USER_PASSWORD
+
 # NO OIDC WIRING YET, deliberately. Beszel authenticates via PocketBase and its OIDC
 # role sync is still open upstream (henrygd/beszel#1967), so an SSO user would land
 # non-admin exactly like Pulse. The difference we actually care about — that Beszel has
