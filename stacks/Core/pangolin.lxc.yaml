@@ -173,6 +173,14 @@ spec:
     gerbilImage: fosrl/gerbil:1.5.1
     traefikImage: traefik:v3.7
     badgerVersion: v1.7.0
+
+    # Log shipping (#587). All three containers log to journald (so each line carries its
+    # CONTAINER_NAME, not a container ID that changes on every recreate) and a host
+    # otelcol-contrib unit ships them to the monitoring stack's LAN OTLP port, where they land
+    # in Loki as service_name = pangolin / gerbil / traefik. Removing this key reverts both.
+    # ⚠ Turning it on or off RECREATES all three containers — a brief blip on public ingress.
+    # Retention is journald's own cap on this CT, not a per-container rotation.
+    otlpLogsEndpoint: monitoring.homelab.chrison.internal:4317
     #
     # ⚠ pangolin + gerbil + NEWT are ONE decision, not three. Upstream ships no compatibility
     # matrix — its installer just takes the newest tag of each at build time — and a mismatch
