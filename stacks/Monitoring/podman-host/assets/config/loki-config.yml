@@ -29,6 +29,20 @@ schema_config:
 limits_config:
   allow_structured_metadata: true
 
+  # Required for delete requests to be accepted at all (#587). Without it the API returns
+  # success-shaped responses and nothing is ever deleted.
+  deletion_mode: filter-and-delete
+
+  # ⚠ EXPLICIT, AND DELIBERATELY UNCHANGED BEHAVIOUR.
+  # `compactor.retention_enabled: true` below is required for delete requests, but it also
+  # switches on the retention loop. Loki's DEFAULT retention_period is not obviously safe to
+  # inherit here, and an age-based sweep is not what this change is for -- enabling deletion
+  # must not quietly start deleting things nobody asked to delete.
+  # 0s = retain forever, which is exactly what this Loki does today.
+  # Setting a real retention period is a separate decision about how long homelab logs are
+  # worth keeping, and it is Christian's to make, not a side effect of a bug fix.
+  retention_period: 0s
+
   # ── Historical log import (#587) ──────────────────────────────────────────────────
   # Loki rejects samples older than `reject_old_samples_max_age` AT INGEST, and says so
   # only in its own logs -- the pushing side gets no error it surfaces, so a replay of
@@ -43,3 +57,39 @@ limits_config:
   # is not to depend on what the default happens to be.
   reject_old_samples: true
   reject_old_samples_max_age: 720h
+
+# ── Ruler: log-based alerting (#587) ──────────────────────────────────────────────────
+# Evaluates LogQL rules and pushes to Alertmanager, which routes to ntfy like any other
+# producer. Log-based rather than a Prometheus rule ON PURPOSE: the useful signal is the
+# CLIENT IP, and that exists only in the access log -- Traefik's Prometheus metrics carry
+# no such label.
+#
+# `auth_enabled: false` means the single tenant is literally named `fake`, so rule files
+# must live at <directory>/fake/. That is not a placeholder left in by mistake; renaming it
+# breaks rule discovery silently -- the ruler starts clean and simply evaluates nothing.
+ruler:
+  alertmanager_url: http://alertmanager:9093
+  enable_alertmanager_v2: true
+  enable_api: true
+  # Where evaluated rules are staged. Distinct from storage.local.directory below.
+  rule_path: /tmp/loki-rule-eval
+  storage:
+    type: local
+    local:
+      directory: /loki/rules
+  ring:
+    kvstore:
+      store: inmemory
+
+# ── Compactor: required for delete requests (#587) ────────────────────────────────────
+# The historical import of CT 2013's access log landed partially -- 8,021 of 20,894 lines,
+# the rest dropped by a gRPC message-size limit -- and the missing lines are OLDER than the
+# newest landed line. Loki rejects out-of-order writes into an existing stream, so the
+# partial stream cannot be topped up; it has to be deleted and re-imported.
+#
+# Deletion is not available without this block, and `retention_enabled` is required even
+# when retention itself is off (see retention_period above).
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
