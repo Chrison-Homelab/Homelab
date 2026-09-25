@@ -73,3 +73,22 @@ scrape_configs:
         labels: { host: 'monitoring-podman-host', ctid: '4001' }
       - targets: ['media.homelab.chrison.internal:9882']
         labels: { host: 'media-podman-host', ctid: '5114' }
+
+  # Proxmox cluster (#591). One target is enough: `cluster=1` returns cluster-wide
+  # resources, so every guest and storage on every node arrives from a single scrape.
+  # The multi-target pattern below is the exporter's convention -- __param_target names the
+  # NODE to ask, while __address__ stays the exporter itself.
+  - job_name: 'pve'
+    metrics_path: /pve
+    params:
+      cluster: ['1']
+      node: ['1']
+    static_configs:
+      - targets: ['hpe-01.homelab.chrison.internal']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 'pve-exporter:9221'

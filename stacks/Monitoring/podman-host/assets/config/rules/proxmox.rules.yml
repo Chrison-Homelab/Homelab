@@ -1,0 +1,63 @@
+# Proxmox cluster rules (#591) — the half of Pulse that Beszel cannot replace.
+#
+# These are PROMETHEUS rules, not pushed alerts, on purpose: Prometheus re-sends every
+# firing alert on every evaluation, so an Alertmanager restart is invisible. A one-shot
+# POST would be silently forgotten by the next converge (#602).
+groups:
+  - name: proxmox
+    interval: 1m
+    rules:
+      # ── Guest down ────────────────────────────────────────────────────────────────
+      # Keyed on onboot rather than on a list of guests, so it maintains ITSELF. Of 46
+      # guests, 32 have onboot=1 and are the ones that should alert; the 12 on desktop-01
+      # (which auto-sleeps) and the 2 deliberately stopped all have onboot=0 and drop out
+      # automatically. Set onboot=1 on something and leave it stopped, and the alert is
+      # correct rather than noise.
+      #
+      # A blanket "powered off" rule was considered and rejected: it fires on every
+      # intentionally-stopped guest, which trains the topic to be ignored.
+      - alert: ProxmoxGuestDown
+        expr: pve_up{id=~"(lxc|qemu)/.*"} == 0 and on(id) pve_onboot_status == 1
+        # Rides out reboots and converges, which routinely stop guests for a few minutes.
+        for: 10m
+        labels: { severity: critical, stack: core }
+        annotations:
+          summary: "{{ $labels.id }} is down but set to start on boot"
+          description: >-
+            The guest is not running and has onboot=1, so it is meant to be up. Guests that
+            are deliberately off carry onboot=0 and never reach this rule.
+
+      # ── Storage ───────────────────────────────────────────────────────────────────
+      # 85% is Pulse's threshold, kept as-is: it is what has been protecting the cluster.
+      - alert: ProxmoxStorageHigh
+        expr: |
+          (pve_disk_usage_bytes{id=~"storage/.*"} / pve_disk_size_bytes{id=~"storage/.*"}) > 0.85
+        for: 15m
+        labels: { severity: warning, stack: core }
+        annotations:
+          summary: "{{ $labels.id }} at {{ $value | humanizePercentage }}"
+          description: "Proxmox storage above 85%."
+
+      # Thin pools get their own critical tier, because the failure mode is not "disk gets
+      # full" -- at 100% EVERY GUEST ON THE POOL FREEZES. That is worth waking up for, so
+      # it maps to ntfy priority 5 and bypasses Focus.
+      - alert: ProxmoxThinPoolCritical
+        expr: |
+          (pve_disk_usage_bytes{id=~"storage/.*/local-lvm"} / pve_disk_size_bytes{id=~"storage/.*/local-lvm"}) > 0.95
+        for: 5m
+        labels: { severity: critical, stack: core }
+        annotations:
+          summary: "{{ $labels.id }} thin pool at {{ $value | humanizePercentage }}"
+          description: >-
+            A full LVM-thin pool freezes every guest running on it, rather than simply
+            refusing writes. Act before 100%.
+
+      # ── Node down ─────────────────────────────────────────────────────────────────
+      # desktop-01 is excluded: it auto-sleeps by design, the same exclusion Beszel uses.
+      - alert: ProxmoxNodeDown
+        expr: pve_up{id=~"node/.*", id!~"node/desktop-01"} == 0
+        for: 10m
+        labels: { severity: critical, stack: core }
+        annotations:
+          summary: "Proxmox node {{ $labels.id }} is down"
+          description: "The node is not responding to the cluster. desktop-01 is excluded; it sleeps on purpose."

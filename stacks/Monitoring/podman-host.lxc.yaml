@@ -175,6 +175,8 @@ spec:
       pulse_api_token: PULSE_API_TOKEN
       # Beszel's first-user bootstrap (#590) — see quadlets/beszel.container.
       beszel_admin_password: BESZEL_ADMIN_PASSWORD
+      # prometheus-pve-exporter's own PVE token (#591) — NOT pulse@pve, which dies with Pulse.
+      pve_exporter_token: PVE_EXPORTER_TOKEN
       homeassistant_token: HOMEASSISTANT_TOKEN
       bazarr_api_key: BAZARR_API_KEY
       seerr_api_key: SEERR_API_KEY

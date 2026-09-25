@@ -1,0 +1,38 @@
+# prometheus-pve-exporter — Proxmox cluster metrics (#591).
+#
+# Exists so Pulse can be retired without losing what only Pulse was watching: guest power
+# state across 46 LXCs/VMs, and Proxmox storage fill. Beszel covers host liveness, disk and
+# SMART; it has no view of the hypervisor itself.
+#
+# ── ITS OWN IDENTITY, DELIBERATELY ────────────────────────────────────────────────────
+# Authenticates as monitoring@pve!exporter, NOT the existing pulse@pve!monitor. That token
+# is deleted along with Pulse, so borrowing it would mean retiring Pulse silently broke the
+# thing built to replace it. PVEAuditor at `/` — read-only, cluster-wide.
+#
+# NOT PUBLISHED: no PublishPort. Prometheus reaches it by container name on the shared
+# network. It holds a cluster-wide read token and has no authentication of its own.
+
+[Unit]
+Description=prometheus-pve-exporter (Proxmox metrics)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/prompve/prometheus-pve-exporter:3.4.4
+ContainerName=pve-exporter
+Network=monitoring.network
+
+Environment=PVE_USER=monitoring@pve
+Environment=PVE_TOKEN_NAME=exporter
+# Nodes present their own self-signed certs, same reason PROXMOX_VERIFY_TLS is false.
+Environment=PVE_VERIFY_SSL=false
+Secret=pve_exporter_token,type=env,target=PVE_TOKEN_VALUE
+
+AutoUpdate=registry
+
+[Service]
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
