@@ -19,6 +19,13 @@ SITE=${SITE:-https://pt.soulvoice.club}
 ALERTMANAGER=${ALERTMANAGER:-http://10.10.204.35:9093}
 UA=${UA:-"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/142.0.0.0 Safari/537.36"}
 DRY_RUN=${DRY_RUN:-0}
+# Seconds to wait before each attempt. A transient outage (a Cloudflare 52x, a dropped
+# route) must not page anyone, so an unreachable site is retried for ~11 minutes first.
+RETRY_DELAYS=${RETRY_DELAYS:-"0 60 180 420"}
+# The day SoulVoice last confirmed our attendance, in the SITE's calendar. The streak only
+# resets on a missed site day, so this is the fact that decides whether a failure matters.
+STATE_DIR=${STATE_DIR:-/var/lib/soulvoice-attend}
+SITE_TZ=${SITE_TZ:-Asia/Shanghai}   # NexusPHP day boundary; assumed to be the site's server zone
 
 if [ ! -r "$ENV_FILE" ]; then
   echo "missing $ENV_FILE (must define SOULVOICE_COOKIE)" >&2
@@ -30,8 +37,17 @@ fi
 
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT
 
-CODE=$(curl -s -m 30 -A "$UA" -H "Cookie: $SOULVOICE_COOKIE" \
-        "$SITE/attendance.php" -o "$WORK/att.html" -w "%{http_code}" || echo 000)
+# curl prints 000 itself when no HTTP response arrives, and exits non-zero. The old
+# `$(curl … || echo 000)` therefore produced "000000" and the verdict called it a dead
+# cookie. A missing response is an unreachable site, not an auth failure.
+ATTEMPTS=0
+for delay in $RETRY_DELAYS; do
+  sleep "$delay"
+  ATTEMPTS=$((ATTEMPTS + 1))
+  CODE=$(curl -s -m 30 -A "$UA" -H "Cookie: $SOULVOICE_COOKIE" \
+          "$SITE/attendance.php" -o "$WORK/att.html" -w "%{http_code}") || CODE=${CODE:-000}
+  case "$CODE" in 000|5??) continue ;; *) break ;; esac
+done
 
 python3 - "$WORK/att.html" "$CODE" > "$WORK/verdict.json" <<'PY'
 import sys, re, html, json
@@ -48,7 +64,9 @@ v = {"http": code, "state": "unknown", "detail": "", "exam": []}
 
 # A dead cookie does not error - it silently serves the login page, which would
 # otherwise look like a successful run forever.
-if code != "200" or "login.php" in body and "退出" not in txt:
+if code == "000" or code.startswith("5"):
+    v["state"] = "unreachable"
+elif code != "200" or "login.php" in body and "退出" not in txt:
     v["state"] = "auth_failed"
 elif "签到成功" in txt:
     v["state"] = "claimed"
@@ -91,16 +109,27 @@ PY
 
 # Only page a human when something is actually wrong. A claimed or already-claimed
 # day is the expected outcome and should stay silent.
+SITE_DAY=$(TZ=$SITE_TZ date +%F)
 if [ "$STATE" = "claimed" ] || [ "$STATE" = "already" ]; then
+  mkdir -p "$STATE_DIR" && echo "$SITE_DAY" > "$STATE_DIR/last-claim"
   exit 0
 fi
 
-python3 - "$WORK/verdict.json" "$WORK/alert.json" <<'PY'
+# The timer runs twice a day. If the site is merely unreachable but today's attendance is
+# already on record, the streak is safe and nothing needs a human: say so and stop.
+LAST=$(cat "$STATE_DIR/last-claim" 2>/dev/null || true)
+if [ "$STATE" = "unreachable" ] && [ "$LAST" = "$SITE_DAY" ]; then
+  echo "site unreachable after $ATTEMPTS attempt(s), but $SITE_DAY is already claimed - not paging"
+  exit 0
+fi
+
+python3 - "$WORK/verdict.json" "$WORK/alert.json" "$ATTEMPTS" <<'PY'
 import json, sys, datetime
 v = json.load(open(sys.argv[1]))
 now = datetime.datetime.now(datetime.timezone.utc)
 reason = {
     "auth_failed": "the stored cookie is no longer valid - log in and refresh /etc/soulvoice-attend.env",
+    "unreachable": "pt.soulvoice.club gave no usable response after " + sys.argv[3] + " attempts over ~11 minutes. That is the site or the network, NOT the cookie. Today is not yet claimed; the next scheduled run retries",
     "unclear": "attendance.php returned an unrecognised page - the site may have changed",
 }.get(v["state"], v["state"])
 json.dump([{
