@@ -954,7 +954,77 @@ public sealed class ConvergeCoreTests
         Assert.Contains("- 51820:51820/udp", compose);
     }
 
-        [Fact]
+    [Fact]
+    public void Pangolin_LogShipping_Off_LeavesComposeAndDeployUntouched()
+    {
+        var s = PangolinWildcardShape();
+        s.Spec.Config["includeGerbil"] = true;
+        Assert.DoesNotContain("journald", PangolinProvisioner.BuildComposeYaml(s));
+        Assert.DoesNotContain("otelcol",
+            PangolinProvisioner.BuildDockerDeploy(s, "m", "pangolin.chrison.dev", "https://pangolin.chrison.dev", "chrison.dev", "tok"));
+    }
+
+    [Fact]
+    public void Pangolin_LogShipping_On_PutsEveryServiceOnJournald()
+    {
+        var s = PangolinWildcardShape();
+        s.Spec.Config["includeGerbil"] = true;
+        s.Spec.Config["otlpLogsEndpoint"] = "monitoring.homelab.chrison.internal:4317";
+        var compose = PangolinProvisioner.BuildComposeYaml(s);
+
+        // One logging block per service — a service left on json-file would ship nothing.
+        Assert.Equal(3, System.Text.RegularExpressions.Regex.Matches(compose, "driver: journald").Count);
+    }
+
+    [Fact]
+    public void Pangolin_LogShipping_InstallsAgent_BeforeTheRecreate_AndFailsIfItDies()
+    {
+        var s = PangolinWildcardShape();
+        s.Spec.Config["otlpLogsEndpoint"] = "monitoring.homelab.chrison.internal:4317";
+        var script = PangolinProvisioner.BuildDockerDeploy(s, "m", "pangolin.chrison.dev",
+            "https://pangolin.chrison.dev", "chrison.dev", "tok");
+
+        // Agent first, so it is already following the journal when the containers come back.
+        Assert.True(script.IndexOf("systemctl restart otelcol-contrib", StringComparison.Ordinal)
+                    < script.IndexOf("docker compose up -d", StringComparison.Ordinal));
+        // Config must be on disk before dpkg: the postinst restarts the unit against it.
+        Assert.True(script.IndexOf("/etc/otelcol-contrib/config.yaml", StringComparison.Ordinal)
+                    < script.IndexOf("dpkg --force-confold -i", StringComparison.Ordinal));
+        Assert.Contains($"{PangolinProvisioner.DefaultOtelcolSha256}  /tmp/", script);
+        Assert.Contains("sha256sum -c -", script);
+        Assert.Contains("systemctl is-active --quiet otelcol-contrib", script);
+    }
+
+    [Fact]
+    public void Pangolin_OtelcolConfig_ReadsTheBody_AndGroupsByContainer()
+    {
+        var s = PangolinWildcardShape();
+        s.Spec.Config["otlpLogsEndpoint"] = "monitoring.homelab.chrison.internal:4317";
+        var cfg = PangolinProvisioner.BuildOtelcolConfig(s);
+
+        // The journald receiver puts every field in the BODY; attributes are empty, so a
+        // filter on attributes["CONTAINER_NAME"] drops every record (seen on CT 2013).
+        Assert.Contains("body[\"CONTAINER_NAME\"] == nil", cfg);
+        Assert.DoesNotContain("attributes[\"CONTAINER_NAME\"]", cfg);
+        // service.name set on the shared resource would mislabel a mixed batch; it must go
+        // through a log attribute + groupbyattrs.
+        Assert.DoesNotContain("resource.attributes", cfg);
+        Assert.Contains("groupbyattrs:", cfg);
+        Assert.Contains("set(body, body[\"MESSAGE\"])", cfg);
+        Assert.Contains("endpoint: monitoring.homelab.chrison.internal:4317", cfg);
+        Assert.Contains("storage: file_storage", cfg);
+    }
+
+    [Fact]
+    public void Pangolin_LogShipping_MovesTheMarker()
+    {
+        var before = PangolinWildcardShape();
+        var after = PangolinWildcardShape();
+        after.Spec.Config["otlpLogsEndpoint"] = "monitoring.homelab.chrison.internal:4317";
+        Assert.NotEqual(PangolinProvisioner.DesiredMarker(before), PangolinProvisioner.DesiredMarker(after));
+    }
+
+    [Fact]
     public void Pangolin_TraefikStatic_LogsErrorsOnly_AndNeverLogsHeaders()
     {
         var s = PangolinShape();

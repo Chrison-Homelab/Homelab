@@ -757,6 +757,10 @@ public sealed class PangolinProvisioner : IAppProvisioner
     internal const string DefaultTraefikImage = "traefik:v3.6";
     internal const string DefaultBadgerVersion = "v1.2.0";
     internal const string PublicWildcard = "public-wildcard";
+    // Host log agent (#587). Pinned version + the checksum published beside it on the upstream
+    // release; overriding the version means overriding the checksum too, or the install fails.
+    internal const string DefaultOtelcolVersion = "0.161.0";
+    internal const string DefaultOtelcolSha256 = "9ea10aff606104408b253925ab66e8bd2a09217359e675a3c28b34e2b56aee5b";
     private const string LeProd = "https://acme-v02.api.letsencrypt.org/directory";
     private const string LeStaging = "https://acme-staging-v02.api.letsencrypt.org/directory";
 
@@ -770,6 +774,8 @@ public sealed class PangolinProvisioner : IAppProvisioner
             yield return $"render /opt/pangolin/{{compose.yml,.env,config/*}} — Docker EE {img}; generate+preserve server.secret";
             yield return $"Traefik owns :443 with LE wildcard certs (DNS-01 via Cloudflare) for {string.Join(" + ", WildcardFqdns(s))}";
             yield return "docker compose up -d (idempotent via managed marker) — then activate EE once at /admin/license (manual)";
+            if (OtlpLogsEndpoint(s) is { } otlp)
+                yield return $"containers log to journald; host otelcol-contrib {s.Spec.Config.Str("otelcolVersion") ?? DefaultOtelcolVersion} ships them to {otlp}";
             if (s.Spec.Config.Str("publicIp") is { Length: > 0 } pip)
                 yield return $"ensure grey-cloud A record(s) {string.Join(" + ", WildcardFqdns(s))} → {pip} (add-only)";
         }
@@ -1820,6 +1826,9 @@ public sealed class PangolinProvisioner : IAppProvisioner
         sb.Append($"echo {env} | base64 -d > .env && chmod 600 .env\n");
         sb.Append($"echo {tStatic} | base64 -d > config/traefik/traefik_config.yml\n");
         sb.Append($"echo {tDynamic} | base64 -d > config/traefik/dynamic_config.yml\n");
+        // The log agent goes in BEFORE the recreate, so it is already following the journal
+        // when the containers come back on the journald driver and the first lines are kept.
+        if (OtlpLogsEndpoint(s) is not null) sb.Append(BuildLogAgentInstall(s));
         sb.Append("docker compose up -d\n");
         // ...then RESTART, because `up -d` is not enough. It only recreates a service whose
         // DEFINITION changed, and config.yml / traefik_config.yml are bind-mounted files — so a
@@ -1840,6 +1849,114 @@ public sealed class PangolinProvisioner : IAppProvisioner
     }
 
     private static string B64(string s) => Convert.ToBase64String(Encoding.UTF8.GetBytes(s));
+
+    // ── Log shipping (#587) ─────────────────────────────────────────────────────
+    // config.otlpLogsEndpoint (host:port, OTLP/gRPC, LAN) switches it on: the compose services
+    // move to the journald driver and a HOST otelcol-contrib follows the journal and ships each
+    // container's lines to it. Unset → neither happens, and the compose is unchanged.
+    internal static string? OtlpLogsEndpoint(Shape s) =>
+        s.Spec.Config.Str("otlpLogsEndpoint") is { Length: > 0 } e ? e : null;
+
+    // A host systemd unit, NOT a compose service: the journald receiver shells out to
+    // `journalctl`, which the otel-collector-contrib image does not ship, so as a container it
+    // starts and ships nothing. A log agent in a container would also have to ship its own
+    // logs and would die exactly when you most want to know why.
+    //
+    // Order matters. The config and the journal-group drop-in are written BEFORE dpkg, because
+    // the package's postinst enables and restarts the unit against whatever config.yaml is on
+    // disk; --force-confold keeps ours over the packaged sample on first install and upgrade.
+    // Only amd64 is pinned — every Proxmox node is x86-64.
+    internal static string BuildLogAgentInstall(Shape s)
+    {
+        var c = s.Spec.Config;
+        var ver = c.Str("otelcolVersion") ?? DefaultOtelcolVersion;
+        var sha = c.Str("otelcolSha256") ?? DefaultOtelcolSha256;
+        var deb = $"otelcol-contrib_{ver}_linux_amd64.deb";
+        var url = $"https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v{ver}/{deb}";
+        // The service runs as otelcol-contrib, which cannot read the system journal without
+        // this group — journalctl then returns nothing and exits 0, so nothing ever errors.
+        var dropIn = "[Service]\nSupplementaryGroups=systemd-journal\n";
+
+        var sb = new StringBuilder();
+        sb.Append("mkdir -p /etc/otelcol-contrib /etc/systemd/system/otelcol-contrib.service.d\n");
+        sb.Append($"echo {B64(BuildOtelcolConfig(s))} | base64 -d > /etc/otelcol-contrib/config.yaml\n");
+        sb.Append($"echo {B64(dropIn)} | base64 -d > /etc/systemd/system/otelcol-contrib.service.d/homelab.conf\n");
+        sb.Append($"if [ \"$(dpkg-query -W -f='${{Version}}' otelcol-contrib 2>/dev/null)\" != \"{ver}\" ]; then\n");
+        sb.Append($"  curl -fsSL -o /tmp/{deb} {url}\n");
+        sb.Append($"  echo \"{sha}  /tmp/{deb}\" | sha256sum -c -\n");
+        sb.Append($"  DEBIAN_FRONTEND=noninteractive dpkg --force-confold -i /tmp/{deb}\n");
+        sb.Append($"  rm -f /tmp/{deb}\n");
+        sb.Append("fi\n");
+        sb.Append("systemctl daemon-reload\n");
+        sb.Append("systemctl enable otelcol-contrib\n");
+        sb.Append("systemctl restart otelcol-contrib\n");
+        // `restart` returns 0 even if the process dies a second later on a bad config. Check it
+        // is still up, so a broken agent fails the deploy (no marker → next converge retries)
+        // instead of reporting APPLIED over a pipeline that ships nothing.
+        sb.Append("sleep 3\n");
+        sb.Append("systemctl is-active --quiet otelcol-contrib || { journalctl -u otelcol-contrib -n 30 --no-pager; exit 1; }\n");
+        return sb.ToString();
+    }
+
+    // The collector config, verified on CT 2013 against a real journald-driver container on
+    // 0.161.0. Two things in it are not obvious and both fail SILENTLY if got wrong:
+    //
+    //  * The journald receiver puts every journal field in the record BODY (a map); attributes
+    //    are empty. A filter on attributes["CONTAINER_NAME"] drops every record.
+    //  * service.name must not be set on resource.attributes from the log context: the receiver
+    //    emits one resource per batch, so every line in a batch would get the LAST record's
+    //    container name. Set a log attribute, then groupbyattrs lifts it into its own resource.
+    //
+    // The body becomes the bare MESSAGE, so Loki holds the line the container wrote (traefik's
+    // JSON access log stays parseable) rather than the whole journal record around it.
+    // file_storage keeps the journal cursor, so an agent restart neither re-ships nor skips.
+    internal static string BuildOtelcolConfig(Shape s)
+    {
+        var endpoint = OtlpLogsEndpoint(s) ?? "";
+        var L = new List<string>
+        {
+            "extensions:",
+            "  file_storage:",
+            "    directory: /var/lib/otelcol-contrib",
+            "receivers:",
+            "  journald:",
+            "    units: [ docker.service ]",
+            "    priority: info",
+            "    storage: file_storage",
+            "processors:",
+            "  filter/containers_only:",       // dockerd's own daemon lines have no CONTAINER_NAME
+            "    error_mode: ignore",
+            "    logs:",
+            "      log_record:",
+            "        - 'body[\"CONTAINER_NAME\"] == nil'",
+            "  transform/hoist:",
+            "    error_mode: ignore",
+            "    log_statements:",
+            "      - context: log",
+            "        statements:",
+            "          - set(attributes[\"service.name\"], body[\"CONTAINER_NAME\"])",
+            "          - set(body, body[\"MESSAGE\"])",
+            "  groupbyattrs:",
+            "    keys: [ service.name ]",
+            "  resource/host:",
+            "    attributes:",
+            "      - { key: host.name, value: pangolin, action: upsert }",
+            "  batch: {}",
+            "exporters:",
+            "  otlp:",
+            $"    endpoint: {endpoint}",
+            "    tls:",
+            "      insecure: true",              // LAN-only :4317, unauthenticated by design
+            "service:",
+            "  extensions: [ file_storage ]",
+            "  pipelines:",
+            "    logs:",
+            "      receivers: [ journald ]",
+            "      processors: [ filter/containers_only, transform/hoist, groupbyattrs, resource/host, batch ]",
+            "      exporters: [ otlp ]",
+        };
+        return string.Join("\n", L) + "\n";
+    }
 
     // config.yml lines (shared shape with the native path; cert_resolver points Pangolin's
     // HTTP-provider routers at Traefik's `letsencrypt` resolver). secret is "$SECRET".
@@ -1898,6 +2015,13 @@ public sealed class PangolinProvisioner : IAppProvisioner
         var traefik = c.Str("traefikImage") ?? DefaultTraefikImage;
         var gerbil = c.Str("gerbilImage") ?? DefaultGerbilImage;
         var withGerbil = CBool(c, "includeGerbil", false);
+        // With log shipping on, every service logs to journald instead of docker's json-file:
+        // journald records carry CONTAINER_NAME, whereas a json-file log is identified only by
+        // the container ID in its path, which changes on every recreate — so dashboards and
+        // alert rules keyed on it would silently match nothing after a rebuild (#587).
+        var logging = OtlpLogsEndpoint(s) is null
+            ? Array.Empty<string>()
+            : new[] { "    logging:", "      driver: journald" };
 
         var L = new List<string>
         {
@@ -1918,6 +2042,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
             "      timeout: 10s",
             "      retries: 15",
         };
+        L.AddRange(logging);
         if (withGerbil)
         {
             L.AddRange(new[]
@@ -1955,6 +2080,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
                 "      - 443:443/udp",
                 "      - 80:80",
             });
+            L.AddRange(logging);
         }
         L.AddRange(new[]
         {
@@ -1982,6 +2108,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
             "      - ./config/traefik:/etc/traefik:ro",
             "      - ./config/letsencrypt:/letsencrypt",
         });
+        L.AddRange(logging);
         return string.Join("\n", L) + "\n";
     }
 
