@@ -88,6 +88,9 @@ def build(payload):
             "severity/status were inferred from text, not read. title=%r",
             payload.get("title"),
         )
+    # With a structured title the raw delimited record is NOT what a human should read on
+    # a lock screen, so rebuild a readable summary. The prose path already reads naturally.
+    summary = (payload.get("title") or "Beszel alert") if fallback else f"{system} — {alertname}"
     alert = {
         "labels": {
             "alertname": alertname,
@@ -99,7 +102,7 @@ def build(payload):
             "source": "beszel",
         },
         "annotations": {
-            "summary": payload.get("title") or "Beszel alert",
+            "summary": summary,
             "description": payload.get("message") or "",
         },
     }
