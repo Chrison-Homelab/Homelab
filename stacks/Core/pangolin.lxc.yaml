@@ -311,6 +311,16 @@ spec:
         zone: lab
         sso: true
         target: { ip: monitoring.homelab.chrison.internal, port: 7655, method: http }
+      # Grafana (stacks/Monitoring CT 4001), so Christian can reach his dashboards from outside.
+      # TWO gates, both authentik: Pangolin's SSO admits only its Admin role (homelab-admins,
+      # see roleMapping above), and Grafana's own generic_oauth then refuses anyone outside
+      # homelab-admins/monitoring-admins (ROLE_ATTRIBUTE_STRICT). One authentik session
+      # satisfies both. Grafana's ROOT_URL and the authentik redirect URI point here.
+      - name: Grafana
+        subdomain: grafana
+        zone: lab
+        sso: true
+        target: { ip: monitoring.homelab.chrison.internal, port: 3000, method: http }
       # ── arr admin UIs (Phase 5 cutover). Origins PINNED to the new 5100-block CT IPs on
       #    VLAN 1010 (validated live per-port 2026-07-14). DEPENDS ON DHCP reservations for
       #    these IPs (#13) — until reserved, a new lease silently breaks the target (same
