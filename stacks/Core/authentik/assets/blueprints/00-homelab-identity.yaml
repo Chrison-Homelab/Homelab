@@ -289,10 +289,9 @@ entries:
         - !KeyOf grp-homelab-admins
 
   # ── Grafana: OAuth2/OIDC provider ─────────────────────────────────────────────────
-  # Second Tier-1 migration (#485). Grafana is reached on the LAN only — there is no Pangolin
-  # resource for it — so the redirect URI is the internal name, not a *.lab hostname. That is
-  # deliberately unchanged here: exposing it publicly is a separate decision, not a side
-  # effect of giving it SSO.
+  # Second Tier-1 migration (#485). Now published at grafana.lab.chrison.dev behind Pangolin's
+  # SSO gate (Admin role only), so Grafana's ROOT_URL — and therefore the redirect it sends —
+  # is the public https name. The LAN URI is kept so a revert of ROOT_URL alone still logs in.
   - model: authentik_providers_oauth2.oauth2provider
     id: grafana-provider
     identifiers: { name: Grafana }
@@ -311,12 +310,12 @@ entries:
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
-      # http, not https, and on purpose. Grafana has no TLS of its own and no reverse proxy
-      # in front of it, so claiming https here would produce a redirect the browser cannot
-      # follow. The authorization code therefore crosses the LAN in plaintext — acceptable on
-      # a VLAN-segmented home network, and the thing that fixes it properly is fronting
-      # Grafana with Pangolin, not lying in this field.
+      # The https URI is the live one: Traefik terminates TLS for grafana.lab.chrison.dev, so
+      # the authorization code no longer crosses the LAN in plaintext. The http LAN URI is the
+      # pre-publication one, kept only as the rollback path.
       redirect_uris:
+        - matching_mode: strict
+          url: https://grafana.lab.chrison.dev/login/generic_oauth
         - matching_mode: strict
           url: http://monitoring.homelab.chrison.internal:3000/login/generic_oauth
 
@@ -326,8 +325,8 @@ entries:
     attrs:
       name: Grafana
       provider: !KeyOf grafana-provider
-      meta_launch_url: http://monitoring.homelab.chrison.internal:3000
-      meta_description: Dashboards over Prometheus, Tempo and Loki. LAN only.
+      meta_launch_url: https://grafana.lab.chrison.dev
+      meta_description: Dashboards over Prometheus, Tempo and Loki.
       policy_engine_mode: any
 
   - model: authentik_policies.policybinding
