@@ -74,15 +74,27 @@ scrape_configs:
       - targets: ['media.homelab.chrison.internal:9882']
         labels: { host: 'media-podman-host', ctid: '5114' }
 
-  # Proxmox cluster (#591). One target is enough: `cluster=1` returns cluster-wide
-  # resources, so every guest and storage on every node arrives from a single scrape.
-  # The multi-target pattern below is the exporter's convention -- __param_target names the
-  # NODE to ask, while __address__ stays the exporter itself.
+  # Proxmox cluster (#591) — TWO JOBS, and the split is load-bearing.
+  #
+  # `pve_up` is CLUSTER-WIDE: ask any node and you get all 46 guests. But
+  # `pve_onboot_status` is NODE-SCOPED — the exporter reads it from the target node's own
+  # guest configs, so asking hpe-01 returns only hpe-01's guests.
+  #
+  # Scraping one node therefore gave onboot for 28 guests and none for nuc-01's 6, which
+  # meant ProxmoxGuestDown could never fire for anything on nuc-01 — including lxc/2013,
+  # Pangolin, the public ingress. The `and on(id) pve_onboot_status == 1` join simply had
+  # nothing to match, so the rule evaluated green and returned nothing, which is
+  # indistinguishable from a healthy cluster.
+  #
+  # So: cluster-wide metrics come from ONE node (no duplicates), and onboot is collected
+  # from EVERY node, with each job dropping what the other owns.
+  #
+  # desktop-01 is deliberately absent: it auto-sleeps, scraping it would fail, and its
+  # guests carry onboot=0 so they are excluded from the rule anyway.
   - job_name: 'pve'
     metrics_path: /pve
     params:
       cluster: ['1']
-      node: ['1']
     static_configs:
       - targets: ['hpe-01.homelab.chrison.internal']
     relabel_configs:
@@ -92,3 +104,30 @@ scrape_configs:
         target_label: instance
       - target_label: __address__
         replacement: 'pve-exporter:9221'
+    metric_relabel_configs:
+      # onboot belongs to the per-node job below; keeping it here too would double the
+      # series and turn the rule's join into a many-to-many error.
+      - source_labels: [__name__]
+        regex: 'pve_onboot_status'
+        action: drop
+
+  - job_name: 'pve-onboot'
+    metrics_path: /pve
+    params:
+      node: ['1']
+    static_configs:
+      - targets:
+          - 'hpe-01.homelab.chrison.internal'
+          - 'nuc-01.homelab.chrison.internal'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 'pve-exporter:9221'
+    metric_relabel_configs:
+      # Everything except onboot is cluster-wide and already collected above.
+      - source_labels: [__name__]
+        regex: 'pve_onboot_status'
+        action: keep
