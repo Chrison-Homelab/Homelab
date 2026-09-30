@@ -54,10 +54,12 @@ auth-access:
   - "alertmanager:monitoring:write-only"
   - "alertmanager:media:write-only"
   - "alertmanager:smarthome:write-only"
+  - "alertmanager:trackers:write-only"
   - "iphone:core:read-only"
   - "iphone:monitoring:read-only"
   - "iphone:media:read-only"
   - "iphone:smarthome:read-only"
+  - "iphone:trackers:read-only"
 
 # No template-dir: the `alertmanager` template is COMPILED INTO the binary (verified by
 # strings on /usr/bin/ntfy), so `?template=alertmanager` works with no files to ship. Add a
