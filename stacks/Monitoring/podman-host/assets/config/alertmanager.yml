@@ -27,6 +27,7 @@
 #              {{else}}3{{end}}
 #   title    = {{if eq .status "resolved"}}(tick) Resolved
 #              {{else if eq .commonLabels.severity "critical"}}(siren) FIRING
+#              {{else if severity "info"}}(info) Info
 #              {{else}}(warning) Firing{{end}}: {{.groupLabels.alertname}}
 #              {{if .groupLabels.name}} . {{.groupLabels.name}}{{end}}
 #              {{if gt (len .alerts) 1}} x{{len .alerts}}{{end}}
@@ -80,6 +81,28 @@ route:
       - matchers: ['stack=~"smarthome|iot|hass"']
         receiver: alerts-smarthome
 
+    # INFORMATIONAL alerts are notified ONCE, not repeatedly.
+    #
+    # An `info` alert is a statement that something is true right now -- a freeleech window
+    # is open, a job finished -- not a problem waiting to be fixed. Pushed with an endsAt
+    # hours out, the root's 4h repeat turns ONE such event into four notifications,
+    # overnight included. 168h is longer than any such window, so it notifies once and then
+    # stays quiet for as long as it remains true.
+    #
+    # It also drops to ntfy priority 2, the same quiet tier as a resolved notification.
+    # Before this, `info` fell through to the warning branch and arrived looking exactly
+    # like something that needed attention.
+    - matchers: ['severity="info"']
+      receiver: alerts-core
+      repeat_interval: 168h
+      routes:
+      - matchers: ['stack=~"media|arr"']
+        receiver: alerts-media
+      - matchers: ['stack="monitoring"']
+        receiver: alerts-monitoring
+      - matchers: ['stack=~"smarthome|iot|hass"']
+        receiver: alerts-smarthome
+
     # Everything else (warning and below) keeps the 4h repeat from the root.
     - matchers: ['stack=~"media|arr"']
       receiver: alerts-media
@@ -92,7 +115,7 @@ receivers:
   - name: alerts-core
     webhook_configs:
       # ntfy -> topic "core"
-      - url: "http://ntfy/core?tpl=yes&priority=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D2%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D5%7B%7Belse%7D%7D3%7B%7Bend%7D%7D&title=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D%E2%9C%85%20Resolved%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D%F0%9F%9A%A8%20FIRING%7B%7Belse%7D%7D%E2%9A%A0%EF%B8%8F%20Firing%7B%7Bend%7D%7D%3A%20%7B%7B.groupLabels.alertname%7D%7D%7B%7Bif%20.groupLabels.name%7D%7D%20%C2%B7%20%7B%7B.groupLabels.name%7D%7D%7B%7Bend%7D%7D%7B%7Bif%20gt%20%28len%20.alerts%29%201%7D%7D%20%C3%97%7B%7Blen%20.alerts%7D%7D%7B%7Bend%7D%7D&message=%7B%7Brange%20.alerts%7D%7D%7B%7B.annotations.summary%7D%7D%0A%7B%7B.annotations.description%7D%7D%0A%7B%7Bend%7D%7D"
+      - url: "http://ntfy/core?tpl=yes&priority=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D2%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D5%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22info%22%7D%7D2%7B%7Belse%7D%7D3%7B%7Bend%7D%7D&title=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D%E2%9C%85%20Resolved%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D%F0%9F%9A%A8%20FIRING%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22info%22%7D%7D%E2%84%B9%EF%B8%8F%20Info%7B%7Belse%7D%7D%E2%9A%A0%EF%B8%8F%20Firing%7B%7Bend%7D%7D%3A%20%7B%7B.groupLabels.alertname%7D%7D%7B%7Bif%20.groupLabels.name%7D%7D%20%C2%B7%20%7B%7B.groupLabels.name%7D%7D%7B%7Bend%7D%7D%7B%7Bif%20gt%20%28len%20.alerts%29%201%7D%7D%20%C3%97%7B%7Blen%20.alerts%7D%7D%7B%7Bend%7D%7D&message=%7B%7Brange%20.alerts%7D%7D%7B%7B.annotations.summary%7D%7D%0A%7B%7B.annotations.description%7D%7D%0A%7B%7Bend%7D%7D"
         send_resolved: true
         http_config:
           authorization:
@@ -102,7 +125,7 @@ receivers:
   - name: alerts-monitoring
     webhook_configs:
       # ntfy -> topic "monitoring"
-      - url: "http://ntfy/monitoring?tpl=yes&priority=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D2%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D5%7B%7Belse%7D%7D3%7B%7Bend%7D%7D&title=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D%E2%9C%85%20Resolved%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D%F0%9F%9A%A8%20FIRING%7B%7Belse%7D%7D%E2%9A%A0%EF%B8%8F%20Firing%7B%7Bend%7D%7D%3A%20%7B%7B.groupLabels.alertname%7D%7D%7B%7Bif%20.groupLabels.name%7D%7D%20%C2%B7%20%7B%7B.groupLabels.name%7D%7D%7B%7Bend%7D%7D%7B%7Bif%20gt%20%28len%20.alerts%29%201%7D%7D%20%C3%97%7B%7Blen%20.alerts%7D%7D%7B%7Bend%7D%7D&message=%7B%7Brange%20.alerts%7D%7D%7B%7B.annotations.summary%7D%7D%0A%7B%7B.annotations.description%7D%7D%0A%7B%7Bend%7D%7D"
+      - url: "http://ntfy/monitoring?tpl=yes&priority=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D2%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D5%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22info%22%7D%7D2%7B%7Belse%7D%7D3%7B%7Bend%7D%7D&title=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D%E2%9C%85%20Resolved%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D%F0%9F%9A%A8%20FIRING%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22info%22%7D%7D%E2%84%B9%EF%B8%8F%20Info%7B%7Belse%7D%7D%E2%9A%A0%EF%B8%8F%20Firing%7B%7Bend%7D%7D%3A%20%7B%7B.groupLabels.alertname%7D%7D%7B%7Bif%20.groupLabels.name%7D%7D%20%C2%B7%20%7B%7B.groupLabels.name%7D%7D%7B%7Bend%7D%7D%7B%7Bif%20gt%20%28len%20.alerts%29%201%7D%7D%20%C3%97%7B%7Blen%20.alerts%7D%7D%7B%7Bend%7D%7D&message=%7B%7Brange%20.alerts%7D%7D%7B%7B.annotations.summary%7D%7D%0A%7B%7B.annotations.description%7D%7D%0A%7B%7Bend%7D%7D"
         send_resolved: true
         http_config:
           authorization:
@@ -112,7 +135,7 @@ receivers:
   - name: alerts-media
     webhook_configs:
       # ntfy -> topic "media"
-      - url: "http://ntfy/media?tpl=yes&priority=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D2%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D5%7B%7Belse%7D%7D3%7B%7Bend%7D%7D&title=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D%E2%9C%85%20Resolved%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D%F0%9F%9A%A8%20FIRING%7B%7Belse%7D%7D%E2%9A%A0%EF%B8%8F%20Firing%7B%7Bend%7D%7D%3A%20%7B%7B.groupLabels.alertname%7D%7D%7B%7Bif%20.groupLabels.name%7D%7D%20%C2%B7%20%7B%7B.groupLabels.name%7D%7D%7B%7Bend%7D%7D%7B%7Bif%20gt%20%28len%20.alerts%29%201%7D%7D%20%C3%97%7B%7Blen%20.alerts%7D%7D%7B%7Bend%7D%7D&message=%7B%7Brange%20.alerts%7D%7D%7B%7B.annotations.summary%7D%7D%0A%7B%7B.annotations.description%7D%7D%0A%7B%7Bend%7D%7D"
+      - url: "http://ntfy/media?tpl=yes&priority=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D2%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D5%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22info%22%7D%7D2%7B%7Belse%7D%7D3%7B%7Bend%7D%7D&title=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D%E2%9C%85%20Resolved%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D%F0%9F%9A%A8%20FIRING%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22info%22%7D%7D%E2%84%B9%EF%B8%8F%20Info%7B%7Belse%7D%7D%E2%9A%A0%EF%B8%8F%20Firing%7B%7Bend%7D%7D%3A%20%7B%7B.groupLabels.alertname%7D%7D%7B%7Bif%20.groupLabels.name%7D%7D%20%C2%B7%20%7B%7B.groupLabels.name%7D%7D%7B%7Bend%7D%7D%7B%7Bif%20gt%20%28len%20.alerts%29%201%7D%7D%20%C3%97%7B%7Blen%20.alerts%7D%7D%7B%7Bend%7D%7D&message=%7B%7Brange%20.alerts%7D%7D%7B%7B.annotations.summary%7D%7D%0A%7B%7B.annotations.description%7D%7D%0A%7B%7Bend%7D%7D"
         send_resolved: true
         http_config:
           authorization:
@@ -122,7 +145,7 @@ receivers:
   - name: alerts-smarthome
     webhook_configs:
       # ntfy -> topic "smarthome"
-      - url: "http://ntfy/smarthome?tpl=yes&priority=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D2%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D5%7B%7Belse%7D%7D3%7B%7Bend%7D%7D&title=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D%E2%9C%85%20Resolved%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D%F0%9F%9A%A8%20FIRING%7B%7Belse%7D%7D%E2%9A%A0%EF%B8%8F%20Firing%7B%7Bend%7D%7D%3A%20%7B%7B.groupLabels.alertname%7D%7D%7B%7Bif%20.groupLabels.name%7D%7D%20%C2%B7%20%7B%7B.groupLabels.name%7D%7D%7B%7Bend%7D%7D%7B%7Bif%20gt%20%28len%20.alerts%29%201%7D%7D%20%C3%97%7B%7Blen%20.alerts%7D%7D%7B%7Bend%7D%7D&message=%7B%7Brange%20.alerts%7D%7D%7B%7B.annotations.summary%7D%7D%0A%7B%7B.annotations.description%7D%7D%0A%7B%7Bend%7D%7D"
+      - url: "http://ntfy/smarthome?tpl=yes&priority=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D2%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D5%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22info%22%7D%7D2%7B%7Belse%7D%7D3%7B%7Bend%7D%7D&title=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D%E2%9C%85%20Resolved%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D%F0%9F%9A%A8%20FIRING%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22info%22%7D%7D%E2%84%B9%EF%B8%8F%20Info%7B%7Belse%7D%7D%E2%9A%A0%EF%B8%8F%20Firing%7B%7Bend%7D%7D%3A%20%7B%7B.groupLabels.alertname%7D%7D%7B%7Bif%20.groupLabels.name%7D%7D%20%C2%B7%20%7B%7B.groupLabels.name%7D%7D%7B%7Bend%7D%7D%7B%7Bif%20gt%20%28len%20.alerts%29%201%7D%7D%20%C3%97%7B%7Blen%20.alerts%7D%7D%7B%7Bend%7D%7D&message=%7B%7Brange%20.alerts%7D%7D%7B%7B.annotations.summary%7D%7D%0A%7B%7B.annotations.description%7D%7D%0A%7B%7Bend%7D%7D"
         send_resolved: true
         http_config:
           authorization:
