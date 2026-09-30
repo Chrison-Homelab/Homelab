@@ -55,11 +55,16 @@ auth-access:
   - "alertmanager:media:write-only"
   - "alertmanager:smarthome:write-only"
   - "alertmanager:trackers:write-only"
+  # Publisher on CT 5114 (Media). Write-only, and ONLY this topic -- it must not be
+  # able to reach core/monitoring/media/smarthome, which is why it is its own user
+  # rather than a second token for `alertmanager`.
+  - "freeleech:freeleech:write-only"
   - "iphone:core:read-only"
   - "iphone:monitoring:read-only"
   - "iphone:media:read-only"
   - "iphone:smarthome:read-only"
   - "iphone:trackers:read-only"
+  - "iphone:freeleech:read-only"
 
 # No template-dir: the `alertmanager` template is COMPILED INTO the binary (verified by
 # strings on /usr/bin/ntfy), so `?template=alertmanager` works with no files to ship. Add a
