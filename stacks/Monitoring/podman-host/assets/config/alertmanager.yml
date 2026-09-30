@@ -67,6 +67,20 @@ route:
   repeat_interval: 4h
 
   routes:
+    # Torrent-tracker notifications go to their OWN topic, ahead of every other split.
+    #
+    # This is the one deliberate departure from "topics follow the stacks". A tracker
+    # promotion is not infrastructure -- it is a feed you either want or do not, and the
+    # whole point of a separate topic is that it can be muted or unsubscribed WITHOUT
+    # muting anything that matters. On `core` it was competing with the ingress.
+    #
+    # Routed on the producer's EXISTING `service` label, so nothing has to change at the
+    # script. Add another tracker by extending the matcher.
+    - matchers: ['service=~"soulvoice"']
+      receiver: alerts-trackers
+      # Same reasoning as the info tier: these state what is true now, not what is broken.
+      repeat_interval: 168h
+
     # Severity is the OUTER split so `repeat_interval` is stated once and inherited by the
     # per-stack children below it. Critical repeats more often, but still not often enough
     # to be ignorable.
@@ -146,6 +160,16 @@ receivers:
     webhook_configs:
       # ntfy -> topic "smarthome"
       - url: "http://ntfy/smarthome?tpl=yes&priority=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D2%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D5%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22info%22%7D%7D2%7B%7Belse%7D%7D3%7B%7Bend%7D%7D&title=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D%E2%9C%85%20Resolved%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D%F0%9F%9A%A8%20FIRING%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22info%22%7D%7D%E2%84%B9%EF%B8%8F%20Info%7B%7Belse%7D%7D%E2%9A%A0%EF%B8%8F%20Firing%7B%7Bend%7D%7D%3A%20%7B%7B.groupLabels.alertname%7D%7D%7B%7Bif%20.groupLabels.name%7D%7D%20%C2%B7%20%7B%7B.groupLabels.name%7D%7D%7B%7Bend%7D%7D%7B%7Bif%20gt%20%28len%20.alerts%29%201%7D%7D%20%C3%97%7B%7Blen%20.alerts%7D%7D%7B%7Bend%7D%7D&message=%7B%7Brange%20.alerts%7D%7D%7B%7B.annotations.summary%7D%7D%0A%7B%7B.annotations.description%7D%7D%0A%7B%7Bend%7D%7D"
+        send_resolved: true
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /run/secrets/ntfy_alertmanager_token
+
+  - name: alerts-trackers
+    webhook_configs:
+      # ntfy -> topic "trackers"
+      - url: "http://ntfy/trackers?tpl=yes&priority=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D2%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D5%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22info%22%7D%7D2%7B%7Belse%7D%7D3%7B%7Bend%7D%7D&title=%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D%E2%9C%85%20Resolved%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22critical%22%7D%7D%F0%9F%9A%A8%20FIRING%7B%7Belse%20if%20eq%20.commonLabels.severity%20%22info%22%7D%7D%E2%84%B9%EF%B8%8F%20Info%7B%7Belse%7D%7D%E2%9A%A0%EF%B8%8F%20Firing%7B%7Bend%7D%7D%3A%20%7B%7B.groupLabels.alertname%7D%7D%7B%7Bif%20.groupLabels.name%7D%7D%20%C2%B7%20%7B%7B.groupLabels.name%7D%7D%7B%7Bend%7D%7D%7B%7Bif%20gt%20%28len%20.alerts%29%201%7D%7D%20%C3%97%7B%7Blen%20.alerts%7D%7D%7B%7Bend%7D%7D&message=%7B%7Brange%20.alerts%7D%7D%7B%7B.annotations.summary%7D%7D%0A%7B%7B.annotations.description%7D%7D%0A%7B%7Bend%7D%7D"
         send_resolved: true
         http_config:
           authorization:
