@@ -71,6 +71,9 @@ public sealed class OpenBaoProvisionerTests
         Assert.Contains("node_id = \"openbao-3007\"", cfg);
         Assert.Contains("api_addr     = \"https://openbao.devops.chrison.internal:8200\"", cfg);
         Assert.Contains("tls_cert_file", cfg);   // never a plaintext listener
+        // OpenBao 2.x refuses audit devices over the API, so it must be declared here.
+        Assert.Contains("audit \"file\" \"file\"", cfg);
+        Assert.Contains(OpenBaoProvisioner.AuditLog, cfg);
     }
 
     [Fact]

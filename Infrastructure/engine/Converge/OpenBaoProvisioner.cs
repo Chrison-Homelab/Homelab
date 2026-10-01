@@ -97,14 +97,34 @@ public sealed class OpenBaoProvisioner : IAppProvisioner
         $"api_addr     = \"{ApiAddr(s)}\"",
         "cluster_addr = \"https://127.0.0.1:8201\"",
         "",
+        // Declarative because it has to be: OpenBao 2.x answers `bao audit enable` with "cannot
+        // enable audit device via API; use declarative, config-based audit device management"
+        // (seen on CT 3007). Rotated by the logrotate rule the config script installs.
+        $"audit \"file\" \"file\" {{",
+        "  options {",
+        $"    file_path = \"{AuditLog}\"",
+        "  }",
+        "}",
+        "",
     });
+
+    internal const string AuditLog = "/var/log/openbao/audit.log";
+
+    // copytruncate is not safe for an audit log (lines written between copy and truncate are
+    // lost); SIGHUP makes OpenBao reopen the file instead, which `systemctl reload` sends.
+    internal const string Logrotate =
+        AuditLog + " {\n  weekly\n  rotate 8\n  compress\n  delaycompress\n  missingok\n  notifempty\n" +
+        "  postrotate\n    systemctl reload openbao >/dev/null 2>&1 || true\n  endscript\n}\n";
 
     // Write only on drift (so a no-op converge never restarts, i.e. never re-seals), then make
     // sure the unit is enabled and active. Prints RESTARTED when it restarted the server.
     internal static string RenderConfigScript(string config)
     {
         var b64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(config));
-        return "set -e; t=$(mktemp); echo " + b64 + " | base64 -d > \"$t\"; " +
+        var lr = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(Logrotate));
+        return "set -e; install -d -o openbao -g openbao -m 750 /var/log/openbao; " +
+               "echo " + lr + " | base64 -d > /etc/logrotate.d/openbao; " +
+               "t=$(mktemp); echo " + b64 + " | base64 -d > \"$t\"; " +
                "if ! cmp -s \"$t\" " + ConfigFile + "; then install -o openbao -g openbao -m 640 \"$t\" " + ConfigFile + "; " +
                "systemctl reset-failed openbao 2>/dev/null || true; systemctl enable -q openbao; systemctl restart openbao; echo RESTARTED; " +
                "else systemctl enable -q openbao; systemctl is-active -q openbao || { systemctl reset-failed openbao 2>/dev/null || true; systemctl start openbao; echo RESTARTED; }; fi; " +
