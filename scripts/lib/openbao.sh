@@ -17,7 +17,7 @@ OPENBAO_KV_PREFIX="${OPENBAO_KV_PREFIX:-homelab}"   # secret/<prefix>/<KEY>, one
 OPENBAO_KC_ROLE="homelab-openbao-role-id"
 OPENBAO_KC_SECRET="homelab-openbao-secret-id"
 
-_bao_kc() { security find-generic-password -a openbao -s "$1" -w 2>/dev/null || true; }
+_bao_kc() { command -v security >/dev/null 2>&1 || return 0; security find-generic-password -a openbao -s "$1" -w 2>/dev/null || true; }
 
 # curl wrapper: verified TLS, token header (if any) from an fd, body (if any) on stdin.
 _bao_curl() {
@@ -37,12 +37,16 @@ openbao_unavailable_reason() {
   [ "$(printf '%s' "$h" | jq -r .initialized 2>/dev/null)" = true ] || { echo "not initialised"; return; }
   [ "$(printf '%s' "$h" | jq -r .sealed 2>/dev/null)" = false ] \
     || { echo "SEALED — unseal on CT 3007 (2 shares from Bitwarden)"; return; }
+  # A token handed in from outside (CI: GitHub OIDC → JWT login) needs no Keychain AppRole.
+  [ -n "${OPENBAO_TOKEN_PRESET:-}" ] && return
   [ -n "$(_bao_kc "$OPENBAO_KC_ROLE")" ] && [ -n "$(_bao_kc "$OPENBAO_KC_SECRET")" ] \
     || { echo "no AppRole in Keychain — run scripts/openbao-setup-workstation.sh"; return; }
 }
 
 # AppRole login; exports OPENBAO_TOKEN. Returns non-zero (no output) on failure.
 openbao_login() {
+  # OPENBAO_TOKEN_PRESET: use that token as-is (CI). The caller owns its lifetime.
+  if [ -n "${OPENBAO_TOKEN_PRESET:-}" ]; then OPENBAO_TOKEN="$OPENBAO_TOKEN_PRESET"; export OPENBAO_TOKEN; return 0; fi
   local body
   # printf is a builtin, so the secret_id is never in a process's argv. Both ids are UUIDs.
   body="$(printf '{"role_id":"%s","secret_id":"%s"}' "$(_bao_kc "$OPENBAO_KC_ROLE")" "$(_bao_kc "$OPENBAO_KC_SECRET")")"

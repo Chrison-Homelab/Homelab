@@ -26,132 +26,17 @@ jobs:
     concurrency:
       group: deploy-${{ inputs.stack }}
       cancel-in-progress: false        # never cancel an in-flight converge
+    # Only NON-SECRET constants live here now. Every secret, and every value from
+    # secrets.env.template, is exported into the job by the first steps below, from OpenBao
+    # (GitHub OIDC → JWT login, #609 step 3), falling back to GitHub's own secrets if OpenBao is
+    # sealed or unreachable. There is no per-secret passthrough list any more: it was the fourth
+    # hand-kept copy of every secret NAME and the cause of #578/#579. A new secret needs no edit
+    # to this file. Anything set here WINS over the exported values.
+    permissions:
+      contents: read
+      id-token: write          # GitHub OIDC token → OpenBao JWT auth
     env:
-      # Cluster read (Preview state-diff) + create/config (Deploy).
-      PROXMOX_BASE_URL: ${{ secrets.PROXMOX_BASE_URL }}
-      PROXMOX_TOKEN_ID: ${{ secrets.PROXMOX_TOKEN_ID }}
-      PROXMOX_TOKEN_SECRET: ${{ secrets.PROXMOX_TOKEN_SECRET }}
-      PROXMOX_VERIFY_TLS: ${{ secrets.PROXMOX_VERIFY_TLS }}
-      # Cloudflare tunnel-token provider (cloudflared shapes) — ADD-ONLY (CLAUDE.md).
-      CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-      CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-      # Home edge addressing, expanded into spec.config by ShapeVars (`${HOME_WAN_IP}`).
-      # SECRETS, not `vars.*`, on purpose: this repo is public, so its Actions logs are
-      # public, and converge PRINTS publicIp in Preview ("ensure grey-cloud A record(s)
-      # … → <ip>"). GitHub masks secrets in logs and does not mask variables — a variable
-      # would have moved the literal out of the shape and straight into the build log.
-      # Consumed by Core (pangolin publicIp + cloudflared access.bypass) and Media
-      # (cloudflared access.bypass). An unset value fails the load LOUDLY, by name.
-      HOME_WAN_IP: ${{ secrets.HOME_WAN_IP }}
-      HOME_WAN_IPV6_PREFIX: ${{ secrets.HOME_WAN_IPV6_PREFIX }}
-      # Pangolin EE (Core): the chrison-dev org integration-API key the pangolin provisioner
-      # uses to upsert resources via the CT's :3003 API. Without it, declared resources are
-      # SKIPPED (wildcard A records still get created). Repo secret: PANGOLIN_API_KEY.
-      PANGOLIN_API_KEY: ${{ secrets.PANGOLIN_API_KEY }}
-      # arr-wire (#159): qBittorrent WebUI creds the Media provisioner sets + that
-      # sonarr/radarr use as download-client auth. QBIT_USER defaults to 'admin' if unset.
-      QBIT_USER: ${{ secrets.QBIT_USER }}
-      QBIT_PASSWORD: ${{ secrets.QBIT_PASSWORD }}
-      # *arr WebUI Forms-auth creds the provisioners set (per-app passwords, #178).
-      ARR_USER: ${{ secrets.ARR_USER }}
-      SONARR_PASSWORD: ${{ secrets.SONARR_PASSWORD }}
-      RADARR_PASSWORD: ${{ secrets.RADARR_PASSWORD }}
-      PROWLARR_PASSWORD: ${{ secrets.PROWLARR_PASSWORD }}
-      BAZARR_PASSWORD: ${{ secrets.BAZARR_PASSWORD }}
-      BAZARR_OPENSUBTITLES_USER: ${{ secrets.BAZARR_OPENSUBTITLES_USER }}
-      BAZARR_OPENSUBTITLES_PASSWORD: ${{ secrets.BAZARR_OPENSUBTITLES_PASSWORD }}
-
-      # Podman-host secrets. PodmanProvisioner resolves every one of these BEFORE building the
-      # converge script and fails the whole run if any is absent or empty, rather than creating an
-      # empty podman secret the units would silently mis-consume. None of them were passed here, so
-      # a CI deploy of a stack with a podman host could not converge it at all — the failure names
-      # the missing key, which is how it was found.
-      #
-      # SecretsEnv falls back to the process environment when there is no secrets.env file, which is
-      # the case on a runner. So these env names must match the secrets.env keys exactly.
-      PODMAN_USER_PASSWORD: ${{ secrets.PODMAN_USER_PASSWORD }}
-      YOUTARR_DB_ROOT_PASSWORD: ${{ secrets.YOUTARR_DB_ROOT_PASSWORD }}
-      YOUTARR_AUTH_USERNAME: ${{ secrets.YOUTARR_AUTH_USERNAME }}
-      YOUTARR_AUTH_PASSWORD: ${{ secrets.YOUTARR_AUTH_PASSWORD }}
-      KRAUTWATCH_DB_PASSWORD: ${{ secrets.KRAUTWATCH_DB_PASSWORD }}
-      KRAUTWATCH_DB_CONNECTIONSTRING: ${{ secrets.KRAUTWATCH_DB_CONNECTIONSTRING }}
-      KRAUTWATCH_APIKEY: ${{ secrets.KRAUTWATCH_APIKEY }}
-      KRAUTWATCH_TVDB_APIKEY: ${{ secrets.KRAUTWATCH_TVDB_APIKEY }}
-      # shelfmark (#186 follow-up): Hardcover metadata-provider API token the provisioner
-      # writes into /etc/shelfmark/.env. From the BW hardcover.app item.
-      HARDCOVER_API_KEY: ${{ secrets.HARDCOVER_API_KEY }}
-      # Authentik, the IdP on Core CT 2014 (#469). Seeded as podman secrets by the provisioner,
-      # which FAILS the member rather than creating an empty secret the units would silently
-      # mis-consume — the same guard PODMAN_USER_PASSWORD above documents, and the same way
-      # this was found: adding the keys to secrets.env.template covers a local converge but
-      # NOT the runner, which has no secrets.env and reads these env names instead.
-      AUTHENTIK_SECRET_KEY: ${{ secrets.AUTHENTIK_SECRET_KEY }}
-      AUTHENTIK_PG_PASSWORD: ${{ secrets.AUTHENTIK_PG_PASSWORD }}
-      AUTHENTIK_PANGOLIN_CLIENT_ID: ${{ secrets.AUTHENTIK_PANGOLIN_CLIENT_ID }}
-      AUTHENTIK_PANGOLIN_CLIENT_SECRET: ${{ secrets.AUTHENTIK_PANGOLIN_CLIENT_SECRET }}
-      AUTHENTIK_PULSE_CLIENT_ID: ${{ secrets.AUTHENTIK_PULSE_CLIENT_ID }}
-      AUTHENTIK_PULSE_CLIENT_SECRET: ${{ secrets.AUTHENTIK_PULSE_CLIENT_SECRET }}
-      AUTHENTIK_GRAFANA_CLIENT_ID: ${{ secrets.AUTHENTIK_GRAFANA_CLIENT_ID }}
-      AUTHENTIK_GRAFANA_CLIENT_SECRET: ${{ secrets.AUTHENTIK_GRAFANA_CLIENT_SECRET }}
-      AUTHENTIK_FORGEJO_CLIENT_ID: ${{ secrets.AUTHENTIK_FORGEJO_CLIENT_ID }}
-      AUTHENTIK_FORGEJO_CLIENT_SECRET: ${{ secrets.AUTHENTIK_FORGEJO_CLIENT_SECRET }}
-      AUTHENTIK_AUDIOBOOKSHELF_CLIENT_ID: ${{ secrets.AUTHENTIK_AUDIOBOOKSHELF_CLIENT_ID }}
-      AUTHENTIK_AUDIOBOOKSHELF_CLIENT_SECRET: ${{ secrets.AUTHENTIK_AUDIOBOOKSHELF_CLIENT_SECRET }}
-      AUTHENTIK_ROMM_CLIENT_ID: ${{ secrets.AUTHENTIK_ROMM_CLIENT_ID }}
-      AUTHENTIK_ROMM_CLIENT_SECRET: ${{ secrets.AUTHENTIK_ROMM_CLIENT_SECRET }}
-      # Plex identity source (#316). Named PLEX_* rather than AUTHENTIK_PLEX_* because the
-      # blueprint reads the env var directly and the value is a Plex credential, not an
-      # authentik one.
-      PLEX_TOKEN: ${{ secrets.PLEX_TOKEN }}
-      PLEX_SERVER_CLIENT_IDENTIFIER: ${{ secrets.PLEX_SERVER_CLIENT_IDENTIFIER }}
-      # DevOps stack. The github-runner member derives its registration token from this PAT,
-      # and it had never been passed to the runner — the same gap as the four monitoring
-      # secrets in #490, found the same way: the first live apply of that stack in a while.
-      # A stack that deploys fine by hand goes red the moment CI touches it, because the
-      # laptop already had a populated secrets.env and the runner has none.
-      GH_RUNNER_PAT: ${{ secrets.GH_RUNNER_PAT }}
-      # monitoring stack (#485). These four were never here because monitoring had no
-      # workflow to need them — every apply ran from a laptop that already had secrets.env,
-      # so nothing ever noticed. Adding deploy-monitoring.yml made the runner the first
-      # environment to converge that stack, and it failed on the first one it reached:
-      #   FAILED: podman secret 'grafana_admin_password' needs GF_SECURITY_ADMIN_PASSWORD
-      #           in secrets.env (absent/empty)
-      # Note the seeding is add-only but still HARD-FAILS on an absent source value, even
-      # when the podman secret already exists on the host — so a missing passthrough breaks
-      # the whole stack's converge, not just the one unit that uses it.
-      GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.GF_SECURITY_ADMIN_PASSWORD }}
-      RADARR_API_KEY: ${{ secrets.RADARR_API_KEY }}
-      SONARR_API_KEY: ${{ secrets.SONARR_API_KEY }}
-      PROWLARR_API_KEY: ${{ secrets.PROWLARR_API_KEY }}
-      # UniFi, for the DHCP-reservation reconciler (#416, #446). Without these every declared
-      # reservation reports `reservation SKIPPED: ... no UniFi credentials` and the run still
-      # goes GREEN — so the shapes look reconciled while the controller has never heard of
-      # them. Only the API key is secret; the rest are the same literals secrets.env carries.
       # The controller is addressed by IP on purpose: it IS the DNS server.
-      UNIFI_API_KEY: ${{ secrets.UNIFI_API_KEY }}
-      # Alert bus delivery (ADR-0011). Seeding is add-only but HARD-FAILS on an absent source
-      # value even when the podman secret already exists on the host, so a missing passthrough
-      # here fails the WHOLE stack converge, not just alertmanager.
-      PULSE_API_TOKEN: ${{ secrets.PULSE_API_TOKEN }}
-      # OTLP ingest auth + the ntfy notification bus (#466). All four are declared by the
-      # Monitoring shape but had no passthrough here, so a CI converge of podman-host failed
-      # at apply while a laptop converge succeeded -- the laptop's secrets.env already had
-      # them. Seeding hard-fails on an absent value even when the podman secret already
-      # exists on the host, so one missing line fails the WHOLE stack converge.
-      OTEL_BEARER_TOKEN: ${{ secrets.OTEL_BEARER_TOKEN }}
-      NTFY_AUTH_USERS: ${{ secrets.NTFY_AUTH_USERS }}
-      NTFY_AUTH_TOKENS: ${{ secrets.NTFY_AUTH_TOKENS }}
-      NTFY_ALERTMANAGER_TOKEN: ${{ secrets.NTFY_ALERTMANAGER_TOKEN }}
-      NTFY_FREELEECH_TOKEN: ${{ secrets.NTFY_FREELEECH_TOKEN }}
-      BESZEL_ADMIN_PASSWORD: ${{ secrets.BESZEL_ADMIN_PASSWORD }}
-      PVE_EXPORTER_TOKEN: ${{ secrets.PVE_EXPORTER_TOKEN }}
-      HOMEASSISTANT_TOKEN: ${{ secrets.HOMEASSISTANT_TOKEN }}
-      BAZARR_API_KEY: ${{ secrets.BAZARR_API_KEY }}
-      SEERR_API_KEY: ${{ secrets.SEERR_API_KEY }}
-      # PLEX_TOKEN is deliberately NOT repeated here — it is already passed above for
-      # the Plex identity source (#316), and one definition serves both. A second entry
-      # in the same `env:` map is a duplicate key, which fails the WHOLE workflow parse.
-      ABS_API_KEY: ${{ secrets.ABS_API_KEY }}
       UNIFI_LOCAL_HOST: '192.168.178.1'
       UNIFI_BASE_URL: 'https://192.168.178.1/proxy/network/integration'
       UNIFI_VERIFY_TLS: 'false'
@@ -172,6 +57,16 @@ jobs:
       NODE_SSH_KEY: /home/runner/.ssh/id_ed25519
     steps:
       - uses: actions/checkout@v6
+      # Secrets FIRST, before anything that needs them (the Preview step reads Proxmox/Cloudflare).
+      # ⚠ This repo is PUBLIC, so these logs are public: both scripts mask every value before use.
+      - name: Secrets from OpenBao (GitHub OIDC → JWT auth)
+        id: bao
+        run: scripts/ci-secrets-from-openbao.sh
+      - name: Secrets from GitHub (FALLBACK — only if OpenBao is unavailable)
+        if: ${{ steps.bao.outputs.fallback == 'true' }}
+        env:
+          ALL_SECRETS: ${{ toJSON(secrets) }}
+        run: scripts/ci-secrets-from-github-json.sh
       - name: Fetch stack submodules (shapes live here; vendor/* C# repos skipped)
         env:
           TOKEN: ${{ secrets.SUBMODULES_RO_PAT }}

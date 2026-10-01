@@ -47,7 +47,8 @@ bws_map() {
 openbao_map() {
   openbao_login || { echo "ERROR: OpenBao AppRole login failed" >&2; return 1; }
   local m rc=0; m="$(openbao_dump)" || rc=$?
-  _bao_curl -X POST "$OPENBAO_ADDR/v1/auth/token/revoke-self" >/dev/null 2>&1 || true
+  # A preset token belongs to the caller (CI revokes it itself); only our own login is revoked here.
+  [ -n "${OPENBAO_TOKEN_PRESET:-}" ] || _bao_curl -X POST "$OPENBAO_ADDR/v1/auth/token/revoke-self" >/dev/null 2>&1 || true
   [ "$rc" = 0 ] && printf '%s' "$m"
 }
 

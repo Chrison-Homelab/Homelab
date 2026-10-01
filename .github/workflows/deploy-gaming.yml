@@ -23,6 +23,11 @@ on:
         default: ''
 jobs:
   deploy:
+    # id-token: write lets _deploy-stack log in to OpenBao with GitHub's OIDC token (#609).
+    # A reusable workflow cannot hold more than its caller grants.
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/_deploy-stack.yml
     with:
       stack: Gaming
