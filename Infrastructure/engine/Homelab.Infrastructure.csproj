@@ -20,8 +20,10 @@
          Chrison.* prefix — the bare ProxmoxSharp ID is taken there by an unrelated
          project). Assembly name/namespace are unchanged (ProxmoxSharp). Pinned to an
          exact prerelease for deterministic restores; bump explicitly when adopting new
-         code. Carries the LXC lifecycle write path (PctWriter, #149). -->
-    <PackageReference Include="Chrison.ProxmoxSharp" Version="0.2.0-preview.5" />
+         code. Carries the LXC lifecycle write path (PctWriter, #149), and since 0.2.2
+         discovery survives an offline node (ProxmoxSharp#24): asleep desktop-01 used to
+         throw 595 and turn every plan intent-only. -->
+    <PackageReference Include="Chrison.ProxmoxSharp" Version="0.2.2-preview.10" />
     <!-- UniFi discover surface + the legacy write adapter (UnifiSharp.Legacy:
          port-forwards/firewall/networks/clients). From nuget.org (Chrison.* prefix);
          assembly/namespace unchanged (UnifiSharp). Pinned exactly (like
