@@ -1,0 +1,9 @@
+[Unit]
+Description=Continue the volume3 → volume4 movie migration nightly
+
+[Timer]
+OnCalendar=*-*-* 00:30:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target

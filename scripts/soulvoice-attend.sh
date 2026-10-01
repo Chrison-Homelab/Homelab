@@ -11,7 +11,9 @@
 # +500 at 20, +1000 at 30). A missed day resets the streak, so unattended is the point.
 #
 # The cookie is password-equivalent and cannot be rotated without changing the account
-# password, so it lives only in /etc/soulvoice-attend.env, root-only, never in the repo.
+# password, so it never goes in the repo. It lives in OpenBao (secret/homelab/SOULVOICE_COOKIE)
+# and the timer starts this under openbao-exec, which puts it in the environment (#609, step 5).
+# Without it in the environment, the old root-only /etc/soulvoice-attend.env is read instead.
 set -euo pipefail
 
 ENV_FILE=${ENV_FILE:-/etc/soulvoice-attend.env}
@@ -27,13 +29,15 @@ RETRY_DELAYS=${RETRY_DELAYS:-"0 60 180 420"}
 STATE_DIR=${STATE_DIR:-/var/lib/soulvoice-attend}
 SITE_TZ=${SITE_TZ:-Asia/Shanghai}   # NexusPHP day boundary; assumed to be the site's server zone
 
-if [ ! -r "$ENV_FILE" ]; then
-  echo "missing $ENV_FILE (must define SOULVOICE_COOKIE)" >&2
-  exit 78   # EX_CONFIG
+if [ -z "${SOULVOICE_COOKIE:-}" ]; then
+  if [ ! -r "$ENV_FILE" ]; then
+    echo "SOULVOICE_COOKIE not in the environment (run under openbao-exec) and no $ENV_FILE" >&2
+    exit 78   # EX_CONFIG
+  fi
+  # shellcheck source=/dev/null
+  . "$ENV_FILE"
+  : "${SOULVOICE_COOKIE:?SOULVOICE_COOKIE not set in $ENV_FILE}"
 fi
-# shellcheck source=/dev/null
-. "$ENV_FILE"
-: "${SOULVOICE_COOKIE:?SOULVOICE_COOKIE not set in $ENV_FILE}"
 
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT
 

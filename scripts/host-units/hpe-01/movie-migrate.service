@@ -1,0 +1,9 @@
+[Unit]
+Description=Migrate the legacy volume3 movie library to volume4 via Radarr import
+
+[Service]
+Type=oneshot
+# Was a transient systemd-run unit (lost on reboot) sourcing /root/movie-migrate/.env. The Radarr
+# key now comes from OpenBao via this host's AppRole (#609, step 5).
+Environment=MIGRATE_BATCH_GB=150
+ExecStart=/usr/local/bin/openbao-exec RADARR_API_KEY -- /bin/bash -c 'python3 /root/movie-migrate/migrate.py > /root/movie-migrate/migrate.log 2>&1'
