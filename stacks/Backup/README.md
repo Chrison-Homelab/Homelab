@@ -29,7 +29,12 @@ backup *jobs*, so these remain hand-made (a follow-up once a backup-job provisio
 | Datastore `homelab` (`/mnt/datastore`) | hand | `proxmox-backup-manager datastore create` |
 | GC (daily) + prune (7d/4w/6m) | hand | `datastore update --gc-schedule` / `prune-job create` |
 | Cluster storage `pbs-homelab` (by hostname) | hand | `pvesm add pbs … --server pbs.homelab.chrison.internal` |
-| Nightly job (02:00, 32 guests) | hand | `pvesh create /cluster/backup` |
+| Nightly job (02:00, 33 guests; 3007 OpenBao added 2026-10-01, only after its hardening) | hand | `pvesh create /cluster/backup` |
+
+> ⚠ **`pvesh set /cluster/backup/<id> --vmid` REPLACES the list.** Read it, parse it on the
+> workstation (the nodes have no `jq`), check the count, write, then re-read and compare. On
+> 2026-10-01 an append built from a remote `jq` read that silently returned nothing wiped the job
+> to a single guest. It was caught and restored before the next run.
 
 The API token for the nodes is `pve@pbs!pve-nodes` (DatastoreAdmin on `homelab`).
 
