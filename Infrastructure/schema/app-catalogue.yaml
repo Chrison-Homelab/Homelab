@@ -107,6 +107,10 @@ apps:
     provisioner: plex            # reconcile server settings via the /:/prefs API, add/update only (#332).
                                  # Pins the deliberate non-default TranscoderCanOnlyRemuxVideo=1, which a
                                  # rebuild would otherwise silently reset to Plex's default.
+  openbao:
+    script: openbao              # DevOps CT 3007, the secrets store trial (#609)
+    provisioner: openbao         # ASSERT-ONLY: fails while the installer's plaintext unseal key / root
+                                 # token are on disk; never handles keys (bootstrap is a workstation script)
   tracearr:
     script: tracearr             # net-new; Plex/Jellyfin/Emby session monitoring (Tautulli replacement). No
                                  # provisioner — all-in-one install self-generates secrets; Plex link is a UI step.
