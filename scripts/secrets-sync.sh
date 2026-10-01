@@ -63,6 +63,11 @@ if [ "$COMPARE" = 1 ]; then
   used="$(grep -E '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=$' "$TEMPLATE" | sed -E 's/^[[:space:]]*//; s/=$//' | sort -u)"
   echo "OpenBao keys: $(printf '%s' "$A" | jq length)   SM keys: $(printf '%s' "$B" | jq length)   template fill targets: $(echo "$used" | grep -c .)"
   if [ -z "$diff_keys" ]; then echo "✓ identical"; exit 0; fi
+  # "only in OpenBao" is the direction of travel (OpenBao is primary, SM is being retired), e.g.
+  # host secrets read via openbao-exec (#609 step 5) that never had an SM copy. Reported, not failed.
+  if ! printf '%s\n' "$diff_keys" | grep -qv '(only in OpenBao)$'; then
+    echo "✓ identical apart from OpenBao-only keys:"; echo "$diff_keys" | sed 's/^/    /'; exit 0
+  fi
   echo "✗ differences (key names only):"; echo "$diff_keys" | sed 's/^/    /'; exit 3
 fi
 

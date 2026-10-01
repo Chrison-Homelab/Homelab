@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""openbao-exec — run a command with named secrets from OpenBao in its environment (#609, step 5).
+
+    openbao-exec KEY[,KEY...] -- command [args...]
+
+Replaces the hand-made env files on a host (/etc/soulvoice-attend.env, /root/seedonly/.env, …):
+a systemd unit wraps its ExecStart in this instead of sourcing a file, so the values exist only
+in the started process's environment and never on disk.
+
+Each KEY is read from secret/homelab/<KEY> (field "value") with this host's AppRole, which
+scripts/openbao-setup-host.sh creates and installs:
+    /etc/openbao-client/approle.json   {"role_id": ..., "secret_id": ...}   0600 root
+    /etc/openbao-client/ca.pem         the CT's pinned certificate (scripts/openbao-ca.pem)
+The AppRole's policy can read exactly the keys listed for this host in scripts/openbao-hosts.conf,
+and its tokens only work from this host's address.
+
+Exit status: the command's own, once it starts. Otherwise 75 (EX_TEMPFAIL) when OpenBao is
+sealed or unreachable (try again later; after a reboot, someone has to unseal it), 78 (EX_CONFIG)
+for anything that needs a human: missing client config, login refused, key absent or not readable.
+No secret value is ever printed. Python standard library only, because the nodes have no jq.
+"""
+import json
+import os
+import ssl
+import sys
+import urllib.error
+import urllib.request
+
+ADDR = os.environ.get("OPENBAO_ADDR", "https://openbao.devops.chrison.internal:8200").rstrip("/")
+CONF = os.environ.get("OPENBAO_CLIENT_DIR", "/etc/openbao-client")
+PREFIX = "homelab"
+EX_TEMPFAIL, EX_CONFIG = 75, 78
+
+
+def die(code, msg):
+    print(f"openbao-exec: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def call(ctx, method, path, token=None, body=None):
+    req = urllib.request.Request(f"{ADDR}/v1/{path}", method=method,
+                                 data=None if body is None else json.dumps(body).encode())
+    if token:
+        req.add_header("X-Vault-Token", token)
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=10) as r:
+            return r.status, json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        return e.code, {}
+    except (urllib.error.URLError, OSError) as e:
+        die(EX_TEMPFAIL, f"OpenBao unreachable at {ADDR} ({type(e).__name__})")
+
+
+def main(argv):
+    if len(argv) < 4 or argv[2] != "--":
+        die(EX_CONFIG, "usage: openbao-exec KEY[,KEY...] -- command [args...]")
+    keys = [k for k in argv[1].split(",") if k]
+    cmd = argv[3:]
+
+    try:
+        ctx = ssl.create_default_context(cafile=os.path.join(CONF, "ca.pem"))   # pinned, hostname checked
+        with open(os.path.join(CONF, "approle.json")) as f:
+            creds = json.load(f)
+    except (OSError, ValueError, ssl.SSLError) as e:
+        die(EX_CONFIG, f"no usable client config in {CONF} ({type(e).__name__}) — run scripts/openbao-setup-host.sh")
+
+    status, seal = call(ctx, "GET", "sys/seal-status")
+    if status != 200:
+        die(EX_TEMPFAIL, f"seal-status HTTP {status}")
+    if seal.get("sealed", True):
+        die(EX_TEMPFAIL, "OpenBao is SEALED — unseal CT 3007 (2 shares from Bitwarden), then re-run")
+
+    status, login = call(ctx, "POST", "auth/approle/login",
+                         body={"role_id": creds.get("role_id"), "secret_id": creds.get("secret_id")})
+    if status != 200:
+        die(EX_CONFIG, f"AppRole login refused (HTTP {status})")
+    token = login["auth"]["client_token"]
+
+    env = dict(os.environ)
+    try:
+        for k in keys:
+            status, doc = call(ctx, "GET", f"secret/data/{PREFIX}/{k}", token=token)
+            value = (doc.get("data") or {}).get("data", {}).get("value") if status == 200 else None
+            if not isinstance(value, str) or value == "":
+                die(EX_CONFIG, f"{k}: not readable (HTTP {status}) — is it in OpenBao, and in this host's list in scripts/openbao-hosts.conf?")
+            env[k] = value
+    finally:
+        call(ctx, "POST", "auth/token/revoke-self", token=token)
+
+    try:
+        os.execvpe(cmd[0], cmd, env)
+    except OSError as e:
+        die(EX_CONFIG, f"cannot run {cmd[0]}: {e.strerror}")
+
+
+if __name__ == "__main__":
+    main(sys.argv)

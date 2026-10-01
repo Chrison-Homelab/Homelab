@@ -1,0 +1,15 @@
+[Unit]
+Description=Claim the daily SoulVoice attendance bonus
+Documentation=https://github.com/Chrison-Homelab/Homelab/blob/main/scripts/soulvoice-attend.sh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# The cookie comes from OpenBao (secret/homelab/SOULVOICE_COOKIE) via this host's AppRole, not
+# from /etc/soulvoice-attend.env (#609, step 5). openbao-exec exits 75 if OpenBao is sealed.
+ExecStart=/usr/local/bin/openbao-exec SOULVOICE_COOKIE -- /usr/local/bin/soulvoice-attend.sh
+# The script retries an unreachable site for ~11 min (RETRY_DELAYS 0 60 180 420); 180 s killed
+# it before the third attempt.
+TimeoutStartSec=900
+Nice=10
