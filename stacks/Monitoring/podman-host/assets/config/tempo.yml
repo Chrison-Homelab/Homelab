@@ -1,4 +1,8 @@
-# Minimal single-binary Tempo for homelab traces. Receives OTLP from the collector.
+# Minimal single-binary Tempo (target: all) for homelab traces. Receives OTLP from the collector.
+#
+# Written against Tempo 3.1.0 (see the pin in quadlets/tempo.container). In 3.x there is no
+# `compactor:` block: compaction and retention run in-process as backend-scheduler (decides
+# when) + backend-worker (does the work). Re-check this file on every image bump.
 server:
   http_listen_port: 3200
 
@@ -9,9 +13,22 @@ distributor:
         grpc:
           endpoint: 0.0.0.0:4317
 
+# Retention is applied by the WORKER from backend_worker.compaction.block_retention.
+# backend_scheduler.provider.compaction.compaction.block_retention also exists but only
+# feeds block selection for compaction -- setting it alone changes nothing. 90 days was
+# Christian's choice (#599); the 14-day default was never in effect, because compaction
+# had not run since 12 July (one zero-byte block failed every blocklist poll).
+backend_worker:
+  compaction:
+    block_retention: 2160h
+
 storage:
   trace:
     backend: local
+    # Held at vParquet4 across the 3.1 bump so the upgrade changes one thing at a time:
+    # 3.1 defaults new blocks to vParquet5. Move to it as its own deliberate change.
+    block:
+      version: vParquet4
     local:
       path: /var/tempo/blocks
     wal:
