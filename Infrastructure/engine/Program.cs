@@ -95,6 +95,12 @@ static async Task<int> RunUnifiReservationReport(string[] args)
         return 2;
     }
 
+    // Same resolver the converge path uses, so a shape carrying `${VAR}` in its config resolves
+    // here too, and resolved FIRST so the UniFi options below can see the controller settings.
+    var reportEnv = SecretsEnv.Resolve(FindUp("secrets.env", Directory.GetCurrentDirectory()),
+        FindUp("secrets.env.template", Directory.GetCurrentDirectory()));
+    reportEnv.ExportConnectionSettings();
+
     var options = UnifiLegacyOptions.TryFromEnvironment();
     if (options is null)
     {
@@ -109,9 +115,6 @@ static async Task<int> RunUnifiReservationReport(string[] args)
         .ToList();
     if (Directory.EnumerateFiles(root, "*.lxc.yaml").Any()) stackDirs.Insert(0, root);
 
-    // Same secrets.env the converge path uses, so a shape carrying `${VAR}` in its
-    // config resolves here too rather than reporting every stack as unloadable.
-    var reportEnv = SecretsEnv.Load(FindUp("secrets.env", Directory.GetCurrentDirectory()));
 
     var declared = new List<(string Stack, string Member, ReservationSpec Spec, bool IsVm)>();
     foreach (var dir in stackDirs)
@@ -251,7 +254,10 @@ static async Task<int> RunConverge(string[] args)
     catch (InvalidOperationException ex) { Console.Error.WriteLine(ex.Message); return 2; }
 
     var secretsPath = FindUp("secrets.env", Directory.GetCurrentDirectory());
-    var env = SecretsEnv.Load(secretsPath);
+    var templatePath = FindUp("secrets.env.template", Directory.GetCurrentDirectory());
+    var env = SecretsEnv.Resolve(secretsPath, templatePath);
+    var exported = env.ExportConnectionSettings();
+    Console.WriteLine($"secrets: {env.Source}" + (exported > 0 ? $" · {exported} connection setting(s) exported to the engine process" : ""));
 
     // PVE creds power the ProxmoxSharp write paths: VM converge (QemuWriter) AND the
     // LXC teardown via PctWriter (#149). null degrades to SSH-only (pct over SSH for
@@ -280,6 +286,13 @@ static async Task<int> RunConverge(string[] args)
 }
 
 // Walk up from start looking for a file; returns null if not found.
+// For commands that only need the controller/cluster connection settings: resolve secrets the
+// same way converge does and export just those settings, so they work under `./build.sh` (which
+// never exports secrets.env) as well as from a shell that sourced it.
+static void PrepareConnectionSettings() =>
+    SecretsEnv.Resolve(FindUp("secrets.env", Directory.GetCurrentDirectory()),
+        FindUp("secrets.env.template", Directory.GetCurrentDirectory())).ExportConnectionSettings();
+
 static string? FindUp(string fileName, string start)
 {
     var dir = new DirectoryInfo(start);
@@ -345,6 +358,7 @@ static int RunDiscoverDiff(string[] args)
 
 static async Task<int> DiscoverUnifiAsync()
 {
+    PrepareConnectionSettings();
     var options = UnifiClientOptions.TryFromEnvironment();
     if (options is null)
     {
@@ -384,6 +398,7 @@ static async Task<int> RunConvergeUnifi(string[] args)
     }
     var apply = args.Contains("--apply");
 
+    PrepareConnectionSettings();
     var options = UnifiLegacyOptions.TryFromEnvironment();
     if (options is null)
     {
