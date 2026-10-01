@@ -73,9 +73,13 @@ public sealed class PodmanProvisioner : IAppProvisioner
         else
             yield return $"render {files.Count} quadlet(s) → ~{user}/{QuadletDir}/: {string.Join(", ", files.Select(f => Path.GetFileName(f)))}";
 
-        var assets = AssetFiles(s);
-        if (assets.Count > 0)
-            yield return $"render {assets.Count} asset file(s) → {AssetsTarget(s)}/ (config trees, dashboards, scripts)";
+        if (AssetTreeProblems(s) is { Count: > 0 } problems)
+            yield return $"⚠ INVALID asset trees — apply will refuse: {string.Join("; ", problems)}";
+        foreach (var t in AssetTrees(s))
+        {
+            var n = AssetFiles(t.SourceDir).Count;
+            if (n > 0) yield return $"render {n} asset file(s) {t.From} → {t.To}/ (pushed and chowned only within {t.To})";
+        }
 
         var secrets = SecretNames(s);
         if (secrets.Count > 0)
@@ -121,6 +125,17 @@ public sealed class PodmanProvisioner : IAppProvisioner
             parts.Add($"assetsTarget={AssetsTarget(s)}");
             foreach (var rel in AssetFiles(s))
                 parts.Add($"asset:{rel}:{Sha(SafeRead(Path.Combine(adir, rel)))}");
+        }
+        // Extra trees (assetTrees) hash in AFTER the legacy pair and in its own format, so a
+        // shape that declares only `assets`/`assetsTarget` keeps exactly the marker it had.
+        // Changing that would re-deploy — and restart every unit on — every podman host for no
+        // reason the first time this code converged.
+        foreach (var t in ExtraAssetTrees(s))
+        {
+            parts.Add($"assetTree={t.From}->{t.To}");
+            if (t.SourceDir is { } tdir)
+                foreach (var rel in AssetFiles(tdir))
+                    parts.Add($"asset@{t.To}:{rel}:{Sha(SafeRead(Path.Combine(tdir, rel)))}");
         }
 
         // Hash the generated script too, so a change to the deploy RECIPE — not just to its
@@ -349,11 +364,23 @@ public sealed class PodmanProvisioner : IAppProvisioner
     internal static async Task<(string? Msg, string? Failed)> PushAssetsAsync(
         Shape s, ConvergeContext ctx, string node, string ctid, string user)
     {
-        IReadOnlyList<(string Rel, string B64, bool Exec)> assets;
-        try { assets = ReadAssets(s); }
-        catch (Exception ex) { return (null, ex.Message); }
-        if (assets.Count == 0) return (null, null);
-        return await PushFilesAsync(ctx.Exec, node, ctid, user, AssetsTarget(s), assets);
+        if (AssetTreeProblems(s) is { Count: > 0 } problems)
+            return (null, "invalid asset trees: " + string.Join("; ", problems));
+
+        // One push per tree, each confined to its own target: PushFilesAsync ends with
+        // `chown -R <target>`, so a tree's target is exactly as far as ownership is rewritten.
+        var msgs = new List<string>();
+        foreach (var t in AssetTrees(s))
+        {
+            IReadOnlyList<(string Rel, string B64, bool Exec)> assets;
+            try { assets = ReadAssets(t.SourceDir); }
+            catch (Exception ex) { return (null, ex.Message); }
+            if (assets.Count == 0) continue;
+            var (msg, failed) = await PushFilesAsync(ctx.Exec, node, ctid, user, t.To, assets);
+            if (failed is not null) return (null, failed);
+            if (msg is not null) msgs.Add(msg);
+        }
+        return msgs.Count == 0 ? (null, null) : (string.Join("; ", msgs), null);
     }
 
     // The chunked push itself, for any list of files → <target>/<rel>. Shared with the
@@ -902,13 +929,97 @@ public sealed class PodmanProvisioner : IAppProvisioner
         return s.SourceDir is { Length: > 0 } dir ? Path.Combine(dir, rel) : null;
     }
 
+    // The LEGACY tree's target. DashboardCommand writes the dashboard host's services.yaml under
+    // this, so its meaning is pinned: it is the `assets`/`assetsTarget` pair's target and never
+    // anything from `assetTrees`.
     internal static string AssetsTarget(Shape s) =>
         s.Spec.Config.Str("assetsTarget") ?? $"/home/{User(s)}/{DefaultAssetsTargetSuffix}";
 
-    // Relative paths under the assets dir, ordinal-sorted for a stable marker.
-    internal static IReadOnlyList<string> AssetFiles(Shape s)
+    // ── several asset trees on one host ─────────────────────────────────────────────
+    // A podman host serves several apps, but `assets`/`assetsTarget` is ONE tree, and its push
+    // ends in `chown -R <target>`. On the Media host that tree is Recyclarr's (/home/podman/
+    // recyclarr, whose keep-id mapping depends on the chown), so a second app had nowhere to put
+    // its files: pointing the one target at /home/podman would have chowned youtarr's and
+    // krautwatch's data too (the authentik lesson, Core #469). `assetTrees` adds trees, each
+    // pushed and chowned ONLY within its own `to`:
+    //
+    //   config:
+    //     assets: podman-host/recyclarr/assets          # still works, = the first tree
+    //     assetsTarget: /home/podman/recyclarr
+    //     assetTrees:
+    //       - { from: podman-host/trackerwatch/assets, to: /home/podman/trackerwatch }
+    internal sealed record AssetTree(string From, string? SourceDir, string To, bool Legacy);
+
+    internal static IReadOnlyList<AssetTree> AssetTrees(Shape s)
     {
-        var dir = AssetsSourceDir(s);
+        var list = new List<AssetTree>();
+        if (s.Spec.Config.Str("assets") is { Length: > 0 } legacy)
+            list.Add(new AssetTree(legacy, AssetsSourceDir(s), AssetsTarget(s).TrimEnd('/'), Legacy: true));
+        list.AddRange(ExtraAssetTrees(s));
+        return list;
+    }
+
+    private static IEnumerable<AssetTree> ExtraAssetTrees(Shape s)
+    {
+        if (!(s.Spec.Config.TryGetValue("assetTrees", out var v) && v is IEnumerable<object> items)) yield break;
+        foreach (var it in items)
+        {
+            if (it is not System.Collections.IDictionary d) continue;   // reported by AssetTreeProblems
+            var from = d["from"]?.ToString() ?? "";
+            var to = (d["to"]?.ToString() ?? "").TrimEnd('/');
+            string? dir = from.Length == 0 ? null
+                : Path.IsPathRooted(from) ? from
+                : s.SourceDir is { Length: > 0 } sd ? Path.Combine(sd, from) : null;
+            yield return new AssetTree(from, dir, to, Legacy: false);
+        }
+    }
+
+    // Every reason the declared trees are unsafe or unusable. Empty means fine. Checked in the
+    // plan (shown) and before any push (refused), never by throwing from the marker.
+    internal static List<string> AssetTreeProblems(Shape s)
+    {
+        var problems = new List<string>();
+        if (s.Spec.Config.TryGetValue("assetTrees", out var v) && v is IEnumerable<object> raw)
+            foreach (var it in raw)
+                if (it is not System.Collections.IDictionary) problems.Add("assetTrees entries must be { from, to } maps");
+
+        var home = $"/home/{User(s)}";
+        var trees = AssetTrees(s);
+        foreach (var t in trees)
+        {
+            if (t.Legacy) continue;   // the existing pair keeps its existing (lenient) behaviour
+            if (t.From.Length == 0 || t.To.Length == 0) { problems.Add("every assetTrees entry needs both `from` and `to`"); continue; }
+            if (!t.To.StartsWith('/')) problems.Add($"`to` must be absolute: {t.To}");
+            // The shape validator skips YAML only under an `/assets/` directory, so a tree outside
+            // one would have its config files validated as shapes.
+            if (!("/" + t.From.Replace('\\', '/').Trim('/') + "/").Contains("/assets/", StringComparison.Ordinal))
+                problems.Add($"`from` must sit under an `assets/` directory (the shape validator skips only those): {t.From}");
+            if (t.SourceDir is null || !Directory.Exists(t.SourceDir))
+                problems.Add($"`from` directory not found: {t.From}");
+        }
+        foreach (var t in trees)
+        {
+            if (t.To.Length == 0) continue;
+            // chown -R on the home (or above it) reaches every other app's data.
+            if ((home + "/").StartsWith(t.To + "/", StringComparison.Ordinal))
+                problems.Add($"`to` {t.To} is {home} or above it — its chown -R would reach every app's data");
+        }
+        for (var i = 0; i < trees.Count; i++)
+            for (var j = i + 1; j < trees.Count; j++)
+            {
+                string a = trees[i].To, b = trees[j].To;
+                if (a.Length == 0 || b.Length == 0) continue;
+                if (a == b || b.StartsWith(a + "/", StringComparison.Ordinal) || a.StartsWith(b + "/", StringComparison.Ordinal))
+                    problems.Add($"asset trees overlap ({a} and {b}) — one tree's chown -R would rewrite the other's files");
+            }
+        return problems;
+    }
+
+    // Relative paths under the assets dir, ordinal-sorted for a stable marker.
+    internal static IReadOnlyList<string> AssetFiles(Shape s) => AssetFiles(AssetsSourceDir(s));
+
+    internal static IReadOnlyList<string> AssetFiles(string? dir)
+    {
         if (dir is null || !Directory.Exists(dir)) return Array.Empty<string>();
         return Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
             .Select(f => Path.GetRelativePath(dir, f).Replace('\\', '/'))
@@ -927,14 +1038,15 @@ public sealed class PodmanProvisioner : IAppProvisioner
     // (relativePath, base64Content, isExecutable) for every asset file. `.sh` is rendered
     // executable; everything else 0644. Throws with a clear message if the tree is too big to
     // ship in one `pct exec` command line.
-    internal static IReadOnlyList<(string Rel, string B64, bool Exec)> ReadAssets(Shape s)
+    internal static IReadOnlyList<(string Rel, string B64, bool Exec)> ReadAssets(Shape s) => ReadAssets(AssetsSourceDir(s));
+
+    internal static IReadOnlyList<(string Rel, string B64, bool Exec)> ReadAssets(string? dir)
     {
-        var dir = AssetsSourceDir(s);
         if (dir is null || !Directory.Exists(dir)) return Array.Empty<(string, string, bool)>();
 
         var result = new List<(string, string, bool)>();
         long total = 0;
-        foreach (var rel in AssetFiles(s))
+        foreach (var rel in AssetFiles(dir))
         {
             var bytes = File.ReadAllBytes(Path.Combine(dir, rel));
             total += bytes.Length;
