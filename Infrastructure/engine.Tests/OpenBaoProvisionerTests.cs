@@ -56,4 +56,29 @@ public sealed class OpenBaoProvisionerTests
         Assert.Empty(OpenBaoProvisioner.UnhardenedFindings("\n  \n"));
         Assert.Equal(2, OpenBaoProvisioner.UnhardenedFindings("a\nb\n").Count);
     }
+
+    [Fact]
+    public void Config_UsesRaft_NeverTheRemovedFileBackend()
+    {
+        // OpenBao 2.7.0 removed `storage "file"`, which the 2.7.0 .deb still ships, so the
+        // unit could not start (CT 3007, 2026-10-01).
+        var s = new Homelab.Infrastructure.Shapes.Shape();
+        s.Spec.Ctid = "3007";
+        s.Spec.Network = new() { Reservation = new() { FixedIp = "10.10.30.7", LocalDnsRecord = "openbao.devops.chrison.internal" } };
+        var cfg = OpenBaoProvisioner.RenderConfig(s);
+        Assert.Contains("storage \"raft\"", cfg);
+        Assert.DoesNotContain("storage \"file\"", cfg);
+        Assert.Contains("node_id = \"openbao-3007\"", cfg);
+        Assert.Contains("api_addr     = \"https://openbao.devops.chrison.internal:8200\"", cfg);
+        Assert.Contains("tls_cert_file", cfg);   // never a plaintext listener
+    }
+
+    [Fact]
+    public void ConfigScript_OnlyRestartsOnDrift()
+    {
+        // A restart SEALS the store, so a no-op converge must never restart it.
+        var script = OpenBaoProvisioner.RenderConfigScript("x");
+        Assert.Contains("if ! cmp -s", script);
+        Assert.True(script.IndexOf("cmp -s", StringComparison.Ordinal) < script.IndexOf("systemctl restart", StringComparison.Ordinal));
+    }
 }
