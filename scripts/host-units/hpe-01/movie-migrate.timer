@@ -1,6 +1,9 @@
 [Unit]
 Description=Continue the volume3 → volume4 movie migration nightly
 
+# NOT enabled: the migration finished on 2026-10-02. Kept so it can be re-enabled if a
+# volume3 film ever turns up again; the install in README.md leaves it off.
+
 [Timer]
 OnCalendar=*-*-* 00:30:00
 Persistent=false
