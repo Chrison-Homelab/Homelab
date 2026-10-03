@@ -67,8 +67,6 @@ Secret=authentik_pangolin_client_secret,type=env,target=AUTHENTIK_PANGOLIN_CLIEN
 # this container, so `!Env AUTHENTIK_PULSE_CLIENT_ID` reads it from here. Every future Tier-1
 # app (#485) adds two more lines to this list — that is the cost of the credentials never
 # being copied between two UIs.
-Secret=authentik_pulse_client_id,type=env,target=AUTHENTIK_PULSE_CLIENT_ID
-Secret=authentik_pulse_client_secret,type=env,target=AUTHENTIK_PULSE_CLIENT_SECRET
 Secret=authentik_grafana_client_id,type=env,target=AUTHENTIK_GRAFANA_CLIENT_ID
 Secret=authentik_grafana_client_secret,type=env,target=AUTHENTIK_GRAFANA_CLIENT_SECRET
 Secret=authentik_forgejo_client_id,type=env,target=AUTHENTIK_FORGEJO_CLIENT_ID

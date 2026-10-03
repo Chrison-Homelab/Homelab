@@ -82,8 +82,8 @@ UniFi gear is collected by **unpoller** on the monitoring podman host (CT 4001) 
 by Prometheus as job `unifi`. Grafana dashboard: **UniFi Network** (`unifi-network`, Homelab
 folder).
 
-Pulse does *not* cover UniFi — it monitors Proxmox, Docker, Kubernetes, TrueNAS and vSphere —
-so the network gear lives in Prometheus/Grafana alongside the Synology SNMP job.
+Neither Beszel nor prometheus-pve-exporter covers UniFi (Pulse, retired in #591, did not
+either), so the network gear lives in Prometheus/Grafana alongside the Synology SNMP job.
 
 ### How it authenticates
 

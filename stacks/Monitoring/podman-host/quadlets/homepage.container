@@ -6,7 +6,7 @@
 # pushed here by the `dashboard` workflow on every merge to main (and by `./build.sh Dashboard`).
 # Editing services.yaml on the host is pointless; the next render overwrites it.
 #
-# Runs as container-root, which rootless podman maps to the `podman` user — same as pulse —
+# Runs as container-root, which rootless podman maps to the `podman` user — same as snmp_exporter —
 # so the config dir it writes (logs/, a cache) is owned by the user that owns the tree.
 #
 # Secrets arrive as HOMEPAGE_VAR_<NAME> and are referenced in the rendered services.yaml as
@@ -36,7 +36,6 @@ Secret=sonarr_api_key,type=env,target=HOMEPAGE_VAR_SONARR_API_KEY
 Secret=radarr_api_key,type=env,target=HOMEPAGE_VAR_RADARR_API_KEY
 Secret=prowlarr_api_key,type=env,target=HOMEPAGE_VAR_PROWLARR_API_KEY
 Secret=unifi_api_key,type=env,target=HOMEPAGE_VAR_UNIFI_API_KEY
-Secret=pulse_api_token,type=env,target=HOMEPAGE_VAR_PULSE_API_TOKEN
 Secret=homeassistant_token,type=env,target=HOMEPAGE_VAR_HOMEASSISTANT_TOKEN
 Secret=grafana_admin_password,type=env,target=HOMEPAGE_VAR_GF_SECURITY_ADMIN_PASSWORD
 Secret=bazarr_api_key,type=env,target=HOMEPAGE_VAR_BAZARR_API_KEY

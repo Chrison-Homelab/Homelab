@@ -15,7 +15,7 @@ PublishPort=8095:80
 # ⚠ NO UserNS=keep-id here, unlike most of its neighbours. This image has an EMPTY
 # Config.User, i.e. it runs as ROOT — verified against the image, not assumed. The default
 # rootless mapping already sends container-root to the `podman` user, so the data dir works
-# as-is; adding keep-id would break it. Same reasoning as snmp_exporter and pulse.
+# as-is; adding keep-id would break it. Same reasoning as snmp_exporter.
 Volume=/home/podman/monitoring/config/ntfy/server.yml:/etc/ntfy/server.yml:ro
 Volume=/home/podman/monitoring/data/ntfy:/var/lib/ntfy
 

@@ -7,7 +7,7 @@ page unusable.
 
 This is the recovery path [#469](https://github.com/Chrison-Homelab/Homelab/issues/469)
 requires be **proven before anything depends on the IdP**. Four applications now do
-(Pangolin, Pulse, Grafana, Forgejo — [#485](https://github.com/Chrison-Homelab/Homelab/issues/485)),
+(Pangolin, Grafana, Forgejo — [#485](https://github.com/Chrison-Homelab/Homelab/issues/485)),
 so it is no longer optional.
 
 ---

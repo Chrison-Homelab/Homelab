@@ -287,7 +287,7 @@ Runs on **CT 4001** (`monitoring.homelab.chrison.internal`), rootless podman + q
 | Grafana | `:3000` |
 | Prometheus | `:9091` (9090 is Cockpit on podman hosts) |
 | Alertmanager | `:9093` — the alert bus, [ADR-0011](docs/adr/ADR-0011-alert-bus.md) |
-| Pulse | `:7655` |
+| Beszel | `:8090` — fleet monitor (replaced Pulse, #591) |
 
 Secrets come from the root `secrets.env` as podman secrets, declared in the shape's
 `config.secrets` — not a per-stack `.env`.
@@ -301,7 +301,7 @@ Secrets come from the root `secrets.env` as podman secrets, declared in the shap
 ### Directory Layout
 
 - **`src/Proxmox/`** — Bash and PowerShell scripts deployed directly to Proxmox nodes. Scripts exist in both `.sh` and `.ps1` variants with equivalent functionality.
-- **`stacks/Monitoring/`** — In-repo monitoring stack on CT 4001 (rootless podman + quadlets): Prometheus, Grafana, Alertmanager, OTel→Tempo/Loki, snmp_exporter, exportarr, unpoller and Pulse.
+- **`stacks/Monitoring/`** — In-repo monitoring stack on CT 4001 (rootless podman + quadlets): Prometheus, Grafana, Alertmanager, OTel→Tempo/Loki, snmp_exporter, exportarr, unpoller, Beszel and prometheus-pve-exporter.
 - **`.containers/homelab/`** — Debian 13 (Trixie) test container matching the Proxmox OS. Used for local validation of `src/Proxmox/` scripts.
 - **`.containers/proxmox/`** — Containerized Proxmox for local dev (requires `/dev/kvm`, Linux only).
 - **`.containers/dsm/`** — Virtual DSM container (Synology) for local testing, exposed on port 5000.

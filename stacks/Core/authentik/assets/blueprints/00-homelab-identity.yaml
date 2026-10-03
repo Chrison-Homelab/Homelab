@@ -99,7 +99,7 @@ entries:
       is_superuser: false
       attributes:
         homelab.chrison.dev/stack: monitoring
-        homelab.chrison.dev/purpose: Pulse, Grafana, Prometheus
+        homelab.chrison.dev/purpose: Grafana, Prometheus, Beszel
 
   - model: authentik_core.group
     id: grp-smarthome-admins
@@ -141,7 +141,7 @@ entries:
     identifiers: { name: Pangolin }
     attrs:
       client_type: confidential
-      # Both values are generated into Bitwarden Secrets Manager and reach this container as
+      # Both values are generated into OpenBao and reach this container as
       # podman secrets, so the pair is never typed into a UI and never copied out of one. The
       # SAME two values are handed to Pangolin's IdP registration — that is the whole point of
       # fixing them here rather than letting Authentik mint them.
@@ -222,54 +222,17 @@ entries:
     identifiers: { target: !KeyOf pangolin-app, group: !KeyOf grp-guests }
     attrs: { order: 7, enabled: true }
 
-  # ── Pulse: OAuth2/OIDC provider ───────────────────────────────────────────────────
-  # First Tier-1 migration off a local login (#485). Pulse is configured entirely from
-  # OIDC_* environment variables, which authentik never sees — the only contract between the
-  # two is this provider plus the client id/secret pair in Secrets Manager.
-  - model: authentik_providers_oauth2.oauth2provider
-    id: pulse-provider
-    identifiers: { name: Pulse }
-    attrs:
-      client_type: confidential
-      client_id: !Env AUTHENTIK_PULSE_CLIENT_ID
-      client_secret: !Env AUTHENTIK_PULSE_CLIENT_SECRET
-      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
-      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
-      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
-      include_claims_in_id_token: true
-      # See the Pangolin provider: an empty grant_types allow-list permits NOTHING and fails
-      # with a message that names no cause. It is not optional on 2026.8.
-      grant_types:
-        - authorization_code
-        - refresh_token
-      property_mappings:
-        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
-        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
-        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
-      # STRICT, unlike Pangolin's. Pulse's env-configured provider uses one fixed callback
-      # (`/api/oidc/callback`) rather than a generated per-provider id, so there is nothing to
-      # wildcard and a strict match is the tighter choice.
-      redirect_uris:
-        - matching_mode: strict
-          url: https://pulse.lab.chrison.dev/api/oidc/callback
-
+  # ── Pulse: RETIRED (#591, 2026-10-03) ─────────────────────────────────────────────
+  # Pulse was the first Tier-1 OIDC client (#485); Beszel + prometheus-pve-exporter replaced
+  # it. Removing the entries alone would leave the provider and application live in authentik
+  # (blueprints never garbage-collect), so they are declared absent. The application goes
+  # first; its policy bindings are deleted with it. Safe to drop these once applied.
   - model: authentik_core.application
-    id: pulse-app
     identifiers: { slug: pulse }
-    attrs:
-      name: Pulse
-      provider: !KeyOf pulse-provider
-      meta_launch_url: https://pulse.lab.chrison.dev
-      meta_description: Proxmox / Docker monitoring.
-      policy_engine_mode: any
-
-  # Its own stack group, plus the superset. This is the shape every Tier-1 app should take.
-  - model: authentik_policies.policybinding
-    identifiers: { target: !KeyOf pulse-app, group: !KeyOf grp-homelab-admins }
-    attrs: { order: 0, enabled: true }
-  - model: authentik_policies.policybinding
-    identifiers: { target: !KeyOf pulse-app, group: !KeyOf grp-monitoring-admins }
-    attrs: { order: 1, enabled: true }
+    state: absent
+  - model: authentik_providers_oauth2.oauth2provider
+    identifiers: { name: Pulse }
+    state: absent
 
   # ── Who is actually in a group ────────────────────────────────────────────────────
   # Without this the whole model is inert: the four bindings above admit only members of
@@ -489,7 +452,7 @@ entries:
   # `plex_token` is the OWNER's token. With allow_friends off, authentik uses it only for
   # /api/v2/user; the friends call it would otherwise make is the one that now 410s. Plex
   # cannot issue a narrower token, so it is a credential for the whole Plex account and lives
-  # in Secrets Manager like any other. Read from PlexOnlineToken in Preferences.xml on CT 5008.
+  # in OpenBao like any other. Read from PlexOnlineToken in Preferences.xml on CT 5008.
   - model: authentik_sources_plex.plexsource
     id: plex-source
     identifiers: { slug: plex }

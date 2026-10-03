@@ -1,18 +1,14 @@
 [Unit]
-# Beszel hub — EVALUATION, running alongside Pulse rather than replacing it (#517).
+# Beszel hub — the fleet monitor since Pulse was retired (#517, #591, 2026-10-03).
 #
-# WHY THIS EXISTS: the things we keep hitting in Pulse are behind its Pro tier and no
-# amount of configuration moves them — OIDC users cannot be admins on Community
-# (OIDC_GROUP_ROLE_MAPPINGS is Pro, and there is no Users/Roles panel at all), so
-# pulse.container documents keeping a local admin as the workaround. Beszel is MIT, so
-# the equivalent gaps are unwritten code rather than a licence wall.
+# WHY: what we kept hitting in Pulse sat behind its Pro tier (OIDC users could not be
+# admins on Community). Beszel is MIT, so its gaps are unwritten code, not a licence wall.
 #
-# ⚠ THIS DOES NOT REPLACE PULSE YET. Both run at once on purpose: Beszel is host-agent
-# first and PVE guest/LXC stats are still an open upstream request (henrygd/beszel#539),
-# which is where Pulse is genuinely better today. Deciding replace-vs-coexist is the
-# point of the evaluation, not a foregone conclusion. Removing pulse.container before
-# #517 is answered would trade a licence wall for a monitoring gap.
-Description=Beszel hub (fleet monitoring — evaluation, #517)
+# What Beszel does NOT cover, and what covers it instead: PVE guest/LXC state and Proxmox
+# storage (henrygd/beszel#539 is still open) → prometheus-pve-exporter + the Proxmox rules
+# in assets/config/rules/proxmox.rules.yml. Agents run on the three nodes, the NAS, the
+# podman hosts and the Docker LXCs 2013/6001/6002 (src/*/install-beszel-agent.sh).
+Description=Beszel hub (fleet monitoring, #591)
 After=network-online.target
 Wants=network-online.target
 
@@ -27,7 +23,7 @@ AutoUpdate=registry
 # NO UserNS=keep-id, and that is per-image rather than house style. Verified against the
 # live image, not assumed: `podman image inspect` reports User=[], i.e. it runs as root,
 # so the default rootless mapping already sends container-root to the `podman` user —
-# same as pulse and snmp_exporter. Adding keep-id here would reproduce the
+# same as snmp_exporter. Adding keep-id here would reproduce the
 # `crun: setgroups: Invalid argument` crash loop alertmanager hit in #501, where the
 # image genuinely runs as 65534 and needs it. Check the image before copying a neighbour.
 

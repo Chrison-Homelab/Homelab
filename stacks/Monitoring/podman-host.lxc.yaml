@@ -19,7 +19,7 @@
 #     marker so editing a config re-converges and restarts the units consuming it. This
 #     replaced stacks/Monitoring/deploy/install.sh (since deleted), which shipped it by tar.
 #
-#  2. FIXED-UID DATA DIRS on 3.9 GB of state (tempo 3.2G · pulse 616M · grafana 50M ·
+#  2. FIXED-UID DATA DIRS on 3.9 GB of state (tempo 3.2G · grafana 50M ·
 #     loki 68K). Each container runs as a uid we don't control, so each gets
 #     `UserNS=keep-id:uid=N,gid=N` with its host dir owned by `podman`.
 #     `:U` is REJECTED here — it chowns RECURSIVELY on EVERY container start, i.e. 3.9 GB
@@ -27,7 +27,7 @@
 #     `:U` is not merely wasteful but dangerous; see stacks/Media/podman-host.)
 #     Per-image, verified against the LIVE containers rather than assumed: grafana 472,
 #     tempo/loki 10001, prometheus 65534 (nobody), exportarr 65532 (distroless) all need
-#     keep-id; snmp_exporter and pulse run as ROOT and must NOT have it (the default mapping
+#     keep-id; snmp_exporter runs as ROOT and must NOT have it (the default mapping
 #     already sends container-root to the `podman` user).
 #
 # NETWORKING: DHCP, deliberately. CT 4000 pinned 10.10.0.40 and things hard-coded it
@@ -66,11 +66,6 @@ metadata:
       url: https://ntfy.lab.chrison.dev
       icon: ntfy
       description: Notification bus — where alerts land (#466)
-    - name: Pulse
-      url: http://monitoring.homelab.chrison.internal:7655
-      icon: pulse
-      description: Proxmox and NAS fleet monitoring
-      widget: { type: pulse, version: 2, url: http://pulse:7655, keyFrom: PULSE_API_TOKEN }
     - name: Cockpit
       url: https://monitoring.homelab.chrison.internal:9090
       icon: cockpit
@@ -88,7 +83,7 @@ spec:
   app: podman            # community-scripts ct/podman.sh + the `podman` provisioner
   ctid: 4001             # in-block (4000–4099); 4000 is the Docker host this replaces
   cores: 2               # matches CT 4000
-  memory: 4096           # MB — Prometheus TSDB + Loki + Tempo + Grafana + collector + Pulse
+  memory: 4096           # MB — Prometheus TSDB + Loki + Tempo + Grafana + collector + Beszel
   disk: 50               # GB — raised from 30 (was 73% full). Measured breakdown at the time:
                          # tempo 11 GB of traces, pulse 377 MB, prometheus 182 MB, grafana
                          # 116 MB, beszel 8 MB — plus ~9 GB of OS and container images.
@@ -149,10 +144,6 @@ spec:
       radarr_api_key: RADARR_API_KEY
       sonarr_api_key: SONARR_API_KEY
       prowlarr_api_key: PROWLARR_API_KEY
-      # Pulse's OIDC client credentials (#485). The same pair is read by authentik's
-      # blueprint via `!Env`, so both ends of the relationship come from one source.
-      authentik_pulse_client_id: AUTHENTIK_PULSE_CLIENT_ID
-      authentik_pulse_client_secret: AUTHENTIK_PULSE_CLIENT_SECRET
       # unpoller polls the controller with the same key the *Sharp CLIs use — read-only.
       unifi_api_key: UNIFI_API_KEY
       # Grafana's alert contact point posts here (HA automation webhook).
@@ -171,11 +162,9 @@ spec:
       ntfy_alertmanager_token: NTFY_ALERTMANAGER_TOKEN
       authentik_grafana_client_id: AUTHENTIK_GRAFANA_CLIENT_ID
       authentik_grafana_client_secret: AUTHENTIK_GRAFANA_CLIENT_SECRET
-      # Homepage widget credentials (ADR-0012) — consumed by quadlets/homepage.container.
-      pulse_api_token: PULSE_API_TOKEN
       # Beszel's first-user bootstrap (#590) — see quadlets/beszel.container.
       beszel_admin_password: BESZEL_ADMIN_PASSWORD
-      # prometheus-pve-exporter's own PVE token (#591) — NOT pulse@pve, which dies with Pulse.
+      # prometheus-pve-exporter's own PVE token (#591), monitoring@pve!exporter.
       pve_exporter_token: PVE_EXPORTER_TOKEN
       homeassistant_token: HOMEASSISTANT_TOKEN
       bazarr_api_key: BAZARR_API_KEY

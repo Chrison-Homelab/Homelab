@@ -49,7 +49,7 @@ AutoUpdate=registry
 # Retention raised 15d -> 400d for Claude Code usage history. This is cheap: Prometheus
 # was using 182 MB for 15 days, so a year is on the order of 4-5 GB. The size cap is the
 # safety valve — it bounds the TSDB regardless of how many series arrive, so a runaway
-# cardinality cannot fill the CT and take Grafana, Loki and Pulse down with it.
+# cardinality cannot fill the CT and take Grafana and Loki down with it.
 #
 # ⚠ Exec= is a [Container] key. Putting it next to ExecStartPre in [Service] parses
 # without error and is silently ignored by the quadlet generator — the container just
