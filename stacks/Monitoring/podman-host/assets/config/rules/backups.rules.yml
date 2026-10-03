@@ -1,0 +1,40 @@
+# Backup age (#591): "alert if backups stop". Pulse did this from its alert defaults.
+#
+# The nightly PBS job runs at 02:00 NZ. 36h means one missed night alerts by mid-afternoon
+# the next day, and a slow or retried job never does.
+groups:
+  - name: backups
+    interval: 5m
+    rules:
+      # Only guests that EXIST and are meant to run (onboot=1, the same set
+      # ProxmoxGuestDown watches). PBS keeps the final backups of deleted or retired guests
+      # (Plex-VM 1001, the #199 arr CTs) forever, and those must never alert. The
+      # desktop-01 guests are onboot=0 and auto-sleep, so they drop out too.
+      - alert: BackupStale
+        expr: |
+          (
+            (time() - max by (vm_id) (pbs_snapshot_vm_last_timestamp)) > 36 * 3600
+          )
+          * on(vm_id) group_left(name)
+            label_replace(pve_guest_info, "vm_id", "$1", "id", "(?:lxc|qemu)/([0-9]+)")
+          and on(vm_id)
+            label_replace(pve_onboot_status == 1, "vm_id", "$1", "id", "(?:lxc|qemu)/([0-9]+)")
+        for: 30m
+        labels: { severity: warning, stack: core }
+        annotations:
+          summary: "{{ $labels.name }} ({{ $labels.vm_id }}) has not been backed up for {{ $value | humanizeDuration }}"
+          description: >-
+            The newest snapshot on PBS is older than 36 hours. The nightly job runs at
+            02:00, so last night's backup of this guest did not happen or did not finish.
+
+      # The exporter can break without saying so: pbs_up is 0 by design here (see
+      # quadlets/pbs-exporter.container), so watch for the data itself vanishing.
+      - alert: BackupMetricsMissing
+        expr: absent(pbs_snapshot_vm_last_timestamp)
+        for: 30m
+        labels: { severity: warning, stack: core, name: pbs-exporter }
+        annotations:
+          summary: "No backup data from PBS for 30 minutes"
+          description: >-
+            pbs-exporter returns no snapshot metrics, so BackupStale cannot fire. Check the
+            container, the PBS_EXPORTER_TOKEN podman secret, and that PBS (CT 2004) answers.

@@ -232,3 +232,10 @@ scrape_configs:
         target_label: instance
       - target_label: __address__
         replacement: 'blackbox-exporter:9115'
+
+  # Proxmox Backup Server snapshot ages, for rules/backups.rules.yml.
+  - job_name: 'pbs'
+    scrape_interval: 5m
+    scrape_timeout: 60s
+    static_configs:
+      - targets: ['pbs-exporter:10019']
