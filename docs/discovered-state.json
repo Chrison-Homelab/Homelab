@@ -2,206 +2,79 @@
   "nodes": [
     {
       "node": "desktop-01",
-      "status": "Online",
-      "maxMem": 16707616768,
+      "status": "Offline",
+      "reachable": false,
       "lxc": [
         {
-          "vmId": 2004,
-          "name": "searxng",
-          "status": "Stopped",
-          "maxMem": 2147483648,
-          "cores": 2,
-          "tags": "community-script;desktop-01;search"
-        },
-        {
-          "vmId": 2005,
-          "name": "github-runner",
-          "status": "Running",
-          "maxMem": 2147483648,
-          "cores": 2,
-          "tags": "ci;community-script;desktop-01"
-        },
-        {
-          "vmId": 2006,
-          "name": "asp-dev",
-          "status": "Stopped",
-          "maxMem": 3145728000,
-          "cores": 2,
-          "tags": "desktop-01"
-        },
-        {
           "vmId": 2008,
-          "name": "erp-for-factory-games",
-          "status": "Running",
-          "maxMem": 4294967296,
-          "cores": 2,
+          "status": "unknown",
           "tags": "ai;cloudflare;desktop-01;vlan-1010"
         },
         {
           "vmId": 2009,
-          "name": "topaz",
-          "status": "Running",
-          "maxMem": 2147483648,
-          "cores": 2
+          "status": "unknown"
         },
         {
           "vmId": 3000,
-          "name": "forgejo",
-          "status": "Running",
-          "maxMem": 2147483648,
-          "cores": 2,
-          "tags": "community-script;desktop-01;devops;forge;git"
+          "status": "unknown",
+          "tags": "community-script;devops;forge;git"
         },
         {
           "vmId": 3001,
-          "name": "forgejo-runner",
-          "status": "Running",
-          "maxMem": 4294967296,
-          "cores": 4,
-          "tags": "ci;community-script;desktop-01;devops;forge"
+          "status": "unknown",
+          "tags": "ci;community-script;devops;forge"
         },
         {
-          "vmId": 3002,
-          "name": "github-runner",
-          "status": "Running",
-          "maxMem": 4294967296,
-          "cores": 4,
-          "tags": "ci;community-script;desktop-01;devops;github"
+          "vmId": 3003,
+          "status": "unknown",
+          "tags": "community-script;dev;devops;shell;tmux"
         },
         {
           "vmId": 3004,
-          "name": "cloudflared",
-          "status": "Running",
-          "maxMem": 536870912,
-          "cores": 1,
-          "tags": "cloudflare;community-script;desktop-01;devops;network;tunnel"
+          "status": "unknown",
+          "tags": "cloudflare;community-script;devops;network;tunnel"
+        },
+        {
+          "vmId": 3005,
+          "status": "unknown",
+          "tags": "community-script;devops;network;pangolin;tunnel;wireguard"
         },
         {
           "vmId": 9905,
-          "name": "openwebui",
-          "status": "Stopped",
-          "maxMem": 8589934592,
-          "cores": 4,
-          "tags": "ai;community-script;desktop-01;vlan-1010"
-        },
-        {
-          "vmId": 9906,
-          "name": "obsidian-livesync",
-          "status": "Stopped",
-          "maxMem": 536870912,
-          "cores": 1,
-          "tags": "desktop-01"
-        },
-        {
-          "vmId": 9966,
-          "name": "cookbook",
-          "status": "Stopped",
-          "maxMem": 536870912,
-          "cores": 1,
-          "tags": "desktop-01"
-        },
-        {
-          "vmId": 9971,
-          "name": "vdsm-lab",
-          "status": "Stopped",
-          "maxMem": 2147483648,
-          "cores": 2
+          "status": "unknown",
+          "tags": "retired"
         }
       ],
       "qemu": [
         {
           "vmId": 1001,
-          "name": "Plex-VM",
-          "status": "Stopped",
-          "maxMem": 4294967296,
-          "cores": 2
+          "status": "unknown"
         },
         {
           "vmId": 1002,
-          "name": "gaming-vm-01",
-          "status": "Stopped",
-          "maxMem": 12884901888,
-          "cores": 6,
+          "status": "unknown",
           "tags": "gaming"
         },
         {
           "vmId": 1003,
-          "name": "bazzite",
-          "status": "Stopped",
-          "maxMem": 12884901888,
-          "cores": 6,
+          "status": "unknown",
           "tags": "gaming"
         },
         {
-          "vmId": 9999,
-          "name": "proxmoxsharp-dev",
-          "status": "Stopped",
-          "maxMem": 536870912,
-          "cores": 1,
-          "tags": "dev;proxmoxsharp"
+          "vmId": 1100,
+          "status": "unknown",
+          "tags": "buildlab"
         }
       ],
-      "storage": [
-        {
-          "storage": "ds1813-nfs-volume-1",
-          "type": "nfs",
-          "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
-        },
-        {
-          "storage": "ds1813-nfs-volume-2",
-          "type": "nfs",
-          "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
-        },
-        {
-          "storage": "ds1813-nfs-volume-3",
-          "type": "nfs",
-          "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
-        },
-        {
-          "storage": "ds1813-nfs-volume-4",
-          "type": "nfs",
-          "content": "import"
-        },
-        {
-          "storage": "local",
-          "type": "dir",
-          "content": "backup,iso,vztmpl"
-        },
-        {
-          "storage": "local-lvm",
-          "type": "lvmthin",
-          "content": "images,rootdir"
-        }
-      ],
-      "network": [
-        {
-          "iface": "eno1",
-          "type": "Eth"
-        },
-        {
-          "iface": "vmbr0",
-          "type": "Bridge",
-          "address": "192.168.179.2"
-        },
-        {
-          "iface": "wlp8s0",
-          "type": "Unknown"
-        }
-      ]
+      "storage": [],
+      "network": []
     },
     {
       "node": "hpe-01",
       "status": "Online",
-      "maxMem": 16642457600,
+      "maxMem": 16642404352,
+      "reachable": true,
       "lxc": [
-        {
-          "vmId": 2001,
-          "name": "cloudflared-01",
-          "status": "Running",
-          "maxMem": 536870912,
-          "cores": 1,
-          "tags": "cloudflare;community-script;hpe-01;network"
-        },
         {
           "vmId": 2010,
           "name": "cloudflared-hpe-01",
@@ -211,92 +84,52 @@
           "tags": "cloudflare;community-script;core;ha-primary;network;tunnel"
         },
         {
-          "vmId": 5002,
-          "name": "prowlarr",
+          "vmId": 2014,
+          "name": "authentik",
           "status": "Running",
-          "maxMem": 1073741824,
-          "cores": 1,
-          "tags": "arr-stack;community-script;homelab;hpe-01;vlan-1010"
-        },
-        {
-          "vmId": 5003,
-          "name": "sonarr",
-          "status": "Running",
-          "maxMem": 1073741824,
-          "cores": 1,
-          "tags": "arr-stack;community-script;homelab;hpe-01;vlan-1010"
-        },
-        {
-          "vmId": 5004,
-          "name": "radarr",
-          "status": "Running",
-          "maxMem": 1073741824,
-          "cores": 1,
-          "tags": "arr-stack;community-script;homelab;hpe-01;vlan-1010"
-        },
-        {
-          "vmId": 5005,
-          "name": "flaresolverr",
-          "status": "Running",
-          "maxMem": 2147483648,
-          "cores": 1,
-          "tags": "arr-stack;community-script;homelab;hpe-01;vlan-1010"
-        },
-        {
-          "vmId": 5006,
-          "name": "bazarr",
-          "status": "Running",
-          "maxMem": 1073741824,
-          "cores": 1,
-          "tags": "arr-stack;community-script;homelab;hpe-01;vlan-1010"
-        },
-        {
-          "vmId": 5007,
-          "name": "qbittorrent",
-          "status": "Running",
-          "maxMem": 2147483648,
+          "maxMem": 4294967296,
           "cores": 2,
-          "tags": "arr-stack;community-script;homelab;hpe-01;vlan-1010"
+          "tags": "adr-0009;community-script;core;identity;oidc;podman;quadlet;sso"
+        },
+        {
+          "vmId": 3002,
+          "name": "github-runner",
+          "status": "Running",
+          "maxMem": 4294967296,
+          "cores": 4,
+          "tags": "ci;community-script;devops;github"
+        },
+        {
+          "vmId": 3006,
+          "name": "podman-host",
+          "status": "Running",
+          "maxMem": 4294967296,
+          "cores": 2,
+          "tags": "adr-0009;browser-automation;community-script;container-host;devops;podman;quadlet"
+        },
+        {
+          "vmId": 3007,
+          "name": "openbao",
+          "status": "Running",
+          "maxMem": 536870912,
+          "cores": 1,
+          "tags": "community-script;devops;openbao;secrets;security"
+        },
+        {
+          "vmId": 4001,
+          "name": "podman-host",
+          "status": "Running",
+          "maxMem": 4294967296,
+          "cores": 2,
+          "tags": "adr-0009;community-script;container-host;monitoring;observability;podman;quadlet"
         },
         {
           "vmId": 5008,
           "name": "plex",
           "status": "Running",
           "maxMem": 2147483648,
-          "cores": 2,
-          "tags": "arr;community-script;media;media-server;plex"
-        },
-        {
-          "vmId": 5009,
-          "name": "tautulli",
-          "status": "Running",
-          "maxMem": 1073741824,
-          "cores": 2,
-          "tags": "arr-stack;community-script;homelab;hpe-01;vlan-1010"
-        },
-        {
-          "vmId": 5011,
-          "name": "seerr",
-          "status": "Running",
-          "maxMem": 4294967296,
           "cores": 4,
-          "tags": "arr-stack;community-script;homelab;hpe-01;vlan-1010"
-        },
-        {
-          "vmId": 5014,
-          "name": "audiobookshelf",
-          "status": "Running",
-          "maxMem": 2147483648,
-          "cores": 2,
-          "tags": "arr-stack;audiobook;community-script;hpe-01;podcast;vlan-1010"
-        },
-        {
-          "vmId": 5015,
-          "name": "shelfmark",
-          "status": "Running",
-          "maxMem": 2147483648,
-          "cores": 2,
-          "tags": "arr-stack;community-script;ebooks;hpe-01;vlan-1010"
+          "tags": "arr;community-script;media;media-server;plex"
         },
         {
           "vmId": 5100,
@@ -403,22 +236,78 @@
           "tags": "arr;audiobooks;community-script;media;podcasts"
         },
         {
-          "vmId": 5113,
-          "name": "youtarr",
+          "vmId": 5114,
+          "name": "podman-host",
+          "status": "Running",
+          "maxMem": 6442450944,
+          "cores": 4,
+          "tags": "adr-0009;arr;community-script;container-host;media;podman;quadlet"
+        },
+        {
+          "vmId": 6000,
+          "name": "mqtt",
+          "status": "Running",
+          "maxMem": 536870912,
+          "cores": 1,
+          "tags": "community-script;iot;mosquitto;mqtt;smart-home"
+        },
+        {
+          "vmId": 6001,
+          "name": "matter-server",
           "status": "Running",
           "maxMem": 2147483648,
           "cores": 2,
-          "tags": "arr;community-script;docker;media;plex;youtube"
+          "tags": "community-script;docker;iot;matter;smart-home;thread"
+        },
+        {
+          "vmId": 6002,
+          "name": "aircast",
+          "status": "Running",
+          "maxMem": 536870912,
+          "cores": 1,
+          "tags": "airplay;chromecast;community-script;docker;iot;smart-home"
+        },
+        {
+          "vmId": 6003,
+          "name": "esphome",
+          "status": "Running",
+          "maxMem": 2147483648,
+          "cores": 2,
+          "tags": "community-script;esphome;iot;smart-home"
+        },
+        {
+          "vmId": 6004,
+          "name": "podman-host",
+          "status": "Running",
+          "maxMem": 1073741824,
+          "cores": 1,
+          "tags": "adr-0009;community-script;container-host;iot;podman;quadlet;smart-home"
+        },
+        {
+          "vmId": 6005,
+          "name": "homeassistant",
+          "status": "Running",
+          "maxMem": 4294967296,
+          "cores": 4,
+          "tags": "community-script;docker;home-assistant;hpe-01;iot;smart-home;vlan-1010;vlan-1040"
+        },
+        {
+          "vmId": 8000,
+          "name": "inventree",
+          "status": "Running",
+          "maxMem": 2147483648,
+          "cores": 2,
+          "tags": "bom;community-script;inventory;inventree;parts;workshop"
         }
       ],
       "qemu": [
         {
           "vmId": 2000,
           "name": "homeassistant",
-          "status": "Running",
-          "maxMem": 2147483648,
-          "cores": 2,
-          "tags": "hpe-01;smart-home;vlan-1010;vlan-1040"
+          "status": "Stopped",
+          "maxMem": 4294967296,
+          "cores": 4,
+          "tags": "community-script;hpe-01;iot;smart-home;vlan-1010;vlan-1040"
         }
       ],
       "storage": [
@@ -451,6 +340,11 @@
           "storage": "local-lvm",
           "type": "lvmthin",
           "content": "images,rootdir"
+        },
+        {
+          "storage": "pbs-homelab",
+          "type": "pbs",
+          "content": "backup"
         }
       ],
       "network": [
@@ -460,15 +354,20 @@
         },
         {
           "iface": "vmbr0",
-          "type": "Bridge",
-          "address": "192.168.179.3"
+          "type": "Bridge"
+        },
+        {
+          "iface": "vmbr0.1000",
+          "type": "Vlan",
+          "address": "10.0.0.13"
         }
       ]
     },
     {
       "node": "nuc-01",
       "status": "Online",
-      "maxMem": 16693030912,
+      "maxMem": 16692977664,
+      "reachable": true,
       "lxc": [
         {
           "vmId": 2002,
@@ -487,12 +386,12 @@
           "tags": "community-script;nuc-01"
         },
         {
-          "vmId": 2007,
-          "name": "traefik",
+          "vmId": 2004,
+          "name": "pbs",
           "status": "Running",
-          "maxMem": 536870912,
-          "cores": 1,
-          "tags": "access-management;community-script;homelab;nuc-01;vlan-1010"
+          "maxMem": 4294967296,
+          "cores": 2,
+          "tags": "backup;infra;pbs;proxmox-backup-server"
         },
         {
           "vmId": 2011,
@@ -503,12 +402,20 @@
           "tags": "cloudflare;community-script;core;ha-replica;network;tunnel"
         },
         {
-          "vmId": 2012,
+          "vmId": 2013,
           "name": "pangolin",
           "status": "Running",
           "maxMem": 4294967296,
           "cores": 2,
-          "tags": "community-script;core;network;proxy;remote-access;sso"
+          "tags": "community-script;core;docker;network;proxy;remote-access;sso"
+        },
+        {
+          "vmId": 7000,
+          "name": "shopdemo",
+          "status": "Stopped",
+          "maxMem": 6442450944,
+          "cores": 4,
+          "tags": "demo;docker;nuc-01;shopdemo"
         }
       ],
       "qemu": [],
@@ -542,6 +449,11 @@
           "storage": "local-lvm",
           "type": "lvmthin",
           "content": "images,rootdir"
+        },
+        {
+          "storage": "pbs-homelab",
+          "type": "pbs",
+          "content": "backup"
         }
       ],
       "network": [
@@ -551,8 +463,12 @@
         },
         {
           "iface": "vmbr0",
-          "type": "Bridge",
-          "address": "192.168.179.1"
+          "type": "Bridge"
+        },
+        {
+          "iface": "vmbr0.1000",
+          "type": "Vlan",
+          "address": "10.0.0.11"
         }
       ]
     }
