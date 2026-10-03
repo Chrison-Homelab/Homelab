@@ -36,7 +36,16 @@ backup *jobs*, so these remain hand-made (a follow-up once a backup-job provisio
 > 2026-10-01 an append built from a remote `jq` read that silently returned nothing wiped the job
 > to a single guest. It was caught and restored before the next run.
 
-The API token for the nodes is `pve@pbs!pve-nodes` (DatastoreAdmin on `homelab`).
+The API token for the nodes is `pve@pbs!pve-nodes` (DatastoreAdmin on `homelab`). Monitoring's
+pbs-exporter reads with `monitoring@pbs!exporter` (DatastoreAudit on `homelab` + Audit on
+`/system/status`, read-only; secret in OpenBao as `PBS_EXPORTER_TOKEN`), which feeds the
+backups-stopped alert (#591).
+
+**Where backups may land.** NAS volume-2 is the backup drive: it holds the PBS datastore image and
+is the target of the older NFS vzdump job (`backup-5ed7c633-94f2`, kept as independent redundancy).
+**volume-1 does not accept backups** — `backup` was removed from its content types on 2026-10-04
+(hand, `pvesm set ds1813-nfs-volume-1 --content …`), so a job pointed at it fails instead of
+quietly filling it again.
 
 ## Not covered
 
