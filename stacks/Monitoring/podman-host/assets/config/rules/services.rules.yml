@@ -1,0 +1,49 @@
+# Service availability (#591): the per-container half of Pulse, done as probes.
+#
+# Probes come from the `blackbox` and `openbao` jobs in prometheus.yml. Severity is driven
+# by the `criticality` label set there, so moving a service between tiers is a one-line
+# change in one place.
+groups:
+  - name: services
+    interval: 1m
+    rules:
+      # ── Down, critical ────────────────────────────────────────────────────────────
+      # The household or remote access notices within minutes, or alerting itself is
+      # impaired. 5m rides out a container restart; a converge restarts everything on
+      # CT 4001 for about a minute.
+      - alert: ServiceDown
+        expr: probe_success{job="blackbox", criticality="critical"} == 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.name }} is not answering"
+          description: >-
+            {{ $labels.instance }} has failed every probe for 5 minutes. Checked from the
+            monitoring host, so the service itself is down or unreachable, not just a
+            container restarting.
+
+      # ── Down, standard ────────────────────────────────────────────────────────────
+      - alert: ServiceDown
+        expr: probe_success{job="blackbox", criticality="standard"} == 0
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.name }} is not answering"
+          description: >-
+            {{ $labels.instance }} has failed every probe for 15 minutes.
+
+      # ── OpenBao sealed ────────────────────────────────────────────────────────────
+      # Since #637 OpenBao is the only secrets store and CI has no fallback: while it is
+      # sealed, every deploy fails. Running services are unaffected (their secrets are
+      # podman secrets on each host), which is exactly why nothing else would notice.
+      # It seals on every restart, so a reboot of hpe-01 lands here.
+      - alert: OpenBaoSealed
+        expr: probe_success{job="openbao"} == 0
+        for: 5m
+        labels: { severity: critical, stack: core, name: OpenBao }
+        annotations:
+          summary: "OpenBao is sealed or down — deploys will fail"
+          description: >-
+            /v1/sys/health is not returning 200 (HTTP {{ with query "probe_http_status_code{job='openbao'}" }}{{ . | first | value }}{{ end }}:
+            503 = sealed, 501 = not initialised, 0 = unreachable). Unseal CT 3007 with two
+            key shares. Do not work around it with GitHub secrets.

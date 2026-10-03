@@ -1,0 +1,41 @@
+# pbs-exporter -- Proxmox Backup Server snapshot ages (#591, "alert if backups stop").
+#
+# Authenticates as monitoring@pbs!exporter: Datastore.Audit on /datastore/homelab only,
+# read-only. Minted on PBS (CT 2004) by the Homelab session; the secret lives in OpenBao
+# as PBS_EXPORTER_TOKEN.
+#
+# Reaches PBS by name, not IP: CT 2004 is still on DHCP.
+#
+# User=1000: the image runs as 65532 (distroless nonroot), which is outside this host's
+# rootless uid range (subuid 10000+50000), so crun fails with "setgroups: Invalid
+# argument". It is a static binary with no files of its own, so any uid works.
+#
+# `pbs_up` reads 0 with this token: one endpoint the exporter queries answers 403, while
+# the snapshot listing (the part we need) works. So the rules alert on the snapshot
+# metrics disappearing, never on pbs_up.
+#
+# NOT PUBLISHED: Prometheus reaches it by container name.
+
+[Unit]
+Description=pbs-exporter (Proxmox Backup Server)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=ghcr.io/natrontech/pbs-exporter:v0.9.4
+ContainerName=pbs-exporter
+Network=monitoring.network
+User=1000:1000
+Environment=PBS_ENDPOINT=https://pbs.homelab.chrison.internal:8007
+Environment=PBS_USERNAME=monitoring@pbs
+Environment=PBS_API_TOKEN_NAME=exporter
+# PBS presents a self-signed certificate.
+Environment=PBS_INSECURE=true
+Secret=pbs_exporter_token,type=env,target=PBS_API_TOKEN
+
+[Service]
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
