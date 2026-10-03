@@ -3,9 +3,8 @@
 #
 # Installs, updates or removes the Beszel agent on a Proxmox VE node.
 #
-# Beszel is being EVALUATED alongside Pulse, not replacing it (#517). Running both
-# agents at once is deliberate and fine — they collect independently and neither takes
-# an exclusive lock on anything.
+# Beszel replaced Pulse (#517, retired in #591). Runs on the PVE nodes, the podman hosts
+# and the Docker LXCs (2013, 6001, 6002); each gets the drop-in its privilege model needs.
 #
 # Thin wrapper around the upstream installer at https://get.beszel.dev, so the agent
 # is never vendored here and cannot drift from the project.
@@ -50,7 +49,7 @@
 # than the Pulse agent's root profile, and we keep it. If SMART comes back empty on a
 # node, check group membership before reaching for root.
 #
-# Requirements: root on a PVE node, curl.
+# Requirements: root on a PVE node, a podman host or a Docker LXC; curl.
 
 set -euo pipefail
 
@@ -175,6 +174,17 @@ else
   IS_PODMAN_HOST=false
 fi
 
+# Docker LXC (pangolin CT 2013, matter-server 6001, aircast 6002 — #591): no physical disks,
+# and an unprivileged LXC cannot grant CAP_SYS_RAWIO (PVE drops sys_rawio), so the node
+# branch below would leave a unit that fails to start (status 218/CAPABILITIES). Instead
+# the agent reads containers through Docker's root-owned socket via the `docker` group,
+# which is exactly the access that socket's group grants and nothing more.
+IS_DOCKER_HOST=false
+if [ "$IS_PODMAN_HOST" = false ] && [ -S /var/run/docker.sock ] && ! command -v pveversion >/dev/null 2>&1; then
+  IS_DOCKER_HOST=true
+  note "docker host: reading containers from /var/run/docker.sock via the docker group"
+fi
+
 if [ "$DRY_RUN" = true ]; then
   note "would run: /tmp/beszel-install.sh -k '<hub key>' -url '$HUB_URL' -p '$PORT'   (no -t)"
   note "would write $ENV_FILE (mode 600) with TOKEN + HUB_URL"
@@ -243,6 +253,11 @@ User=podman
 Group=podman
 Environment=DOCKER_HOST=unix://$PODMAN_SOCK
 EOF
+elif [ "$IS_DOCKER_HOST" = true ]; then
+  cat >> "$DROPIN" <<EOF
+# Docker LXC: no disks to read, and CAP_SYS_RAWIO is not grantable here. Docker socket via group.
+SupplementaryGroups=docker
+EOF
 else
   cat >> "$DROPIN" <<EOF
 AmbientCapabilities=CAP_SYS_RAWIO
@@ -288,7 +303,15 @@ fi
 AGENTLOG="$(journalctl -u beszel-agent.service --since "-2 min" --no-pager -o cat 2>/dev/null || true)"
 case "$AGENTLOG" in *"no valid SMART data found"*) SMART_ERR=true ;; *) SMART_ERR=false ;; esac
 
-if [ "$IS_PODMAN_HOST" = true ]; then
+if [ "$IS_DOCKER_HOST" = true ]; then
+  NCONT="$(runuser -u beszel -g beszel -G docker -- curl -s --max-time 5 --unix-socket /var/run/docker.sock \
+            http://d/v1.41/containers/json 2>/dev/null | grep -o '"Id"' | wc -l | tr -d ' ' || echo 0)"
+  if [ "${NCONT:-0}" -gt 0 ]; then
+    note "verified: as user beszel, docker socket reachable, $NCONT running container(s) visible"
+  else
+    printf 'WARNING: user beszel sees no containers on /var/run/docker.sock — Beszel will show none.\n' >&2
+  fi
+elif [ "$IS_PODMAN_HOST" = true ]; then
   # Containers are the point here, not disks — assert on what the agent will actually read.
   NCONT="$(curl -s --max-time 5 --unix-socket "$PODMAN_SOCK" http://d/v1.41/containers/json 2>/dev/null \
             | grep -o '"Id"' | wc -l | tr -d ' ' || echo 0)"
