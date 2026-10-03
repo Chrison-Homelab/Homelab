@@ -50,8 +50,11 @@ endpoint the CLI doesn't expose yet).
 # All CLIs read config from the environment. The root `secrets.env` (gitignored)
 # is the ONE canonical file — it holds every service (Proxmox / Synology / UniFi
 # + Cloudflare / GitHub). It is GENERATED from `secrets.env.template` (the committed
-# schema) + Bitwarden Secrets Manager — regenerate it on any machine with:
-scripts/secrets-sync.sh          # macOS/Linux  (secrets-sync.ps1 on Windows)
+# schema) + OpenBao (DevOps CT 3007, the ONLY secrets store since #609; Bitwarden SM is
+# frozen) — regenerate it on any machine with:
+scripts/secrets-sync.sh          # macOS/Linux, workstation AppRole (secrets-sync.ps1 on Windows,
+                                 # after `bao login -method=oidc`)
+scripts/openbao-set.sh KEY       # add/change a secret, then `KEY=` in secrets.env.template
 # then source it once:
 set -a && . ./secrets.env && set +a          # → proxmoxsharp / synosharp / unifisharp all configured
 proxmoxsharp discover    # structured ClusterSnapshot (JSON)

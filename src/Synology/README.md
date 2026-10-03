@@ -44,7 +44,7 @@ Never pass a token or password as a command-line argument — argv is world-read
 `PULSE_API_TOKEN`, `--token-file`, or `--token-stdin`.
 
 Credentials come from the gitignored `secrets.env`, generated from `secrets.env.template` plus
-Bitwarden Secrets Manager:
+OpenBao:
 
 ```bash
 scripts/secrets-sync.sh

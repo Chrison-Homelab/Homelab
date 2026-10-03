@@ -185,9 +185,13 @@ a restore, not a key:
 
 > ⚠ **`AUTHENTIK_SECRET_KEY` is not recoverable from the backup alone in any useful sense.**
 > It signs sessions *and encrypts values in the database*, so a restored database is
-> unreadable without the same key. It lives in **Bitwarden Secrets Manager** and reaches the
-> CT as a podman secret via `secrets.env` — that is the authoritative copy. Losing it is
-> worse than losing the database.
+> unreadable without the same key. It lives in **OpenBao** (`secret/homelab/AUTHENTIK_SECRET_KEY`,
+> DevOps CT 3007) and reaches the CT as a podman secret at converge — that is the authoritative
+> copy (Bitwarden SM, frozen 2026-10-03, holds an older cold copy). Losing it is worse than
+> losing the database.
+>
+> ⚠ Break-glass ordering: OpenBao's own login goes through authentik, so with authentik down
+> use the `christian` **userpass** login (Bitwarden item "OpenBao CT 3007 — admin login").
 >
 > Note the converse: the vzdump **contains** the podman secrets, so the NFS share holds a copy
 > of the key next to the data it decrypts.
