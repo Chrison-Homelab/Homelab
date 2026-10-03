@@ -47,10 +47,6 @@
       ],
       "qemu": [
         {
-          "vmId": 1001,
-          "status": "unknown"
-        },
-        {
           "vmId": 1002,
           "status": "unknown",
           "tags": "gaming"
