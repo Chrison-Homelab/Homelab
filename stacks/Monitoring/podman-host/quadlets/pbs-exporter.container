@@ -10,9 +10,9 @@
 # rootless uid range (subuid 10000+50000), so crun fails with "setgroups: Invalid
 # argument". It is a static binary with no files of its own, so any uid works.
 #
-# `pbs_up` reads 0 with this token: one endpoint the exporter queries answers 403, while
-# the snapshot listing (the part we need) works. So the rules alert on the snapshot
-# metrics disappearing, never on pbs_up.
+# Permissions: Datastore.Audit on /datastore/homelab (snapshot listing) plus Audit on
+# /system/status only, without which the exporter's status call answers 403 and pbs_up
+# reads 0 while the snapshot data still flows. Granted 2026-10-03.
 #
 # NOT PUBLISHED: Prometheus reaches it by container name.
 
