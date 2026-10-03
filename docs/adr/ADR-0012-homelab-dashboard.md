@@ -10,6 +10,10 @@
   submodules — the render reads across them), [#252](https://github.com/Chrison-Homelab/Homelab/issues/252)
   (Docusaurus docs site — considered as the host, see alternatives).
 
+
+> **Amended 2026-10-03 (#591):** Pulse is retired, and with it the Pulse service entry and its
+> Homepage widget (and the `PULSE_API_TOKEN` secret behind it). Mentions of Pulse below are history.
+
 ## Context
 
 Nothing answered "what do we run and where is it". Shapes carry node, CT id and app; Pangolin

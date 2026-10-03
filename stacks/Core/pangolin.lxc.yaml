@@ -160,7 +160,7 @@ spec:
     # ⚠ TOPOLOGY CHANGE, not a flag flip. With gerbil on, GERBIL owns :80/:443 (tcp+udp) and
     #   traefik joins its network namespace (network_mode: service:gerbil) instead of
     #   publishing the ports itself. Applying this RESTARTS the public front door for
-    #   *.lab / *.arr / *.iot — Home Assistant, every arr UI, Pulse. Do it deliberately.
+    #   *.lab / *.arr / *.iot — Home Assistant, every arr UI, Grafana. Do it deliberately.
     #   Needs the 51820/udp + 21820/udp forwards declared in
     #   ../../Infrastructure/unifi/network.yaml to be in place for WireGuard to be reachable.
     includeGerbil: true
@@ -267,7 +267,7 @@ spec:
         zone: lab
         target: { ip: localhost, port: 8080, method: http }
       # PowerOrchestrator dashboard/control API (#191) — a systemd service on nuc-01 itself,
-      # bound to 0.0.0.0:8080. Targeted BY NAME: the node's UniFi record, like Pulse and Home
+      # bound to 0.0.0.0:8080. Targeted BY NAME: the node's UniFi record, like Grafana and Home
       # Assistant below. It sat on the legacy 192.168.179.1 long after the nodes moved to VLAN
       # 1000 (#37), so power.lab was a dead route — the runbook's Phase-5 sweep item, done here.
       # sso is REQUIRED: the control API (Wake/Sleep/Arm) has no native auth (#238).
@@ -287,7 +287,7 @@ spec:
       # snapshot, so a later YAML edit is parsed, validated and then ignored. Change it where
       # HA now owns it, not only in the file.
       #
-      # Targeted BY NAME (#339) — resolvable from CT 2013 (verified). Same pattern as Pulse
+      # Targeted BY NAME (#339) — resolvable from CT 2013 (verified). Same pattern as Grafana
       # below.
       # Home Assistant on CT 6005 — the container replacement (#250), and now the ONLY
       # external HA surface. The cutover this block always described is done: the `lab`-zone
@@ -304,13 +304,6 @@ spec:
         zone: iot
         sso: true
         target: { ip: homeassistant.iot.chrison.internal, port: 8123, method: http }
-      # Pulse — fleet monitoring UI (stacks/Monitoring CT 4001). SSO-gated; served at
-      # pulse.lab.chrison.dev (covered by the *.lab wildcard — no new DNS record).
-      - name: Pulse
-        subdomain: pulse
-        zone: lab
-        sso: true
-        target: { ip: monitoring.homelab.chrison.internal, port: 7655, method: http }
       # Grafana (stacks/Monitoring CT 4001), so Christian can reach his dashboards from outside.
       # TWO gates, both authentik: Pangolin's SSO admits only its Admin role (homelab-admins,
       # see roleMapping above), and Grafana's own generic_oauth then refuses anyone outside
@@ -368,7 +361,7 @@ spec:
       - { name: RomM,           subdomain: romm,           zone: arr, target: { ip: 10.10.202.240, port: 80,    method: http } }
       # Youtarr moved to the Media podman host (CT 5114) in #302; the old CT 5113 is retired and
       # its address no longer answers. Found by the dashboard's exposed-but-undeclared check
-      # (ADR-0012). Targeted by NAME like Pulse/Home Assistant — resolvable from CT 2013.
+      # (ADR-0012). Targeted by NAME like Grafana/Home Assistant — resolvable from CT 2013.
       - { name: Youtarr,        subdomain: youtarr,        zone: arr, target: { ip: media.homelab.chrison.internal, port: 3087, method: http } }
       - { name: Audiobookshelf, subdomain: audiobookshelf, zone: arr, sso: false, target: { ip: 10.10.182.200, port: 13378, method: http } }
       - { name: Shelfmark,      subdomain: shelfmark,      zone: arr, target: { ip: 10.10.142.183, port: 8084,  method: http } }
@@ -418,7 +411,7 @@ spec:
       # If that extension is ever removed, THIS RESOURCE MUST GO WITH IT: without it this
       # hostname is an open write path into Prometheus, Tempo and Loki.
       #
-      # A NAME, not an address (#303) — same as Pulse above, resolvable from CT 2013.
+      # A NAME, not an address (#303) — same as Grafana above, resolvable from CT 2013.
       - name: OTel Collector (Claude Code telemetry)
         subdomain: otel
         zone: lab

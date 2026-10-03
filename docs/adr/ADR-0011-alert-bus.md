@@ -8,6 +8,11 @@
   [ADR-0009 podman/quadlet migration](ADR-0009-podman-quadlet-migration.md) (how the container
   lands on CT 4001).
 
+
+> **Amended 2026-10-03 (#591):** Pulse is retired. Its Proxmox/NAS alerts now come from
+> prometheus-pve-exporter rules in Prometheus and from Beszel (#590), both via Alertmanager.
+> The Pulse rows below are history.
+
 ## Context
 
 UniFi monitoring landed with Grafana unified alerting posting straight to a Home Assistant

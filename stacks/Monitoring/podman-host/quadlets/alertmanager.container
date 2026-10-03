@@ -6,7 +6,6 @@
 #
 # Producers:
 #   • Prometheus  — rule_files in prometheus.yml, sent over the shared network
-#   • Pulse       — templated webhook → /api/v2/alerts (its own alert engine, see the ADR)
 #
 # UserNS=keep-id:uid=65534 — alertmanager runs as nobody(65534), which is OUTSIDE the
 # 65536-uid window this LXC maps, so crun refuses to start it without this:
