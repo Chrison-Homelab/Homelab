@@ -34,3 +34,13 @@ modules:
       valid_status_codes: [200]
       tls_config:
         insecure_skip_verify: true
+
+  # Homepage answers 400 to any Host not in HOMEPAGE_ALLOWED_HOSTS, including its own
+  # container name, so the probe has to present the published hostname.
+  http_homepage:
+    prober: http
+    timeout: 10s
+    http:
+      preferred_ip_protocol: ip4
+      headers:
+        Host: monitoring.homelab.chrison.internal:3010

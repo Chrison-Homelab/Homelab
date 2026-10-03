@@ -197,6 +197,8 @@ scrape_configs:
       - labels: { module: http_internal, criticality: standard, stack: monitoring }
         targets:
           - 'Grafana=http://grafana:3000/api/health'
+      - labels: { module: http_homepage, criticality: standard, stack: monitoring }
+        targets:
           - 'Homepage=http://homepage:3000'
     relabel_configs:
       # Targets are written `Name=url` so the alert can say "Plex is down" rather than
