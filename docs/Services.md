@@ -82,7 +82,6 @@ Tagged `arr-stack`. Target VLAN: Homelab `10.10.0.0/16`.
 
 | Name | VMID | Type | vCPU | RAM | Purpose |
 |---|---|---|---|---|---|
-| Plex-VM | 1001 | VM | 2 | 4 GB | (legacy Plex VM — superseded by `plex` LXC 5008?) |
 | gaming-vm-01 | 1002 | VM | 6 | 12 GB | Gaming VM |
 | gaming-vm-02 | 1003 | VM | 6 | 12 GB | Gaming VM |
 

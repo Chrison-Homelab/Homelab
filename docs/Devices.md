@@ -85,7 +85,7 @@ re-address needs no config change anywhere.
 - **hpe-01 and nuc-01 BIOS are from 2016 and 2014** and neither auto-boots after AC
   loss — both hang awaiting console
   ([#237](https://github.com/Chrison-Homelab/Homelab/issues/237)).
-- **desktop-01's VMs (all stopped):** 1001 `Plex-VM`, 1002 `gaming-vm-01`,
+- **desktop-01's VMs (all stopped):** 1002 `gaming-vm-01`,
   1003 `bazzite`, 1100 `buildvm`, 9999 `proxmoxsharp-dev`.
 
 **Wake-on-LAN:** all three have WoL armed (`ethtool ... wol g`) and persisted via the
