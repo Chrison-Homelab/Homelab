@@ -58,7 +58,7 @@ public sealed class ShapeVarsTests
     [Fact]
     public void A_key_present_but_blank_counts_as_unset()
     {
-        // secrets-sync.sh leaves a key it could not find in Secrets Manager BLANK rather
+        // secrets-sync.sh leaves a key it could not find in the secrets store BLANK rather
         // than absent, so "present" is not the test — a half-filled secrets.env must fail
         // exactly like an empty one.
         var config = new Dictionary<string, object?> { ["publicIp"] = "${HOME_WAN_IP}" };

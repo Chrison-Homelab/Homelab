@@ -59,14 +59,9 @@ jobs:
       - uses: actions/checkout@v6
       # Secrets FIRST, before anything that needs them (the Preview step reads Proxmox/Cloudflare).
       # ⚠ This repo is PUBLIC, so these logs are public: both scripts mask every value before use.
+      # No fallback: if OpenBao is sealed the run fails here and says so (unseal CT 3007).
       - name: Secrets from OpenBao (GitHub OIDC → JWT auth)
-        id: bao
         run: scripts/ci-secrets-from-openbao.sh
-      - name: Secrets from GitHub (FALLBACK — only if OpenBao is unavailable)
-        if: ${{ steps.bao.outputs.fallback == 'true' }}
-        env:
-          ALL_SECRETS: ${{ toJSON(secrets) }}
-        run: scripts/ci-secrets-from-github-json.sh
       - name: Fetch stack submodules (shapes live here; vendor/* C# repos skipped)
         env:
           TOKEN: ${{ secrets.SUBMODULES_RO_PAT }}

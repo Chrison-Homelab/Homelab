@@ -210,7 +210,7 @@ spec:
     # secrets.env; the SAME two keys are consumed by Authentik's blueprint via `!Env`, so both
     # ends of the OIDC relationship are configured from one source and neither is copied out
     # of a UI. The client secret cannot be read back from Pangolin, so it is not drift-checked
-    # — rotate by changing it in Secrets Manager and deleting the IdP so this recreates it.
+    # — rotate by changing it in OpenBao (scripts/openbao-set.sh) and deleting the IdP so this recreates it.
     #
     # ROLE MAPPING is a JMESPath expression Pangolin evaluates against the ID token claims,
     # whose result is normalised to Pangolin role names. `groups` comes from Authentik's stock

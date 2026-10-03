@@ -23,40 +23,34 @@
 # them, else the template's committed literal (PROXMOX_BASE_URL and friends are not secrets). That is
 # for workflows whose role may read only a handful of keys, e.g. discover-drift.yml → role `discover`.
 #
-# Outcome contract with the workflow:
-#   exit 0 + "fallback=false" in $GITHUB_OUTPUT → secrets exported from OpenBao
-#   exit 0 + "fallback=true"                    → OpenBao UNAVAILABLE (unreachable, sealed, no
-#                                                 OIDC permission, login refused): the workflow
-#                                                 falls back to GitHub's own secrets, loudly
-#   exit ≠ 0                                    → OpenBao answered but something is WRONG (e.g. a
-#                                                 template key missing from the store). Fails the
-#                                                 run: falling back would hide exactly the drift
-#                                                 this exists to remove.
+# Outcome: exit 0 → secrets exported from OpenBao. Anything else fails the run. There is no
+# fallback any more: the GitHub-mirrored copies were deleted on 2026-10-03 (#609), because a
+# second copy that nobody re-syncs is stale by the time it is needed (it already lacked 4 keys).
+# A SEALED OpenBao therefore stops deploys until someone unseals CT 3007, and says so.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/lib/openbao.sh
 
 : "${GITHUB_ENV:?not running under GitHub Actions}"
-: "${GITHUB_OUTPUT:?not running under GitHub Actions}"
 AUDIENCE="openbao-homelab"
 ROLE="${OPENBAO_ROLE:-deploy}"
 MOUNT="jwt-github"
 
-fallback() { echo "::warning title=OpenBao unavailable::$1 — this run uses the GitHub-mirrored secrets"; echo "fallback=true" >> "$GITHUB_OUTPUT"; exit 0; }
+fallback() { echo "::error title=OpenBao unavailable::$1"; exit 1; }
 
-[ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || fallback "no OIDC token available (the calling job needs permissions: id-token: write)"
-why="$(OPENBAO_TOKEN_PRESET=x openbao_unavailable_reason)"; [ -z "$why" ] || fallback "OpenBao is $why"
+[ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || unavailable "no OIDC token available (the calling job needs permissions: id-token: write)"
+why="$(OPENBAO_TOKEN_PRESET=x openbao_unavailable_reason)"; [ -z "$why" ] || unavailable "OpenBao is $why"
 
 jwt="$(curl -fsS -H @<(printf 'Authorization: bearer %s\n' "$ACTIONS_ID_TOKEN_REQUEST_TOKEN") \
   "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$AUDIENCE" | jq -r '.value // empty')" || jwt=""
-[ -n "$jwt" ] || fallback "could not obtain a GitHub OIDC token"
+[ -n "$jwt" ] || unavailable "could not obtain a GitHub OIDC token"
 echo "::add-mask::$jwt"
 
 tok="$(printf '{"role":"%s","jwt":"%s"}' "$ROLE" "$jwt" \
   | curl -fsS --cacert "$OPENBAO_CACERT" -X POST --data @- "$OPENBAO_ADDR/v1/auth/$MOUNT/login" \
   | jq -r '.auth.client_token // empty')" || tok=""
 unset jwt
-[ -n "$tok" ] || fallback "JWT login to OpenBao was refused (role '$ROLE' on auth/$MOUNT not set up yet?)"
+[ -n "$tok" ] || unavailable "JWT login to OpenBao was refused (role '$ROLE' on auth/$MOUNT not set up?)"
 echo "::add-mask::$tok"
 trap 'OPENBAO_TOKEN="$tok" _bao_curl -X POST "$OPENBAO_ADDR/v1/auth/token/revoke-self" >/dev/null 2>&1 || true' EXIT
 
@@ -83,7 +77,6 @@ if [ -n "${OPENBAO_KEYS:-}" ]; then
     [ -n "$v" ] || { echo "::error::$k is neither readable in OpenBao (role '$ROLE') nor a literal in secrets.env.template"; exit 1; }
     export_masked "$k" "$v"; n=$((n+1))
   done
-  echo "fallback=false" >> "$GITHUB_OUTPUT"
   echo "OpenBao (role $ROLE): exported $n key(s): $OPENBAO_KEYS"
   exit 0
 fi
@@ -91,7 +84,7 @@ fi
 OUT="$(mktemp "${RUNNER_TEMP:-/tmp}/secrets-env.XXXXXX")"; chmod 600 "$OUT"
 trap 'rm -f "$OUT"; OPENBAO_TOKEN="$tok" _bao_curl -X POST "$OPENBAO_ADDR/v1/auth/token/revoke-self" >/dev/null 2>&1 || true' EXIT
 # From here a failure is a real fault, not unavailability: let it fail the run.
-SECRETS_SOURCE=openbao OPENBAO_TOKEN_PRESET="$tok" scripts/secrets-sync.sh "$OUT" secrets.env.template
+OPENBAO_TOKEN_PRESET="$tok" scripts/secrets-sync.sh "$OUT" secrets.env.template
 
 # Every KEY the template declares (filled and passthrough alike), in template order.
 keys="$(grep -oE '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=' secrets.env.template | sed -E 's/^[[:space:]]*//; s/=$//' | awk '!seen[$0]++')"
@@ -109,5 +102,4 @@ before=$(grep -c '<<EOF_' "$GITHUB_ENV" 2>/dev/null || true)
   done
 )
 after=$(grep -c '<<EOF_' "$GITHUB_ENV" 2>/dev/null || true)
-echo "fallback=false" >> "$GITHUB_OUTPUT"
 echo "OpenBao: exported $((after-before)) non-empty template key(s) to the job; left to the workflow's own constants:${preset:- none}"

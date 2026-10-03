@@ -15,7 +15,7 @@ name: discover-drift
 # Cluster reach comes from OpenBao (#609): GitHub OIDC → JWT role `discover`, which may read
 # PROXMOX_TOKEN_SECRET and nothing else, and only from this file on main. PROXMOX_BASE_URL,
 # PROXMOX_TOKEN_ID and PROXMOX_VERIFY_TLS are not secrets; they are the committed literals in
-# secrets.env.template. If OpenBao is unavailable the run falls back to the GitHub secrets, loudly.
+# secrets.env.template. If OpenBao is unavailable the run fails (no GitHub-secrets fallback since #609).
 #
 # DRIFT_PR_PAT: fine-grained PAT scoped to THIS repo (contents: write +
 # pull-requests: write) for the "Open PR on drift" step. Deliberately a scoped
@@ -44,22 +44,10 @@ jobs:
 
       # ⚠ This repo is PUBLIC, so these logs are public: the script masks every value before use.
       - name: Proxmox credentials from OpenBao (GitHub OIDC → JWT role discover)
-        id: bao
         env:
           OPENBAO_ROLE: discover
           OPENBAO_KEYS: PROXMOX_BASE_URL PROXMOX_TOKEN_ID PROXMOX_TOKEN_SECRET PROXMOX_VERIFY_TLS
         run: scripts/ci-secrets-from-openbao.sh
-      - name: Proxmox credentials from GitHub (FALLBACK — only if OpenBao is unavailable)
-        if: ${{ steps.bao.outputs.fallback == 'true' }}
-        env:
-          PROXMOX_BASE_URL: ${{ secrets.PROXMOX_BASE_URL }}
-          PROXMOX_TOKEN_ID: ${{ secrets.PROXMOX_TOKEN_ID }}
-          PROXMOX_TOKEN_SECRET: ${{ secrets.PROXMOX_TOKEN_SECRET }}
-          PROXMOX_VERIFY_TLS: ${{ secrets.PROXMOX_VERIFY_TLS }}
-        run: |
-          for k in PROXMOX_BASE_URL PROXMOX_TOKEN_ID PROXMOX_TOKEN_SECRET PROXMOX_VERIFY_TLS; do
-            printf '%s=%s\n' "$k" "${!k}" >> "$GITHUB_ENV"
-          done
 
       - name: Discover live state
         run: |

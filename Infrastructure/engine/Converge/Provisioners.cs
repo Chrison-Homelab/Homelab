@@ -162,7 +162,7 @@ public sealed class ForgejoProvisioner : IAppProvisioner
     // THE CLIENT SECRET IS NOT READABLE BACK from `auth list`, which prints only
     // ID/Name/Type/Enabled. So drift on the secret is undetectable and the update runs
     // unconditionally when the source exists — cheap, and it makes rotation work by simply
-    // changing the value in Secrets Manager. The same limitation the Pangolin IdP reconciler
+    // changing the value in OpenBao. The same limitation the Pangolin IdP reconciler
     // has, handled the opposite way because here the update costs nothing.
     internal readonly record struct ForgejoOidc(
         string Name, string DiscoveryUrl, string ClientIdFrom, string ClientSecretFrom,
@@ -1097,7 +1097,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
     //
     // THE CLIENT SECRET IS NOT DRIFT-CHECKED, because it cannot be: the API never reads one
     // back. It is written on create and on any update we make for another reason. To rotate
-    // it, change the value in Secrets Manager and edit something else on the IdP, or delete
+    // it, change the value in OpenBao and edit something else on the IdP, or delete
     // the IdP and let this recreate it.
     //
     // Skipped — not failed — when the API key or the client credentials are absent, matching
