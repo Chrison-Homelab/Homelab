@@ -27,8 +27,20 @@ groups:
             The newest snapshot on PBS is older than 36 hours. The nightly job runs at
             02:00, so last night's backup of this guest did not happen or did not finish.
 
-      # The exporter can break without saying so: pbs_up is 0 by design here (see
-      # quadlets/pbs-exporter.container), so watch for the data itself vanishing.
+      # PBS answering but the exporter cannot use it: PBS down, the token revoked, or a
+      # permission removed. pbs_up is truthful since Audit on /system/status was granted.
+      - alert: BackupServerUnreachable
+        expr: pbs_up == 0
+        for: 15m
+        labels: { severity: warning, stack: core, name: PBS }
+        annotations:
+          summary: "pbs-exporter cannot query Proxmox Backup Server"
+          description: >-
+            pbs_up has been 0 for 15 minutes. Check that PBS (CT 2004) is up and that
+            monitoring@pbs!exporter still has Datastore.Audit and Audit on /system/status.
+
+      # The exporter itself gone (container down, scrape failing): then there is no pbs_up
+      # either, so watch for the data vanishing.
       - alert: BackupMetricsMissing
         expr: absent(pbs_snapshot_vm_last_timestamp)
         for: 30m

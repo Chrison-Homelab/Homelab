@@ -146,10 +146,11 @@ scrape_configs:
   # Kept in step with metadata.services BY HAND for now; rendering this list from the
   # shapes (as the Homepage dashboard already is) is the follow-up. Declared services
   # deliberately NOT probed, each needing a decision rather than an alert:
-  #   Forgejo   -- forgejo.homelab.chrison.internal does not resolve; no such guest exists.
-  #   Shell     -- shell.devops:8082 refuses connections.
-  #   ESPHome   -- CT 6003 runs, but monitoring cannot reach the IoT VLAN on :6052
-  #                (Home Assistant on the same VLAN is reachable).
+  #   Forgejo, Shell -- CTs 3000/3003 on desktop-01, which auto-sleeps; onboot=0, so they
+  #                are down by design most of the time (their DNS follows the DHCP lease).
+  #                Whether they move to an always-on node is an open question.
+  #   ESPHome   -- CT 6003 listens on :6052, but the UniFi homelab->IoT policy appears to
+  #                allow only HA's 8123. Needs an add-only rule if it should be probed.
   #   Cockpit   -- the host's own admin UI; rootless containers cannot reach the host IP.
   #   OTel/Prometheus -- already covered by `up` on their scrape jobs; Prometheus cannot
   #                usefully alert on itself being down.
