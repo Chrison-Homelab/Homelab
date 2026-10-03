@@ -14,6 +14,9 @@
 #             runner_environment  = self-hosted
 #           and the login comes from 10.0.0.0/8 (the homelab runner). Tokens: 10 min, max 15.
 #
+#   role    jwt-github/role/discover  (+ policy github-discover): READ on PROXMOX_TOKEN_SECRET only,
+#           for discover-drift.yml on refs/heads/main (schedule + dispatch both run there).
+#
 # WHY job_workflow_ref AND NOT ONLY repository: the repo has other workflows, and a new or edited
 # one should not inherit every secret just by asking for an OIDC token. Pinning the reusable
 # deploy workflow means only the pipeline that converges stacks reads secrets. It is a glob on the
@@ -78,7 +81,30 @@ jq -nc --arg aud "$AUD" --arg repo "$REPO" --arg pol "$POLICY" '{
   token_bound_cidrs: ["10.0.0.0/8"]
 }' | _bao_curl -X POST --data @- "$OPENBAO_ADDR/v1/auth/$MOUNT/role/$ROLE" >/dev/null
 
+say "policy github-discover (PROXMOX_TOKEN_SECRET only)"
+jq -nc --arg p "$OPENBAO_KV_PREFIX" '{policy: "path \"secret/data/\($p)/PROXMOX_TOKEN_SECRET\" { capabilities = [\"read\"] }\n"}' \
+  | _bao_curl -X PUT --data @- "$OPENBAO_ADDR/v1/sys/policies/acl/github-discover" >/dev/null
+
+say "role discover (discover-drift.yml on main)"
+jq -nc --arg aud "$AUD" --arg repo "$REPO" '{
+  role_type: "jwt",
+  user_claim: "job_workflow_ref",
+  bound_audiences: [$aud],
+  bound_claims_type: "string",
+  bound_claims: {
+    repository: $repo,
+    job_workflow_ref: ($repo + "/.github/workflows/discover-drift.yml@refs/heads/main"),
+    runner_environment: "self-hosted"
+  },
+  token_policies: ["github-discover"],
+  token_ttl: "10m",
+  token_max_ttl: "15m",
+  token_bound_cidrs: ["10.0.0.0/8"]
+}' | _bao_curl -X POST --data @- "$OPENBAO_ADDR/v1/auth/$MOUNT/role/discover" >/dev/null
+
 say "reading back"
-_bao_curl "$OPENBAO_ADDR/v1/auth/$MOUNT/role/$ROLE" \
-  | jq -c '.data | {bound_audiences, bound_claims, token_policies, token_ttl, token_bound_cidrs}'
+for r in "$ROLE" discover; do
+  _bao_curl "$OPENBAO_ADDR/v1/auth/$MOUNT/role/$r" \
+    | jq -c --arg r "$r" '{role: $r} + (.data | {bound_claims, token_policies, token_ttl, token_bound_cidrs})'
+done
 say "done — the next deploy run will use OpenBao (watch for 'Secrets from OpenBao' succeeding)"
