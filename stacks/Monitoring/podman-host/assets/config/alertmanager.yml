@@ -74,9 +74,11 @@ route:
     # whole point of a separate topic is that it can be muted or unsubscribed WITHOUT
     # muting anything that matters. On `core` it was competing with the ingress.
     #
-    # Routed on the producer's EXISTING `service` label, so nothing has to change at the
-    # script. Add another tracker by extending the matcher.
-    - matchers: ['service=~"soulvoice|avistaz|myanonamouse"']
+    # Routed on `category="tracker"`, which every tracker alert source sets (trackerwatch
+    # on CT 5114, Media #24; soulvoice-attend.sh on hpe-01, #653). A new tracker needs no
+    # change here: it only has to carry the label. Replaced a per-tracker `service` regex
+    # that needed an edit and a converge for each one.
+    - matchers: ['category="tracker"']
       receiver: alerts-trackers
       # Same reasoning as the info tier: these state what is true now, not what is broken.
       repeat_interval: 168h
