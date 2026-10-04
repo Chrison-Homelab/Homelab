@@ -137,7 +137,9 @@ reason = {
     "unclear": "attendance.php returned an unrecognised page - the site may have changed",
 }.get(v["state"], v["state"])
 json.dump([{
-    "labels": {"alertname": "SoulVoiceAttendFailed", "severity": "warning",
+    # category=tracker is what Alertmanager routes to the `trackers` topic, shared by every
+    # tracker alert so a new tracker needs no routing edit (Monitoring, 2026-10-04).
+    "labels": {"alertname": "SoulVoiceAttendFailed", "severity": "warning", "category": "tracker",
                "service": "soulvoice", "instance": "pt.soulvoice.club"},
     "annotations": {
         "summary": f"SoulVoice daily attendance did not run ({v['state']}, HTTP {v['http']})",
