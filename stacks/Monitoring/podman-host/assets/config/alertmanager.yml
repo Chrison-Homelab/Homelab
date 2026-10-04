@@ -76,7 +76,7 @@ route:
     #
     # Routed on the producer's EXISTING `service` label, so nothing has to change at the
     # script. Add another tracker by extending the matcher.
-    - matchers: ['service=~"soulvoice|avistaz"']
+    - matchers: ['service=~"soulvoice|avistaz|myanonamouse"']
       receiver: alerts-trackers
       # Same reasoning as the info tier: these state what is true now, not what is broken.
       repeat_interval: 168h
