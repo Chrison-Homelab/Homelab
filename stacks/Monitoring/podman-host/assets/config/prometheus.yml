@@ -242,3 +242,11 @@ scrape_configs:
     scrape_timeout: 60s
     static_configs:
       - targets: ['pbs-exporter:10019']
+
+  # Tracker account stats from trackerwatch on CT 5114 (Media #25). The values only
+  # refresh every 6h, so a slow scrape loses nothing. Rules: rules/trackers.rules.yml;
+  # dashboard: grafana/dashboards/trackers.json.
+  - job_name: 'trackerwatch'
+    scrape_interval: 5m
+    static_configs:
+      - targets: ['media.homelab.chrison.internal:9810']

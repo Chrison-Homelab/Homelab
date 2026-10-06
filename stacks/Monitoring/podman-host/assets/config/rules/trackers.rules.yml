@@ -1,0 +1,72 @@
+# Tracker account health (trackerwatch, Media #25).
+#
+# Every rule carries category="tracker", which is what routes it to the `trackers` ntfy
+# topic (#654), and `name` = the tracker so the notification title says which one.
+#
+# trackerwatch refreshes every 6h and, on a failed read, KEEPS the last good values and
+# sets tracker_stats_up=0. So a broken reader looks like a healthy account: the staleness
+# rules below are what catch it, not the value rules.
+groups:
+  - name: trackers
+    interval: 5m
+    rules:
+      # 25% headroom over the site's minimum (LST 0.4, MAM 1.0). 6h = one full refresh
+      # cycle, so a single low reading never alerts.
+      - alert: TrackerRatioLow
+        expr: tracker_ratio < 1.25 * tracker_ratio_minimum
+        for: 6h
+        labels: { severity: warning, stack: media, category: tracker, name: "{{ $labels.tracker }}" }
+        annotations:
+          summary: "{{ $labels.tracker }} ratio is {{ $value | printf \"%.2f\" }}, close to the minimum"
+          description: >-
+            Below 1.25x the site's minimum ratio for 6 hours. Seed more or download less
+            before it reaches the minimum.
+
+      - alert: TrackerHitAndRuns
+        expr: tracker_hit_and_runs > 0
+        for: 1h
+        labels: { severity: warning, stack: media, category: tracker, name: "{{ $labels.tracker }}" }
+        annotations:
+          summary: "{{ $labels.tracker }} has {{ $value }} hit-and-run(s)"
+          description: >-
+            A torrent was not seeded long enough. Re-seed it before the site acts on it.
+
+      # MAM only: the number of torrents still owing seed time, against the account's
+      # limit (150 at VIP). At the limit, MAM stops new downloads.
+      - alert: TrackerUnsatisfiedHigh
+        expr: tracker_unsatisfied > 0.8 * tracker_unsatisfied_limit
+        for: 1h
+        labels: { severity: warning, stack: media, category: tracker, name: "{{ $labels.tracker }}" }
+        annotations:
+          summary: "{{ $labels.tracker }}: {{ $value }} unsatisfied torrents, over 80% of the limit"
+          description: >-
+            Close to the unsatisfied limit, at which new downloads are blocked. Keep
+            seeding until some are satisfied.
+
+      # A day without a good read: four 6h refreshes in a row failed. The values shown
+      # meanwhile are the last good ones, so they cannot be trusted.
+      - alert: TrackerStatsStale
+        expr: time() - tracker_stats_last_success_timestamp_seconds > 86400
+        for: 15m
+        labels: { severity: warning, stack: media, category: tracker, name: "{{ $labels.tracker }}" }
+        annotations:
+          summary: "{{ $labels.tracker }} stats have not refreshed for {{ $value | humanizeDuration }}"
+          description: >-
+            trackerwatch cannot read this tracker's account page, so ratio, H&R and
+            unsatisfied alerts for it are running on stale numbers.
+
+      # trackerwatch itself not answering: then there are no tracker_* series at all and
+      # every rule above goes silent.
+      - alert: TrackerStatsScrapeDown
+        expr: up{job="trackerwatch"} == 0
+        for: 30m
+        labels: { severity: warning, stack: media, category: tracker, name: trackerwatch }
+        annotations:
+          summary: "trackerwatch metrics endpoint is not answering"
+          description: >-
+            Prometheus cannot scrape media.homelab.chrison.internal:9810, so no tracker
+            alerts can fire. Check trackerwatch on CT 5114.
+
+      # NOT YET: TrackerNotConnectable (tracker_connectable == 0 for 24h, info). MAM reports
+      # the client as not connectable today, which is being fixed separately; adding the
+      # rule now would fire immediately.
