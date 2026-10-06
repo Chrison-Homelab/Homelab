@@ -80,6 +80,23 @@ spec:
       protocol: udp
       log: false
 
+    # ── qBittorrent peer port (Media, CT 5104). Without it no peer can open a connection to
+    #    us: we only ever dial out, so we can upload only to peers that are themselves
+    #    connectable. MyAnonamouse's snatch summary showed `connectable: no` (2026-10-06), with
+    #    MAM upload ~0 and weak upload on every private tracker. TCP for peer connections, UDP
+    #    for uTP. The target is pinned by qbittorrent.lxc.yaml's DHCP reservation, and the port is
+    #    qBittorrent's fixed listen port (random_port off, UPnP off). This opens the BitTorrent
+    #    listener only; the web UI (8090) stays internal.
+    - name: qbittorrent-peers
+      enabled: true
+      interface: wan
+      source: any
+      destinationPort: "63429"
+      forwardIp: 10.10.110.115   # qbittorrent, CT 5104 (reserved)
+      forwardPort: "63429"
+      protocol: tcp_udp
+      log: false
+
   # Controller-local DNS (#419). The three Pangolin-fronted zones are grey-cloud A records
   # at Cloudflare pointing to the home WAN IP, so INSIDE the house they resolved to the WAN
   # too and every admin UI was reached by NAT hairpin back through the port-forward above.
