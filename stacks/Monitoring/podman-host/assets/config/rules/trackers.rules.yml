@@ -67,6 +67,17 @@ groups:
             Prometheus cannot scrape media.homelab.chrison.internal:9810, so no tracker
             alerts can fire. Check trackerwatch on CT 5114.
 
-      # NOT YET: TrackerNotConnectable (tracker_connectable == 0 for 24h, info). MAM reports
-      # the client as not connectable today, which is being fixed separately; adding the
-      # rule now would fire immediately.
+      # MAM only, IPv4 only (v6 is not forwarded and the metric does not cover it). Fixed
+      # 2026-10-07 by the qbittorrent-peers forward (WAN 63429 -> 10.10.110.115) plus a DHCP
+      # reservation; this catches the forward or the reservation silently going away.
+      # 24h = four reads, so a single failed check never alerts.
+      - alert: TrackerNotConnectable
+        expr: tracker_connectable == 0
+        for: 24h
+        labels: { severity: warning, stack: media, category: tracker, name: "{{ $labels.tracker }}" }
+        annotations:
+          summary: "{{ $labels.tracker }} reports the client as not connectable"
+          description: >-
+            Peers cannot reach qBittorrent, which costs ratio and can breach site rules.
+            Check the qbittorrent-peers port forward (WAN 63429 -> 10.10.110.115) and that
+            qBittorrent still holds its DHCP reservation.
