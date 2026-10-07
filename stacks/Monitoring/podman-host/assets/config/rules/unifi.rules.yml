@@ -52,6 +52,39 @@ groups:
           summary: "Controller reports {{ $value }} disconnected device(s)"
           description: "Site-level count from the controller, covering adopted-but-unreachable gear."
 
+      # The Cloud Gateway Ultra's own CPU, which is where the UniFi Network APPLICATION runs.
+      # Network 10.6.106 (console 5.1.33) leaks Java heap at ~11 MB/day; after 2-3 weeks the
+      # heap hits its ceiling and the JVM spends 85-96% of wall time in back-to-back Full GCs.
+      # The `unifi` process then sits near 260% CPU, the API times out, and the controller
+      # reports devices "disconnected" and the gateway "offline" when they are fine -- the
+      # false alerts of 6-7 Oct 2026. Internet keeps working, hence warning, not critical.
+      # Fix: `systemctl restart unifi` on the gateway. Next occurrence expected late October.
+      # Normal is 0.12-0.19; during the 6-7 Oct episode it held 0.8-0.98 for hours.
+      - alert: UniFiControllerCPUHigh
+        expr: unpoller_device_cpu_utilization_ratio{type="udm"} > 0.8
+        for: 30m
+        labels: { severity: warning, stack: unifi }
+        annotations:
+          summary: "{{ $labels.name }} CPU at {{ $value | humanizePercentage }} for 30 minutes"
+          description: >-
+            Most likely the UniFi Network app's Java heap is exhausted (known leak in 10.6.106,
+            ~2-3 weeks after each restart). Expect false "device disconnected" alerts until it
+            is restarted: `systemctl restart unifi` on the gateway.
+
+      # The same failure seen from the API side: unpoller serves its last good poll while the
+      # controller hangs, and the cache age climbs. Normal is under a minute; it reached
+      # 400-1500s during the 6-7 Oct episode. Catches an unresponsive controller even when
+      # CPU is noisy rather than pinned.
+      - alert: UniFiControllerUnresponsive
+        expr: unpoller_prometheus_cache_age_seconds > 300
+        for: 15m
+        labels: { severity: warning, stack: unifi, name: UniFi controller }
+        annotations:
+          summary: "UniFi controller data is {{ $value | humanizeDuration }} old"
+          description: >-
+            unpoller cannot get fresh data from the controller API, so every UniFi metric and
+            alert is running on stale numbers. Check the Network app on the gateway.
+
       - alert: UniFiChannelSaturated
         expr: unpoller_device_radio_channel_utilization_total_ratio > 0.7
         for: 20m
