@@ -2,68 +2,156 @@
   "nodes": [
     {
       "node": "desktop-01",
-      "status": "Offline",
-      "reachable": false,
+      "status": "Online",
+      "maxMem": 16707514368,
+      "reachable": true,
       "lxc": [
         {
           "vmId": 2008,
-          "status": "unknown",
+          "name": "erp-for-factory-games",
+          "status": "Stopped",
+          "maxMem": 4294967296,
+          "cores": 2,
           "tags": "ai;cloudflare;desktop-01;vlan-1010"
         },
         {
           "vmId": 2009,
-          "status": "unknown"
+          "name": "topaz",
+          "status": "Stopped",
+          "maxMem": 2147483648,
+          "cores": 2
         },
         {
           "vmId": 3000,
-          "status": "unknown",
+          "name": "forgejo",
+          "status": "Stopped",
+          "maxMem": 2147483648,
+          "cores": 2,
           "tags": "community-script;devops;forge;git"
         },
         {
           "vmId": 3001,
-          "status": "unknown",
+          "name": "forgejo-runner",
+          "status": "Stopped",
+          "maxMem": 4294967296,
+          "cores": 4,
           "tags": "ci;community-script;devops;forge"
         },
         {
           "vmId": 3003,
-          "status": "unknown",
+          "name": "shell",
+          "status": "Stopped",
+          "maxMem": 8589934592,
+          "cores": 8,
           "tags": "community-script;dev;devops;shell;tmux"
         },
         {
           "vmId": 3004,
-          "status": "unknown",
+          "name": "cloudflared",
+          "status": "Stopped",
+          "maxMem": 536870912,
+          "cores": 1,
           "tags": "cloudflare;community-script;devops;network;tunnel"
         },
         {
           "vmId": 3005,
-          "status": "unknown",
+          "name": "newt",
+          "status": "Stopped",
+          "maxMem": 536870912,
+          "cores": 1,
           "tags": "community-script;devops;network;pangolin;tunnel;wireguard"
         },
         {
           "vmId": 9905,
-          "status": "unknown",
+          "name": "openwebui",
+          "status": "Stopped",
+          "maxMem": 8589934592,
+          "cores": 4,
           "tags": "retired"
         }
       ],
       "qemu": [
         {
           "vmId": 1002,
-          "status": "unknown",
+          "name": "gaming-vm-01",
+          "status": "Stopped",
+          "maxMem": 12884901888,
+          "cores": 6,
           "tags": "gaming"
         },
         {
           "vmId": 1003,
-          "status": "unknown",
+          "name": "bazzite",
+          "status": "Stopped",
+          "maxMem": 12884901888,
+          "cores": 6,
           "tags": "gaming"
         },
         {
           "vmId": 1100,
-          "status": "unknown",
+          "name": "buildvm",
+          "status": "Stopped",
+          "maxMem": 12884901888,
+          "cores": 6,
           "tags": "buildlab"
         }
       ],
-      "storage": [],
-      "network": []
+      "storage": [
+        {
+          "storage": "ds1813-nfs-volume-1",
+          "type": "nfs",
+          "content": "images,import,iso,rootdir,snippets,vztmpl"
+        },
+        {
+          "storage": "ds1813-nfs-volume-2",
+          "type": "nfs",
+          "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
+        },
+        {
+          "storage": "ds1813-nfs-volume-3",
+          "type": "nfs",
+          "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
+        },
+        {
+          "storage": "ds1813-nfs-volume-4",
+          "type": "nfs",
+          "content": "import"
+        },
+        {
+          "storage": "local",
+          "type": "dir",
+          "content": "backup,iso,vztmpl"
+        },
+        {
+          "storage": "local-lvm",
+          "type": "lvmthin",
+          "content": "images,rootdir"
+        },
+        {
+          "storage": "pbs-homelab",
+          "type": "pbs",
+          "content": "backup"
+        }
+      ],
+      "network": [
+        {
+          "iface": "eno1",
+          "type": "Eth"
+        },
+        {
+          "iface": "vmbr0",
+          "type": "Bridge"
+        },
+        {
+          "iface": "vmbr0.1000",
+          "type": "Vlan",
+          "address": "10.0.0.12"
+        },
+        {
+          "iface": "wlp8s0",
+          "type": "Unknown"
+        }
+      ]
     },
     {
       "node": "hpe-01",
@@ -118,14 +206,6 @@
           "maxMem": 4294967296,
           "cores": 2,
           "tags": "adr-0009;community-script;container-host;monitoring;observability;podman;quadlet"
-        },
-        {
-          "vmId": 5008,
-          "name": "plex",
-          "status": "Running",
-          "maxMem": 2147483648,
-          "cores": 4,
-          "tags": "arr;community-script;media;media-server;plex"
         },
         {
           "vmId": 5100,
@@ -296,21 +376,12 @@
           "tags": "bom;community-script;inventory;inventree;parts;workshop"
         }
       ],
-      "qemu": [
-        {
-          "vmId": 2000,
-          "name": "homeassistant",
-          "status": "Stopped",
-          "maxMem": 4294967296,
-          "cores": 4,
-          "tags": "community-script;hpe-01;iot;smart-home;vlan-1010;vlan-1040"
-        }
-      ],
+      "qemu": [],
       "storage": [
         {
           "storage": "ds1813-nfs-volume-1",
           "type": "nfs",
-          "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
+          "content": "images,import,iso,rootdir,snippets,vztmpl"
         },
         {
           "storage": "ds1813-nfs-volume-2",
@@ -356,6 +427,75 @@
           "iface": "vmbr0.1000",
           "type": "Vlan",
           "address": "10.0.0.13"
+        }
+      ]
+    },
+    {
+      "node": "hpe-02",
+      "status": "Online",
+      "maxMem": 16657080320,
+      "reachable": true,
+      "lxc": [
+        {
+          "vmId": 5008,
+          "name": "plex",
+          "status": "Running",
+          "maxMem": 2147483648,
+          "cores": 4,
+          "tags": "arr;community-script;media;media-server;plex"
+        }
+      ],
+      "qemu": [],
+      "storage": [
+        {
+          "storage": "ds1813-nfs-volume-1",
+          "type": "nfs",
+          "content": "images,import,iso,rootdir,snippets,vztmpl"
+        },
+        {
+          "storage": "ds1813-nfs-volume-2",
+          "type": "nfs",
+          "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
+        },
+        {
+          "storage": "ds1813-nfs-volume-3",
+          "type": "nfs",
+          "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
+        },
+        {
+          "storage": "ds1813-nfs-volume-4",
+          "type": "nfs",
+          "content": "import"
+        },
+        {
+          "storage": "local",
+          "type": "dir",
+          "content": "backup,iso,vztmpl"
+        },
+        {
+          "storage": "local-lvm",
+          "type": "lvmthin",
+          "content": "images,rootdir"
+        },
+        {
+          "storage": "pbs-homelab",
+          "type": "pbs",
+          "content": "backup"
+        }
+      ],
+      "network": [
+        {
+          "iface": "nic0",
+          "type": "Eth"
+        },
+        {
+          "iface": "vmbr0",
+          "type": "Bridge"
+        },
+        {
+          "iface": "vmbr0.1000",
+          "type": "Vlan",
+          "address": "10.0.0.14"
         }
       ]
     },
@@ -419,7 +559,7 @@
         {
           "storage": "ds1813-nfs-volume-1",
           "type": "nfs",
-          "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
+          "content": "images,import,iso,rootdir,snippets,vztmpl"
         },
         {
           "storage": "ds1813-nfs-volume-2",
