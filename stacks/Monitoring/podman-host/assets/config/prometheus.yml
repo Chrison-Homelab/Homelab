@@ -119,6 +119,8 @@ scrape_configs:
       - targets:
           - 'hpe-01.homelab.chrison.internal'
           - 'nuc-01.homelab.chrison.internal'
+          # HP ProDesk 400 G4 SFF, always-on, joined 2026-10-09.
+          - 'hpe-02.homelab.chrison.internal'
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
