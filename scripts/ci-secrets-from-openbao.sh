@@ -36,7 +36,7 @@ AUDIENCE="openbao-homelab"
 ROLE="${OPENBAO_ROLE:-deploy}"
 MOUNT="jwt-github"
 
-fallback() { echo "::error title=OpenBao unavailable::$1"; exit 1; }
+unavailable() { echo "::error title=OpenBao unavailable::$1"; exit 1; }
 
 [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || unavailable "no OIDC token available (the calling job needs permissions: id-token: write)"
 why="$(OPENBAO_TOKEN_PRESET=x openbao_unavailable_reason)"; [ -z "$why" ] || unavailable "OpenBao is $why"
