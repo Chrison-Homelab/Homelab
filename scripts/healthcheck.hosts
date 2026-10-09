@@ -15,9 +15,14 @@
 #             (e.g. desktop-01 may be intentionally asleep via the power
 #             orchestrator, #191).
 #
-# name         ip               role     ports        severity
-gateway        192.168.178.1    network  -            critical
-DS1813-01      192.168.179.11   nas      5001,2049    critical
-hpe-01         192.168.179.3    node     8006         critical
-nuc-01         192.168.179.1    node     8006         critical
-desktop-01     192.168.179.2    node     8006         optional
+# name         address                              role     ports        severity
+# Addresses are UniFi local-DNS names (Infrastructure/unifi/network.yaml staticDns), not
+# IPs: the 192.168.179.x addresses here went stale when the nodes and NAS moved to VLAN
+# 1000 (#37), and every row but the gateway reported DOWN from then on. The gateway stays
+# an IP because it IS the DNS server.
+gateway        192.168.178.1                        network  -            critical
+DS1813-01      nas.homelab.chrison.internal         nas      5001,2049    critical
+hpe-01         hpe-01.homelab.chrison.internal      node     8006         critical
+nuc-01         nuc-01.homelab.chrison.internal      node     8006         critical
+hpe-02         hpe-02.homelab.chrison.internal      node     8006         critical
+desktop-01     desktop-01.homelab.chrison.internal  node     8006         optional

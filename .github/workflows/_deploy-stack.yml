@@ -50,6 +50,7 @@ jobs:
       # these records are UniFi local-DNS entries, so a future re-address needs no
       # change here. Verified resolvable from the runner (CT 3002). Non-secret.
       NODE_ADDR_HPE_01: 'hpe-01.homelab.chrison.internal'
+      NODE_ADDR_HPE_02: 'hpe-02.homelab.chrison.internal'
       NODE_ADDR_NUC_01: 'nuc-01.homelab.chrison.internal'
       NODE_ADDR_DESKTOP_01: 'desktop-01.homelab.chrison.internal'
       # The runner runs jobs with a HOME that isn't the login home, so NodeExec can't

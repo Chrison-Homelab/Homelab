@@ -141,14 +141,15 @@ spec:
 
     # ── The Proxmox nodes ──
     # ⚠ This is the ONE place in the repo their addresses are written down, and it is
-    # deliberate. CLAUDE.md says nothing should hard-code 10.0.0.11/.12/.13 precisely so a
+    # deliberate. CLAUDE.md says nothing should hard-code 10.0.0.11/.12/.13/.14 precisely so a
     # re-address is a single edit — that rule is about CONSUMERS, which reach nodes by
     # name. The name→address mapping has to exist somewhere; before this it existed only
-    # as three records clicked into the controller. Re-addressing a node is now: edit the
+    # as records clicked into the controller. Re-addressing a node is now: edit the
     # line, converge. secrets.env's PROXMOX_BASE_URL resolves through these names.
     - { name: nuc-01.homelab.chrison.internal,     value: 10.0.0.11 }
     - { name: desktop-01.homelab.chrison.internal, value: 10.0.0.12 }
     - { name: hpe-01.homelab.chrison.internal,     value: 10.0.0.13 }
+    - { name: hpe-02.homelab.chrison.internal,     value: 10.0.0.14 }
 
     # ── SmartHome ──
     # homeassistant: the hub, CT 6005 on its Homelab leg. NOTE the same host also answers

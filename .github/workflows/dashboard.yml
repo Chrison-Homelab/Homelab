@@ -32,6 +32,7 @@ jobs:
       cancel-in-progress: true          # only the newest render matters
     env:
       NODE_ADDR_HPE_01: 'hpe-01.homelab.chrison.internal'
+      NODE_ADDR_HPE_02: 'hpe-02.homelab.chrison.internal'
       NODE_ADDR_NUC_01: 'nuc-01.homelab.chrison.internal'
       NODE_ADDR_DESKTOP_01: 'desktop-01.homelab.chrison.internal'
       NODE_SSH_KEY: /home/runner/.ssh/id_ed25519

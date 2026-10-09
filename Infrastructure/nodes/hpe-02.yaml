@@ -1,0 +1,29 @@
+# Proxmox host — described, not provisioned via API (it hosts the LXCs/VMs).
+# Installed and joined to the cluster 2026-10-09 (PVE 9.2-1 ISO, upgraded to 9.2.21 before
+# the join). The LXCs/VMs it hosts are their own shapes, not listed here. See ../README.md.
+#
+# Named hpe-02 because it's an HP, like hpe-01 (an EliteDesk). It is NOT a ProLiant.
+
+apiVersion: homelab/v1
+kind: Node
+
+metadata:
+  name: hpe-02
+  tags: [proxmox, host]
+
+spec:
+  hardware: HP ProDesk 400 G4 SFF   # BIOS P08 v02.06 (2017-06-09), factory original
+  cpu: Intel i5-7500 @ 3.4GHz       # 4 cores / 4 threads, iGPU HD 630
+  cores: 4
+  memory: 16384               # MB — 2 × 8 GB DDR4-2400, both slots full
+  pveVersion: "9.2.21"
+  boot: uefi                  # Secure Boot on
+  storages: [local, local-lvm, ds1813-nfs-volume-1, ds1813-nfs-volume-2, ds1813-nfs-volume-3, ds1813-nfs-volume-4, pbs-homelab]
+  network:
+    bridge: vmbr0
+    address: 10.0.0.14/16       # mgmt on VLAN 1000 (Network Devices), same layout as hpe-01/nuc-01:
+                                # a TAGGED sub-interface vmbr0.1000, vmbr0 itself `inet manual`.
+                                # The installer can't tag, so it was installed on the untagged Old
+                                # Network by DHCP and moved to vmbr0.1000 afterwards.
+    uplink: nic0                # Realtek r8169 (PVE 9 pins NIC names to nicN). WoL armed by
+                                # wol-arm.service, because r8169 clears it on every boot.
