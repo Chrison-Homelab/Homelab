@@ -26,9 +26,11 @@
       "enum": [
         "CompileEngine",
         "CompilePowerOrchestrator",
+        "Dashboard",
         "Deploy",
         "DeployPowerOrchestrator",
         "Preview",
+        "PreviewDashboard",
         "PublishPowerOrchestrator",
         "PublishValidator",
         "TestEngine",

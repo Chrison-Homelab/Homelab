@@ -30,7 +30,8 @@ public sealed class PangolinResourceReconcileTests : IDisposable
     // ---- fixtures ---------------------------------------------------------
 
     // One declared resource: traefik.lab.chrison.dev → http://localhost:8080.
-    private static Shape Shape(string ip = "localhost", int port = 8080, string method = "http", bool? sso = null)
+    private static Shape Shape(string ip = "localhost", int port = 8080, string method = "http", bool? sso = null,
+        IEnumerable<Dictionary<string, object?>>? rules = null)
     {
         var s = new Shape { Metadata = new ShapeMetadata { Name = "pangolin" } };
         s.Spec.Ctid = "2013";
@@ -47,6 +48,7 @@ public sealed class PangolinResourceReconcileTests : IDisposable
             ["target"] = new Dictionary<string, object?> { ["ip"] = ip, ["port"] = port, ["method"] = method },
         };
         if (sso is not null) res["sso"] = sso.Value;
+        if (rules is not null) res["rules"] = rules.Cast<object>().ToList();
         s.Spec.Config["resources"] = new List<object> { res };
         return s;
     }
@@ -81,6 +83,25 @@ public sealed class PangolinResourceReconcileTests : IDisposable
             success = true,
         });
 
+    // The Ruddarr shape: bypass auth on the API, keep the UI behind SSO.
+    private static Dictionary<string, object?>[] ApiBypassRules(string action = "ACCEPT") => new[]
+    {
+        new Dictionary<string, object?> { ["action"] = action, ["match"] = "PATH", ["value"] = "/api/*" },
+        new Dictionary<string, object?> { ["action"] = action, ["match"] = "PATH", ["value"] = "/ping" },
+    };
+
+    private static string RulesJson(params (int id, string action, string match, string value, int priority, bool enabled)[] rules) =>
+        JsonSerializer.Serialize(new
+        {
+            data = new { rules = rules.Select(r => new { ruleId = r.id, r.action, r.match, r.value, r.priority, r.enabled }).ToArray() },
+            success = true,
+        });
+
+    // GET /resource/{id} — the only place applyRules is visible (the embedded list omits it).
+    // Like sso, it comes back SQLite-shaped (0/1) as often as not.
+    private static string DetailJson(object applyRules) =>
+        JsonSerializer.Serialize(new { data = new { resourceId = 1, applyRules }, success = true });
+
     private sealed class FakeExec : INodeExec
     {
         private readonly Func<string, ExecResult> _reply;
@@ -93,7 +114,8 @@ public sealed class PangolinResourceReconcileTests : IDisposable
     }
 
     // Standard happy-path API surface; `resources` and `targets` are the interesting knobs.
-    private FakeExec Api(string resources, string targets, Func<string, ExecResult>? extra = null)
+    private FakeExec Api(string resources, string targets, Func<string, ExecResult>? extra = null,
+        string? rules = null, string? detail = null)
     {
         var marker = PangolinProvisioner.DesiredMarker(Shape());
         return new FakeExec(cmd =>
@@ -107,6 +129,9 @@ public sealed class PangolinResourceReconcileTests : IDisposable
                 """{"data":{"sites":[{"siteId":1,"type":"local"}]},"success":true}""", "");
             if (cmd.Contains("/v1/org/chrison-dev/resources")) return new ExecResult(0, resources, "");
             if (cmd.Contains("/v1/resource/1/targets")) return new ExecResult(0, targets, "");
+            if (cmd.Contains("/v1/resource/1/rules") && !IsWrite(cmd)) return new ExecResult(0, rules ?? RulesJson(), "");
+            if (cmd.TrimEnd().EndsWith("/v1/resource/1", StringComparison.Ordinal) && !IsWrite(cmd))
+                return new ExecResult(0, detail ?? DetailJson(0), "");
             return new ExecResult(0, """{"success":true,"data":{}}""", "");
         });
     }
@@ -222,6 +247,126 @@ public sealed class PangolinResourceReconcileTests : IDisposable
 
         Assert.Contains("0 re-gated", result.Message);
         Assert.DoesNotContain(exec.Commands, c => IsGateWrite(c));
+    }
+
+    // ---- access rules (API bypass for native clients) -----------------------
+
+    private static bool IsRuleCreate(string cmd) =>
+        IsWrite(cmd) && cmd.TrimEnd().EndsWith("/v1/resource/1/rule", StringComparison.Ordinal);
+    private static bool IsRuleUpdate(string cmd) =>
+        IsWrite(cmd) && cmd.Contains("/v1/resource/1/rule/", StringComparison.Ordinal);
+
+    [Fact]
+    public async Task NoRulesDeclared_TouchesNeitherRulesNorApplyRules()
+    {
+        // The dozen SSO-only resources must behave exactly as before: no rule reads, no
+        // applyRules write. (An applyRules write is a gate write — POST /v1/resource/1.)
+        var (_, exec) = await RunAsync(Shape(), Api(ResourcesJson(), TargetsJson()));
+
+        Assert.DoesNotContain(exec.Commands, c => c.Contains("/rule", StringComparison.Ordinal));
+        Assert.DoesNotContain(exec.Commands, c => IsGateWrite(c));
+    }
+
+    [Fact]
+    public async Task DeclaredRules_AreCreatedThenApplyRulesIsSwitchedOn()
+    {
+        var (result, exec) = await RunAsync(Shape(rules: ApiBypassRules()), Api(ResourcesJson(), TargetsJson()));
+
+        Assert.Equal(ApplyOutcome.Applied, result.Outcome);
+        Assert.Contains("1 rule set(s) changed", result.Message);
+
+        var creates = exec.Commands.Where(IsRuleCreate).ToList();
+        Assert.Equal(2, creates.Count);
+        Assert.Contains(creates, c => c.Contains("\"action\":\"ACCEPT\"") && c.Contains("\"match\":\"PATH\"") && c.Contains("\"value\":\"/api/*\"") && c.Contains("\"priority\":1"));
+        Assert.Contains(creates, c => c.Contains("\"value\":\"/ping\"") && c.Contains("\"priority\":2") && c.Contains("\"enabled\":true"));
+
+        // Rules are inert until applyRules is on — and it must be turned on AFTER they exist.
+        var apply = Assert.Single(exec.Commands, c => IsGateWrite(c) && c.Contains("applyRules", StringComparison.Ordinal));
+        Assert.Contains("\"applyRules\":true", apply);
+        Assert.True(exec.Commands.IndexOf(apply) > exec.Commands.FindLastIndex(IsRuleCreate));
+        // …and nothing about the sso gate itself was touched.
+        Assert.DoesNotContain(exec.Commands, c => IsGateWrite(c) && c.Contains("\"sso\"", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RulesInSync_WriteNothing()
+    {
+        var live = RulesJson((10, "ACCEPT", "PATH", "/api/*", 1, true), (11, "ACCEPT", "PATH", "/ping", 2, true));
+        var (result, exec) = await RunAsync(Shape(rules: ApiBypassRules()),
+            Api(ResourcesJson(), TargetsJson(), rules: live, detail: DetailJson(1)));
+
+        Assert.Equal(ApplyOutcome.NoChange, result.Outcome);
+        Assert.Contains("0 rule set(s) changed", result.Message);
+        Assert.DoesNotContain(exec.Commands, c => IsRuleCreate(c) || IsRuleUpdate(c) || IsGateWrite(c));
+    }
+
+    [Fact]
+    public async Task RuleActionDrift_IsUpdatedInPlace()
+    {
+        // Someone flipped the bypass to DROP in the UI: the API path is now blocked for Ruddarr.
+        var live = RulesJson((10, "DROP", "PATH", "/api/*", 1, true), (11, "ACCEPT", "PATH", "/ping", 2, true));
+        var (result, exec) = await RunAsync(Shape(rules: ApiBypassRules()),
+            Api(ResourcesJson(), TargetsJson(), rules: live, detail: DetailJson(1)));
+
+        Assert.Equal(ApplyOutcome.Applied, result.Outcome);
+        var update = Assert.Single(exec.Commands, IsRuleUpdate);
+        Assert.Contains("/v1/resource/1/rule/10", update);
+        Assert.Contains("\"action\":\"ACCEPT\"", update);
+        Assert.DoesNotContain(exec.Commands, IsRuleCreate);
+        Assert.Contains("DROP/p1/on → ACCEPT/p1/on", result.Message);
+    }
+
+    [Fact]
+    public async Task ApplyRulesOffLive_IsSwitchedBackOn()
+    {
+        // Rules present but the layer disabled by hand — reads as "in sync" on the rules
+        // alone, yet Ruddarr gets the SSO interstitial. applyRules is part of desired state.
+        var live = RulesJson((10, "ACCEPT", "PATH", "/api/*", 1, true), (11, "ACCEPT", "PATH", "/ping", 2, true));
+        var (result, exec) = await RunAsync(Shape(rules: ApiBypassRules()),
+            Api(ResourcesJson(), TargetsJson(), rules: live, detail: DetailJson(false)));
+
+        Assert.Equal(ApplyOutcome.Applied, result.Outcome);
+        Assert.Contains("rules enabled", result.Message);
+        Assert.Single(exec.Commands, c => IsGateWrite(c) && c.Contains("\"applyRules\":true", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task UndeclaredLiveRule_IsLeftAloneAndReported()
+    {
+        // Same add-only stance as resources: a hand-added rule is neither deleted nor
+        // silently tolerated — it is named in the summary so it can be declared or removed.
+        var live = RulesJson((10, "ACCEPT", "PATH", "/api/*", 1, true), (11, "ACCEPT", "PATH", "/ping", 2, true),
+            (12, "DROP", "COUNTRY", "RU", 3, true));
+        var (result, exec) = await RunAsync(Shape(rules: ApiBypassRules()),
+            Api(ResourcesJson(), TargetsJson(), rules: live, detail: DetailJson(1)));
+
+        Assert.Equal(ApplyOutcome.NoChange, result.Outcome);
+        Assert.Contains("undeclared live rule DROP COUNTRY RU", result.Message);
+        Assert.DoesNotContain(exec.Commands, c => c.Contains("-X DELETE", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task MalformedRuleAction_FailsTheApply()
+    {
+        // "bypass" reads naturally but is not what Pangolin calls it; guessing would either
+        // 400 at the API or, worse, land as something else. Fail loudly.
+        var (result, exec) = await RunAsync(Shape(rules: ApiBypassRules(action: "bypass")), Api(ResourcesJson(), TargetsJson()));
+
+        Assert.Equal(ApplyOutcome.Failed, result.Outcome);
+        Assert.Contains("not ACCEPT|DROP|PASS", result.Message);
+        Assert.DoesNotContain(exec.Commands, c => IsRuleCreate(c) || IsGateWrite(c));
+    }
+
+    [Fact]
+    public async Task RuleListUnreachable_FailsInsteadOfCreatingDuplicates()
+    {
+        var exec = Api(ResourcesJson(), TargetsJson(),
+            extra: cmd => cmd.Contains("/v1/resource/1/rules") ? new ExecResult(1, "", "connection refused") : null);
+        var (result, _) = await RunAsync(Shape(rules: ApiBypassRules()), exec);
+
+        Assert.Equal(ApplyOutcome.Failed, result.Outcome);
+        Assert.Contains("GET rules failed", result.Message);
+        Assert.DoesNotContain(exec.Commands, IsRuleCreate);
     }
 
     // ---- guardrails -------------------------------------------------------

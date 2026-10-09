@@ -107,6 +107,10 @@ apps:
     provisioner: plex            # reconcile server settings via the /:/prefs API, add/update only (#332).
                                  # Pins the deliberate non-default TranscoderCanOnlyRemuxVideo=1, which a
                                  # rebuild would otherwise silently reset to Plex's default.
+  openbao:
+    script: openbao              # DevOps CT 3007, the secrets store trial (#609)
+    provisioner: openbao         # ASSERT-ONLY: fails while the installer's plaintext unseal key / root
+                                 # token are on disk; never handles keys (bootstrap is a workstation script)
   tracearr:
     script: tracearr             # net-new; Plex/Jellyfin/Emby session monitoring (Tautulli replacement). No
                                  # provisioner — all-in-one install self-generates secrets; Plex link is a UI step.
@@ -116,7 +120,8 @@ apps:
   audiobookshelf:
     script: audiobookshelf       # net-new; audiobook/podcast server (native apps). No provisioner (libraries via UI).
   romm:
-    script: romm                 # net-new; ROM/emulation library (MariaDB + Angie, in-browser EmulatorJS). No provisioner (admin acct + library via UI).
+    script: romm                 # net-new; ROM/emulation library (MariaDB + Angie, in-browser EmulatorJS). Admin acct + library still via UI.
+    provisioner: romm            # merge OIDC_* into /opt/romm/.env + restart romm-backend (#485)
 
   # Pangolin — SSO remote-access reverse proxy, the Teleport replacement (ADR-0007).
   # Runs as Docker ENTERPRISE EDITION (fosrl/pangolin:ee — OIDC/RBAC need the EE

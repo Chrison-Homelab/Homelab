@@ -50,8 +50,11 @@ endpoint the CLI doesn't expose yet).
 # All CLIs read config from the environment. The root `secrets.env` (gitignored)
 # is the ONE canonical file — it holds every service (Proxmox / Synology / UniFi
 # + Cloudflare / GitHub). It is GENERATED from `secrets.env.template` (the committed
-# schema) + Bitwarden Secrets Manager — regenerate it on any machine with:
-scripts/secrets-sync.sh          # macOS/Linux  (secrets-sync.ps1 on Windows)
+# schema) + OpenBao (DevOps CT 3007, the ONLY secrets store since #609; Bitwarden SM is
+# frozen) — regenerate it on any machine with:
+scripts/secrets-sync.sh          # macOS/Linux, workstation AppRole (secrets-sync.ps1 on Windows,
+                                 # after `bao login -method=oidc`)
+scripts/openbao-set.sh KEY       # add/change a secret, then `KEY=` in secrets.env.template
 # then source it once:
 set -a && . ./secrets.env && set +a          # → proxmoxsharp / synosharp / unifisharp all configured
 proxmoxsharp discover    # structured ClusterSnapshot (JSON)
@@ -61,10 +64,11 @@ proxmoxsharp version     # PVE version
 
 Public endpoint (valid TLS): `https://proxmox.chrison.dev/api2/json`. On the LAN,
 reach nodes **by name** — `hpe-01.homelab.chrison.internal:8006` (also `nuc-01.`,
-`desktop-01.`), which is what `secrets.env` uses. Those hit the node's own
+`desktop-01.`, `hpe-02.`), which is what `secrets.env` uses. Those hit the node's own
 self-signed cert, hence `PROXMOX_VERIFY_TLS=false`.
 
-> **The nodes moved to VLAN 1000 (`10.0.0.11/.12/.13`) on 2026-08-02** and the NAS
+> **The nodes moved to VLAN 1000 (`10.0.0.11/.12/.13`) on 2026-08-02** (hpe-02 joined at
+> `10.0.0.14` on 2026-10-09) and the NAS
 > to `10.0.0.10` (#37). Nothing in this repo should hard-code those addresses —
 > the UniFi local-DNS records (`*.homelab.chrison.internal`) exist so a future
 > re-address is a DHCP-reservation edit and nothing more. The one deliberate
@@ -147,6 +151,32 @@ force / non-fast-forward pushes, and pushes onto a branch whose PR is already
 MERGED/CLOSED. It auto-installs on `./build.sh`; manual setup is
 `dotnet tool restore && dotnet husky install`.
 
+## `${VAR}` in a shape's `spec.config` — this repo is PUBLIC
+
+A few config values are facts about the **house**, not about the cluster, and have no
+business committed to a public repo. They are declared as `${VAR}` and expanded at
+converge time from `secrets.env` + process env
+([`ShapeVars.cs`](Infrastructure/engine/Shapes/ShapeVars.cs)):
+
+| Variable | What | Used by |
+|---|---|---|
+| `HOME_WAN_IP` | home WAN IPv4 behind the public :443 forward | Core `pangolin.publicIp`, Core + Media `cloudflared` `access.bypass` |
+| `HOME_WAN_IPV6_PREFIX` | DHCPv6-PD `/56` base from Quic (no suffix) | Core + Media `cloudflared` `access.bypass` |
+
+- **They are GitHub *secrets*, not `vars.*`.** GitHub masks secrets in Actions logs and
+  does **not** mask variables — and converge prints `publicIp` in Preview
+  (`ensure grey-cloud A record(s) … → <ip>`). A variable would have moved the literal out
+  of the shape and straight into a public build log. `_deploy-stack.yml` passes both.
+- **An unset variable is a FATAL load error** naming the file and the variable — never an
+  empty substitution. Both consumers fail *invisibly* on an empty value: an absent
+  `publicIp` reports the wildcard-DNS step as "skipped", and a dropped `access.bypass`
+  entry silently re-arms Cloudflare Access's one-time PIN across the whole admin surface.
+- **Scope is `spec.config` only.** Node, ctid, LAN addresses and mounts describe the
+  cluster and stay in git verbatim — don't hide infrastructure behind opaque names.
+- ⚠️ **This hides the value from the repo, not from the world.** The grey-cloud wildcard
+  A records publish the IPv4 by design: `dig x.lab.chrison.dev` answers with it. Treat it
+  as *don't hand it over for free*, not as a secret.
+
 ## Stack submodules (meta-repo model, ADR-0008)
 
 Domain stacks live in their own **`Homelab.Stacks.<Name>`** repos, composed here
@@ -175,6 +205,52 @@ bw get password "Homelab Schema Read PAT" | gh secret set SCHEMA_RO_PAT --org Ch
 
 The caller passes it through as `schema_token` (underscore — GitHub secret ids
 forbid hyphens). Setting org secrets needs org-admin; scope the PAT to `contents:read`.
+
+## Updates: what is automatic and what is a person's act (#436)
+
+Every LXC converges to a **baseline**: `unattended-upgrades`, **security pocket only**, no
+automatic reboot (`SecurityUpdatesReconciler`, before the app provisioner). Opt a shape out
+with `spec.config.securityUpdates: false` — it shows as OPTED OUT in the plan. Roll it out or
+re-check fleet-wide without converging every stack:
+`dotnet run --project Infrastructure/engine -- security-updates stacks --apply`.
+
+- **Apps** update themselves where they can: the arr provisioners turn on the built-in
+  updater (`updateAutomatically`); podman hosts run `podman auto-update`; the rest is
+  community-scripts `update` inside the CT (interactive; needs a real TERM), by a person.
+- **Non-security OS packages and dist-upgrades** are a person's act:
+  `src/Proxmox/upgrade-guests.sh` (`--dry-run` reports pending / security / reboot-required).
+- **Nodes** (Proxmox packages, kernel reboots): manual, one node at a time, wait for the node
+  to actually go down before probing that it is back.
+
+## The dashboard is rendered from the shapes — declare, never edit (ADR-0012)
+
+Homepage at `http://monitoring.homelab.chrison.internal:3010` is **generated** from every shape's
+`metadata.services` plus the Pangolin/cloudflared exposure declarations, and re-pushed by the
+`dashboard` workflow on every merge to `main`. There is no dashboard to update.
+
+**Every shape whose guest serves a UI declares it** — this is how a new app reaches the dashboard:
+
+```yaml
+metadata:
+  name: sonarr
+  services:                      # one entry per UI the guest offers a human
+    - name: Sonarr               # also the match key for the public URL (Pangolin resource / tunnel host)
+      url: http://sonarr.homelab.chrison.internal:8989   # INTERNAL url — the dashboard is LAN-only
+      icon: sonarr               # dashboard-icons slug (optional; defaults to the lowercased name)
+      description: TV            # optional
+      widget: { type: sonarr, keyFrom: SONARR_API_KEY }  # optional Homepage widget; *From = a SECRET NAME
+```
+
+- Do **not** declare the public URL — it is derived by name from the Pangolin `resources` /
+  cloudflared `ingress`, so it cannot disagree with what is exposed. Anything exposed but undeclared
+  shows up in the dashboard's last group and fails `./build.sh PreviewDashboard`.
+- A widget credential is `keyFrom`/`passwordFrom: <SECRET_NAME>`; the value is exported by
+  `stacks/Monitoring/podman-host/quadlets/homepage.container` as `HOMEPAGE_VAR_<NAME>` (add both
+  ends: the shape's `config.secrets` entry and the quadlet's `Secret=` line). Never a literal.
+- Stack submodules validate against the **published** schema, so a new `metadata.services` field
+  in a stack repo needs the superproject's schema release to include it first.
+- `./build.sh PreviewDashboard` renders + checks without touching anything; `./build.sh Dashboard`
+  pushes to CT 4001 and restarts only the dashboard unit.
 
 ## Key Commands
 
@@ -212,7 +288,7 @@ Runs on **CT 4001** (`monitoring.homelab.chrison.internal`), rootless podman + q
 | Grafana | `:3000` |
 | Prometheus | `:9091` (9090 is Cockpit on podman hosts) |
 | Alertmanager | `:9093` — the alert bus, [ADR-0011](docs/adr/ADR-0011-alert-bus.md) |
-| Pulse | `:7655` |
+| Beszel | `:8090` — fleet monitor (replaced Pulse, #591) |
 
 Secrets come from the root `secrets.env` as podman secrets, declared in the shape's
 `config.secrets` — not a per-stack `.env`.
@@ -249,7 +325,7 @@ curl -s -H "Authorization: Token $TOKEN" \
 ### Directory Layout
 
 - **`src/Proxmox/`** — Bash and PowerShell scripts deployed directly to Proxmox nodes. Scripts exist in both `.sh` and `.ps1` variants with equivalent functionality.
-- **`stacks/Monitoring/`** — In-repo monitoring stack on CT 4001 (rootless podman + quadlets): Prometheus, Grafana, Alertmanager, OTel→Tempo/Loki, snmp_exporter, exportarr, unpoller and Pulse.
+- **`stacks/Monitoring/`** — In-repo monitoring stack on CT 4001 (rootless podman + quadlets): Prometheus, Grafana, Alertmanager, OTel→Tempo/Loki, snmp_exporter, exportarr, unpoller, Beszel and prometheus-pve-exporter.
 - **`.containers/homelab/`** — Debian 13 (Trixie) test container matching the Proxmox OS. Used for local validation of `src/Proxmox/` scripts.
 - **`.containers/proxmox/`** — Containerized Proxmox for local dev (requires `/dev/kvm`, Linux only).
 - **`.containers/dsm/`** — Virtual DSM container (Synology) for local testing, exposed on port 5000.
@@ -261,8 +337,8 @@ curl -s -H "Authorization: Token $TOKEN" \
 - **Homelab VLAN**: `10.10.0.0/16`
 - **Consumer VLAN**: `10.20.0.0/16`
 - **IoT VLAN**: `10.40.0.0/16`
-- **Network Devices**: `10.0.0.0/16` (VLAN 1000) — switches, APs, **the three Proxmox
-  nodes** (`10.0.0.11/.12/.13`) and **the NAS** (`10.0.0.10`), so hypervisor↔storage
+- **Network Devices**: `10.0.0.0/16` (VLAN 1000) — switches, APs, **the four Proxmox
+  nodes** (`10.0.0.11/.12/.13/.14`) and **the NAS** (`10.0.0.10`), so hypervisor↔storage
   traffic never leaves the zone
 - **Legacy** (being retired, #37): `192.168.178.0/23`. Nodes, NAS and all WiFi clients
   have left it as of 2026-08-02. What remains is guest-level: the old `50xx` arr fleet,

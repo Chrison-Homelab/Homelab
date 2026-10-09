@@ -79,6 +79,7 @@ spec:
 
   network:
     bridge: vmbr0
+    vlan: 1010            # Homelab VLAN — untagged meant the LEGACY network (#37); bazzite already carries this tag
     # net0 virtio (existing MAC BC:24:11:EB:B5:74 preserved on adopt)
 
   # --- the one intended delta: raw hostpci0 → the AMD_Radeon_RX6600 mapping ---

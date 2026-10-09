@@ -30,6 +30,22 @@ metadata:
   name: pangolin
   stack: Core
   tags: [network, proxy, sso, remote-access, docker]
+  services:
+    - name: Pangolin
+      url: https://pangolin.chrison.dev
+      icon: pangolin
+      description: SSO front door and public ingress for *.lab / *.arr / *.iot
+    - name: Traefik
+      url: https://traefik.lab.chrison.dev
+      icon: traefik
+      description: Pangolin's edge proxy
+    # PowerOrchestrator (#191) is a systemd service on nuc-01 itself — no guest, no shape of its
+    # own. Pangolin is what exposes it (the `power` resource below), so its dashboard entry lives
+    # here rather than being invented as a shape. By the node's UniFi name, never an address.
+    - name: Power Orchestrator
+      url: http://nuc-01.homelab.chrison.internal:8080
+      icon: mdi-power
+      description: Wake / sleep / arm the nodes — runs on nuc-01, not in a guest
 
 spec:
   app: debian            # plain base CT (ct/debian.sh) — Docker-capable via nesting+keyctl below
@@ -101,7 +117,11 @@ spec:
     # *.<zone> hostname Traefik mints a cert for actually resolves to the home edge. Add-only +
     # ManagedComment-stamped (so #195's prune leaves hand-managed records alone). Update if the
     # WAN IP changes. The UniFi :443 port-forward itself is still hand-managed (gated on #102).
-    publicIp: 118.67.199.127
+    # ${HOME_WAN_IP} — resolved from secrets.env at converge time (ShapeVars). The literal
+    # is deliberately NOT committed: this repo is public. Note this hides it from the repo
+    # and from Actions logs (GitHub masks secrets), NOT from the world — the grey-cloud A
+    # records below publish it, so `dig *.lab.chrison.dev` answers with it by design.
+    publicIp: ${HOME_WAN_IP}
 
     # GERBIL ENDPOINT — where Newt connectors are told to send WireGuard. Deliberately the
     # INTERNAL address, not publicIp.
@@ -109,7 +129,7 @@ spec:
     # publicIp is the correct default for a remote site, and it is what the code falls back to
     # (#444, which fixed this pointing at the Cloudflare-proxied dashboard — WireGuard UDP does
     # not survive Cloudflare's proxy). But every site we have is on this LAN, and the gateway
-    # does NOT hairpin: from CT 3005, `curl https://118.67.199.127` fails outright while
+    # does NOT hairpin: from CT 3005, `curl https://<home WAN IP>` fails outright while
     # `https://10.10.0.13` answers. So a LAN connector handed the public IP cannot reach the
     # edge sitting one subnet away — the websocket control plane connects over :443 through
     # Cloudflare, then WireGuard times out and Newt logs "all 5 ping attempts failed".
@@ -140,17 +160,27 @@ spec:
     # ⚠ TOPOLOGY CHANGE, not a flag flip. With gerbil on, GERBIL owns :80/:443 (tcp+udp) and
     #   traefik joins its network namespace (network_mode: service:gerbil) instead of
     #   publishing the ports itself. Applying this RESTARTS the public front door for
-    #   *.lab / *.arr / *.iot — Home Assistant, every arr UI, Pulse. Do it deliberately.
+    #   *.lab / *.arr / *.iot — Home Assistant, every arr UI, Grafana. Do it deliberately.
     #   Needs the 51820/udp + 21820/udp forwards declared in
     #   ../../Infrastructure/unifi/network.yaml to be in place for WireGuard to be reachable.
     includeGerbil: true
 
-    # Image/version pins (the pieces confirmed live during rollout). Defaults live in
-    # PangolinProvisioner; override here if a bump is needed:
-    # image: fosrl/pangolin:ee-1.21.1
-    # gerbilImage: fosrl/gerbil:1.5.0
-    # traefikImage: traefik:v3.6
-    # badgerVersion: v1.2.0
+    # Image/version pins. Defaults live in PangolinProvisioner (the set confirmed live during the
+    # rollout); these OVERRIDE them. Bumped 2026-09-06 to upstream's current pairing — the 1.22.2
+    # installer ships traefik v3.7, and 1.22 needs badger ≥ v1.6.0 and gerbil ≥ 1.5.0 (release
+    # notes). Newt stays 1.16.0 (upstream latest) in ../DevOps/newt.lxc.yaml.
+    image: fosrl/pangolin:ee-1.22.2
+    gerbilImage: fosrl/gerbil:1.5.1
+    traefikImage: traefik:v3.7
+    badgerVersion: v1.7.0
+
+    # Log shipping (#587). All three containers log to journald (so each line carries its
+    # CONTAINER_NAME, not a container ID that changes on every recreate) and a host
+    # otelcol-contrib unit ships them to the monitoring stack's LAN OTLP port, where they land
+    # in Loki as service_name = pangolin / gerbil / traefik. Removing this key reverts both.
+    # ⚠ Turning it on or off RECREATES all three containers — a brief blip on public ingress.
+    # Retention is journald's own cap on this CT, not a per-container rotation.
+    otlpLogsEndpoint: monitoring.homelab.chrison.internal:4317
     #
     # ⚠ pangolin + gerbil + NEWT are ONE decision, not three. Upstream ships no compatibility
     # matrix — its installer just takes the newest tag of each at build time — and a mismatch
@@ -180,7 +210,7 @@ spec:
     # secrets.env; the SAME two keys are consumed by Authentik's blueprint via `!Env`, so both
     # ends of the OIDC relationship are configured from one source and neither is copied out
     # of a UI. The client secret cannot be read back from Pangolin, so it is not drift-checked
-    # — rotate by changing it in Secrets Manager and deleting the IdP so this recreates it.
+    # — rotate by changing it in OpenBao (scripts/openbao-set.sh) and deleting the IdP so this recreates it.
     #
     # ROLE MAPPING is a JMESPath expression Pangolin evaluates against the ID token claims,
     # whose result is normalised to Pangolin role names. `groups` comes from Authentik's stock
@@ -220,20 +250,32 @@ spec:
     # sso defaults ON (the auth gate); set `sso: false` only for native clients that can't do
     # the SSO interstitial (e.g. Plex, audiobookshelf). A new service is just an entry here +
     # a grey-cloud A record (handled by converge) — no per-host cert, no per-host cloudflared ingress.
+    #
+    # `rules:` (optional, per resource) is the THIRD option between sso:true and sso:false —
+    # Pangolin access rules, evaluated before the SSO gate, keyed by (match, value) and
+    # reconciled the same way (create / update in place / undeclared live rules reported, never
+    # deleted). action is Pangolin's own enum: ACCEPT = bypass auth, DROP = block, PASS = fall
+    # through to SSO. A `*` segment matches any depth, so "/api/*" covers /api/v3/series/12.
+    # Use it where a native client speaks the app's API with its own credential (an API key
+    # header) but a human at the same hostname should still meet SSO. Anything ACCEPTed is
+    # reachable from the internet with only the APP's check on that path in front of it, so
+    # only bypass paths the app itself authenticates.
     resources:
       # Pangolin's own Traefik dashboard — first migrated UI (kept from #136).
       - name: Traefik Dashboard
         subdomain: traefik
         zone: lab
         target: { ip: localhost, port: 8080, method: http }
-      # PowerOrchestrator dashboard/control API (#191) — systemd service on nuc-01's legacy
-      # IP; CT 2013 reaches it cross-VLAN via the 10.10.0.1 gateway. sso is REQUIRED here: the
-      # control API (Wake/Sleep/Arm) has no native auth (#238).
+      # PowerOrchestrator dashboard/control API (#191) — a systemd service on nuc-01 itself,
+      # bound to 0.0.0.0:8080. Targeted BY NAME: the node's UniFi record, like Grafana and Home
+      # Assistant below. It sat on the legacy 192.168.179.1 long after the nodes moved to VLAN
+      # 1000 (#37), so power.lab was a dead route — the runbook's Phase-5 sweep item, done here.
+      # sso is REQUIRED: the control API (Wake/Sleep/Arm) has no native auth (#238).
       - name: Power Orchestrator
         subdomain: power
         zone: lab
         sso: true
-        target: { ip: 192.168.179.1, port: 8080, method: http }
+        target: { ip: nuc-01.homelab.chrison.internal, port: 8080, method: http }
       # Home Assistant (SmartHome stack) — replaces the raw :8123 UniFi port-forward with
       # SSO-gated ingress. sso REQUIRED (it controls the whole smart home).
       #
@@ -245,7 +287,7 @@ spec:
       # snapshot, so a later YAML edit is parsed, validated and then ignored. Change it where
       # HA now owns it, not only in the file.
       #
-      # Targeted BY NAME (#339) — resolvable from CT 2013 (verified). Same pattern as Pulse
+      # Targeted BY NAME (#339) — resolvable from CT 2013 (verified). Same pattern as Grafana
       # below.
       # Home Assistant on CT 6005 — the container replacement (#250), and now the ONLY
       # external HA surface. The cutover this block always described is done: the `lab`-zone
@@ -262,13 +304,16 @@ spec:
         zone: iot
         sso: true
         target: { ip: homeassistant.iot.chrison.internal, port: 8123, method: http }
-      # Pulse — fleet monitoring UI (stacks/Monitoring CT 4001). SSO-gated; served at
-      # pulse.lab.chrison.dev (covered by the *.lab wildcard — no new DNS record).
-      - name: Pulse
-        subdomain: pulse
+      # Grafana (stacks/Monitoring CT 4001), so Christian can reach his dashboards from outside.
+      # TWO gates, both authentik: Pangolin's SSO admits only its Admin role (homelab-admins,
+      # see roleMapping above), and Grafana's own generic_oauth then refuses anyone outside
+      # homelab-admins/monitoring-admins (ROLE_ATTRIBUTE_STRICT). One authentik session
+      # satisfies both. Grafana's ROOT_URL and the authentik redirect URI point here.
+      - name: Grafana
+        subdomain: grafana
         zone: lab
         sso: true
-        target: { ip: monitoring.homelab.chrison.internal, port: 7655, method: http }   # Pulse on CT 4001; a NAME, not an address (#303) — verified resolvable from CT 2013
+        target: { ip: monitoring.homelab.chrison.internal, port: 3000, method: http }
       # ── arr admin UIs (Phase 5 cutover). Origins PINNED to the new 5100-block CT IPs on
       #    VLAN 1010 (validated live per-port 2026-07-14). DEPENDS ON DHCP reservations for
       #    these IPs (#13) — until reserved, a new lease silently breaks the target (same
@@ -284,14 +329,40 @@ spec:
       #    ⚠ Anything listed sso:false is reachable from the public internet with only the
       #      APP's login in front of it. Only do this where the app genuinely has one.
       - { name: Prowlarr,       subdomain: prowlarr,       zone: arr, target: { ip: 10.10.201.184, port: 9696,  method: http } }
-      - { name: Sonarr,         subdomain: sonarr,         zone: arr, target: { ip: 10.10.250.29,  port: 8989,  method: http } }
-      - { name: Radarr,         subdomain: radarr,         zone: arr, target: { ip: 10.10.48.217,  port: 7878,  method: http } }
+      # Sonarr + Radarr keep SSO on the UI but BYPASS it on the API paths, so a native client
+      # (Ruddarr on iOS) can talk to them with its X-Api-Key header — an API client cannot
+      # complete the SSO interstitial, and the arr apps only accept the key in a header or query
+      # string, not a cookie. Safe because both enforce the API key on /api/* REGARDLESS of
+      # their UI auth setting (verified live: 401 without a key, 200 with, while
+      # authenticationRequired is still disabledForLocalAddresses — see #246). /ping is the
+      # unauthenticated health probe Ruddarr uses to detect the instance; it returns nothing
+      # but {"status":"OK"}. Ruddarr loads posters from TMDB (`images[].remoteUrl`), not from
+      # /MediaCover, so nothing else needs opening. Point Ruddarr at the normal hostname
+      # (https://sonarr.arr.chrison.dev) — a separate api.<app>.arr name was ruled out because a
+      # wildcard cert covers one label only, so *.arr does not cover api.sonarr.arr.
+      - name: Sonarr
+        subdomain: sonarr
+        zone: arr
+        target: { ip: 10.10.250.29, port: 8989, method: http }
+        rules:
+          - { action: ACCEPT, match: PATH, value: "/api/*" }   # API-key-authenticated by Sonarr itself
+          - { action: ACCEPT, match: PATH, value: "/ping" }    # health probe, no data
+      - name: Radarr
+        subdomain: radarr
+        zone: arr
+        target: { ip: 10.10.48.217, port: 7878, method: http }
+        rules:
+          - { action: ACCEPT, match: PATH, value: "/api/*" }
+          - { action: ACCEPT, match: PATH, value: "/ping" }
       - { name: Bazarr,         subdomain: bazarr,         zone: arr, target: { ip: 10.10.102.133, port: 6767,  method: http } }
       - { name: qBittorrent,    subdomain: qbittorrent,    zone: arr, target: { ip: 10.10.110.115, port: 8090,  method: http } }
       - { name: Seerr,          subdomain: seerr,          zone: arr, sso: false, target: { ip: 10.10.15.6,    port: 5055,  method: http } }
       - { name: Tracearr,       subdomain: tracearr,       zone: arr, target: { ip: 10.10.202.145, port: 3000,  method: http } }
       - { name: RomM,           subdomain: romm,           zone: arr, target: { ip: 10.10.202.240, port: 80,    method: http } }
-      - { name: Youtarr,        subdomain: youtarr,        zone: arr, target: { ip: 10.10.73.250,  port: 3087,  method: http } }
+      # Youtarr moved to the Media podman host (CT 5114) in #302; the old CT 5113 is retired and
+      # its address no longer answers. Found by the dashboard's exposed-but-undeclared check
+      # (ADR-0012). Targeted by NAME like Grafana/Home Assistant — resolvable from CT 2013.
+      - { name: Youtarr,        subdomain: youtarr,        zone: arr, target: { ip: media.homelab.chrison.internal, port: 3087, method: http } }
       - { name: Audiobookshelf, subdomain: audiobookshelf, zone: arr, sso: false, target: { ip: 10.10.182.200, port: 13378, method: http } }
       - { name: Shelfmark,      subdomain: shelfmark,      zone: arr, target: { ip: 10.10.142.183, port: 8084,  method: http } }
 
@@ -326,6 +397,45 @@ spec:
       #      SSH resource here only stops it being re-created. It must be deleted ONCE by hand in
       #      Pangolin, or two front doors to the same shell stay open. Same footgun as the
       #      lab-zone Home Assistant twin above.
+      # OTel collector's OTLP/HTTP receiver (:4318) — Claude Code telemetry from the Mac
+      # and the work laptop (#517 follow-up).
+      #
+      # sso: false is REQUIRED and is not a shortcut: Claude Code sends a static
+      # `Authorization: Bearer` header and cannot complete the SSO interstitial, so an
+      # SSO-gated resource would simply reject every export.
+      #
+      # What makes that acceptable here — unlike the sso:false media apps, which fall back
+      # to their own login page — is that the receiver itself authenticates. The collector
+      # runs bearertokenauthextension on :4318 (see Monitoring/.../otel-collector.yml), so
+      # an unauthenticated POST is rejected at the collector, not merely unhelpful.
+      # If that extension is ever removed, THIS RESOURCE MUST GO WITH IT: without it this
+      # hostname is an open write path into Prometheus, Tempo and Loki.
+      #
+      # A NAME, not an address (#303) — same as Grafana above, resolvable from CT 2013.
+      - name: OTel Collector (Claude Code telemetry)
+        subdomain: otel
+        zone: lab
+        sso: false
+        target: { ip: monitoring.homelab.chrison.internal, port: 4318, method: http }
+      # ntfy — the notification bus (#466). Published so the iOS app can reach it from off
+      # the LAN; the phone polls US for message bodies after ntfy.sh wakes it, so this
+      # hostname has to be reachable or notifications arrive as empty "New message".
+      #
+      # sso: false, and for the same reason as the OTel collector above rather than the
+      # media apps': the ntfy iOS app authenticates with an `Authorization: Bearer tk_...`
+      # header and cannot complete an SSO interstitial, so an SSO-gated resource would
+      # reject every subscribe.
+      #
+      # What makes that acceptable is that ntfy authenticates itself: server.yml sets
+      # auth-default-access: deny-all with per-topic ACLs, verified live — anonymous
+      # publish AND read both return 403, and a bad token 401. If that ever becomes
+      # read-write, THIS RESOURCE MUST GO WITH IT: every topic would be world-readable to
+      # anyone who guessed a name.
+      - name: ntfy
+        subdomain: ntfy
+        zone: lab
+        sso: false
+        target: { ip: monitoring.homelab.chrison.internal, port: 8095, method: http }
       - name: Shell host
         subdomain: shell
         zone: lab

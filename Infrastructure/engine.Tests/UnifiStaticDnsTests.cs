@@ -40,11 +40,11 @@ public sealed class UnifiStaticDnsTests
         // A name can only answer one way, so "already exists" is not the question —
         // "does it answer what the shape says" is. This is the case create-if-missing
         // would call healthy while the LAN resolved to the wrong host.
-        var item = UnifiStaticDns.Plan(Spec(value: "10.10.0.13"), [Live(value: "118.67.199.127")]);
+        var item = UnifiStaticDns.Plan(Spec(value: "10.10.0.13"), [Live(value: "203.0.113.7")]);
 
         Assert.Equal(StaticDnsAction.Update, item.Action);
         Assert.Equal("live-1", item.LiveId);
-        Assert.Contains("value: 118.67.199.127 → 10.10.0.13", item.Changes);
+        Assert.Contains("value: 203.0.113.7 → 10.10.0.13", item.Changes);
     }
 
     [Fact]

@@ -6,7 +6,6 @@
 #
 # Producers:
 #   • Prometheus  — rule_files in prometheus.yml, sent over the shared network
-#   • Pulse       — templated webhook → /api/v2/alerts (its own alert engine, see the ADR)
 #
 # UserNS=keep-id:uid=65534 — alertmanager runs as nobody(65534), which is OUTSIDE the
 # 65536-uid window this LXC maps, so crun refuses to start it without this:
@@ -30,9 +29,10 @@ UserNS=keep-id:uid=65534,gid=65534
 Volume=/home/podman/monitoring/config/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
 Volume=/home/podman/monitoring/data/alertmanager:/alertmanager
 
-# The HA webhook URL is a capability, so it is mounted as a file and referenced by
-# `url_file:` in alertmanager.yml — it never appears in a config file under git.
-Secret=ha_alert_webhook_url,type=mount,target=/run/secrets/ha_alert_webhook_url
+# ntfy publish token (#466). Referenced by `credentials_file:` in each receiver's
+# http_config -- Alertmanager cannot set custom headers on a webhook, so bearer auth is
+# the only way to authenticate to ntfy from here. Write-only on the four stack topics.
+Secret=ntfy_alertmanager_token,type=mount,target=/run/secrets/ntfy_alertmanager_token
 
 Exec=--config.file=/etc/alertmanager/alertmanager.yml --storage.path=/alertmanager --web.external-url=http://monitoring.homelab.chrison.internal:9093
 AutoUpdate=registry

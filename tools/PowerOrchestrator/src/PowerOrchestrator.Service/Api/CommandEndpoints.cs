@@ -32,9 +32,9 @@ public static class CommandEndpoints
         });
 
         // Arm automatic sleep — gated on the #191 preconditions. Returns 409 while any are unmet.
-        app.MapPost("/policy/arm", (OrchestratorOptions opts) =>
+        app.MapPost("/policy/arm", (OrchestratorOptions opts, OrchestratorState state) =>
         {
-            if (!ArmGuard.CanArm(out var unmet))
+            if (!ArmGuard.CanArm(state.Current.ArmPreconditions, out var unmet))
                 return Results.Conflict(new
                 {
                     error = "cannot arm automatic sleep — unmet preconditions",

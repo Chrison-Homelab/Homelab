@@ -104,6 +104,27 @@ public static class ArrExec
         return true;
     }
 
+    // Let the app update ITSELF (#436). Every Servarr app ships a built-in updater; with
+    // updateAutomatically it installs new releases on its own schedule instead of waiting for a
+    // person to run community-scripts `update` — which, as the Sept 2026 audit found, nobody
+    // did for three weeks. Idempotent: PUTs only when either field differs. Preserves everything
+    // else on config/host exactly as EnsureArrAuthAsync does.
+    public static async Task<bool> EnsureArrAutoUpdateAsync(ArrClient c, string apiVer, CancellationToken ct)
+    {
+        var host = await c.GetAsync($"api/{apiVer}/config/host", ct);
+        var mech = host.TryGetProperty("updateMechanism", out var m) ? m.GetString() : null;
+        var auto = host.TryGetProperty("updateAutomatically", out var a) && a.ValueKind == JsonValueKind.True;
+        if (string.Equals(mech, "builtIn", StringComparison.OrdinalIgnoreCase) && auto) return false;
+
+        var node = JsonNode.Parse(host.GetRawText())!.AsObject();
+        node["updateMechanism"] = "builtIn";
+        node["updateAutomatically"] = true;
+        var id = host.GetProperty("id").GetInt32();
+        var (ok, body) = await c.PutAsync($"api/{apiVer}/config/host/{id}", node.ToJsonString(), ct);
+        if (!ok) throw new InvalidOperationException($"set {apiVer} auto-update failed: {body}");
+        return true;
+    }
+
     // How one Servarr app's download-client resource differs from another's (#363).
     //
     // QBittorrentSettings is shared Servarr code, so it is tempting to POST one body to
@@ -368,6 +389,9 @@ public abstract class ArrAppProvisionerBase : IAppProvisioner
             && await ArrExec.EnsureArrAuthAsync(self, "v3", ctx.Secrets.Get("ARR_USER") ?? "csimon", arrPass, ct))
             changed++;
 
+        // 0b. Built-in updater, automatic (#436). The app keeps itself current.
+        if (await ArrExec.EnsureArrAutoUpdateAsync(self, "v3", ct)) changed++;
+
         // 1. Root folder (keyed by path).
         var roots = await self.GetAsync("api/v3/rootfolder", ct);
         var hasRoot = roots.ValueKind == JsonValueKind.Array && roots.EnumerateArray().Any(r =>
@@ -487,6 +511,9 @@ public sealed class ProwlarrProvisioner : IAppProvisioner
             && await ArrExec.EnsureArrAuthAsync(self, "v1", ctx.Secrets.Get("ARR_USER") ?? "csimon", pwPass, ct))
             changed++;
 
+        // Built-in updater, automatic (#436).
+        if (await ArrExec.EnsureArrAutoUpdateAsync(self, "v1", ct)) changed++;
+
         // 1. Indexer carry-over from the OLD prowlarr (same node, configured CTID).
         if (s.Spec.Config.TryGetValue("migrateIndexersFrom", out var oldRaw) && oldRaw is not null)
         {
@@ -576,6 +603,7 @@ public sealed class BazarrProvisioner : IAppProvisioner
     {
         yield return "connect bazarr → sonarr + radarr (use flags + ip/apikey)";
         yield return "ensure Forms auth (ARR_USER / BAZARR_PASSWORD)";
+        yield return "turn on the built-in updater (updateMechanism builtIn, updateAutomatically) — the app keeps itself current (#436)";
     }
 
     public async Task<ApplyResult> ApplyAsync(Shape s, ConvergeContext ctx)

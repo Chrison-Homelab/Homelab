@@ -11,7 +11,7 @@
 #   Local execution: pwsh ./setup-nfs-shares.ps1 -NasIP "192.168.1.100" -NasName "MyNAS"
 #
 # Parameters:
-#   -NasIP: IP address of the NAS (default: 192.168.179.11)
+#   -NasIP: address of the NAS — the UniFi name by default (default: nas.homelab.chrison.internal)
 #   -NasName: Name for the mount base directory (default: DS1813-01)
 #
 # Requirements: PowerShell Core, showmount, nfs-common package
@@ -20,7 +20,7 @@
 # Requires PowerShell Core to be installed on the Proxmox node
 
 param(
-    [string]$NasIP = "192.168.179.11",
+    [string]$NasIP = "nas.homelab.chrison.internal",   # by UniFi name; the NAS moved to VLAN 1000 (#37)
     [string]$NasName = "DS1813-01"
 )
 

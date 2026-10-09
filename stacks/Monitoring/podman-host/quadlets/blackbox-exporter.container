@@ -1,0 +1,25 @@
+# blackbox_exporter -- probes declared services from outside their containers (#591).
+#
+# NOT PUBLISHED: Prometheus reaches it by container name. It will fetch any URL it is
+# handed, so it must not be reachable from the LAN.
+#
+# Pinned per docs/runbooks/image-upgrade.md. Stateless, but its config schema is not.
+
+[Unit]
+Description=blackbox_exporter (service probes)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/prom/blackbox-exporter:v0.28.0
+ContainerName=blackbox-exporter
+Network=monitoring.network
+Volume=/home/podman/monitoring/config/blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+Exec=--config.file=/etc/blackbox_exporter/config.yml
+
+[Service]
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

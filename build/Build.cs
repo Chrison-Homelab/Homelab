@@ -164,6 +164,17 @@ class Build : FalloutBuild
             Engine($"converge {dir} --apply{OnlyArg}");
         });
 
+    // ── Dashboard (ADR-0012) — Homepage services.yaml rendered from every stack's shapes ──
+    Target PreviewDashboard => _ => _
+        .Description("Render the Homepage services.yaml from every stack's metadata.services to stdout, then check it (no mutation).")
+        .DependsOn(CompileEngine)
+        .Executes(() => Engine($"dashboard {StacksDirectory} --check"));
+
+    Target Dashboard => _ => _
+        .Description("Render the dashboard and push it to the host declaring config.dashboard (restarts only the dashboard unit, only on change), then check.")
+        .DependsOn(CompileEngine)
+        .Executes(() => Engine($"dashboard {StacksDirectory} --deploy --check"));
+
     // ── PowerOrchestrator (#191) — build/test/publish/deploy the node service ──────
 
     Target CompilePowerOrchestrator => _ => _

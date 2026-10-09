@@ -1,0 +1,10 @@
+[Unit]
+Description=Work the COLD list: Plex check, Sonarr delete, move to volume3
+Documentation=https://github.com/Chrison-Homelab/Homelab.Stacks.Media/blob/main/docs/seedonly-rules.md
+
+[Service]
+Type=oneshot
+# Was a transient systemd-run unit (lost on reboot) sourcing /root/seedonly/.env. Secrets now come
+# from OpenBao via this host's AppRole (#609, step 5); the two plain settings live here.
+Environment=QBIT_USER=admin SEEDONLY_NODE=root@localhost SEEDONLY_BATCH_GB=75
+ExecStart=/usr/local/bin/openbao-exec QBIT_PASSWORD,SONARR_API_KEY,PLEX_TOKEN -- /bin/bash -c '/root/seedonly/seedonly --apply > /root/seedonly/apply.log 2>&1'

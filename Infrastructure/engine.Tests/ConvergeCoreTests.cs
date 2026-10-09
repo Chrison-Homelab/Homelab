@@ -675,9 +675,9 @@ public sealed class ConvergeCoreTests
         // handed that endpoint sends handshakes into a black hole. In public-wildcard mode the
         // endpoint must be the home WAN IP the 51820/udp forward lives behind.
         var s = PangolinWildcardShape();
-        s.Spec.Config["publicIp"] = "118.67.199.127";
+        s.Spec.Config["publicIp"] = "203.0.113.7";
 
-        Assert.Equal("118.67.199.127", PangolinProvisioner.GerbilBaseEndpoint(s, "pangolin.chrison.dev"));
+        Assert.Equal("203.0.113.7", PangolinProvisioner.GerbilBaseEndpoint(s, "pangolin.chrison.dev"));
     }
 
     [Fact]
@@ -687,9 +687,9 @@ public sealed class ConvergeCoreTests
         // lives, and whose inputs appear in no other marker component. So the first attempt at
         // the endpoint fix rendered a new config.yml and still reported NOCHANGE.
         var before = PangolinWildcardShape();
-        before.Spec.Config["publicIp"] = "118.67.199.127";
+        before.Spec.Config["publicIp"] = "203.0.113.7";
         var after = PangolinWildcardShape();
-        after.Spec.Config["publicIp"] = "118.67.199.127";
+        after.Spec.Config["publicIp"] = "203.0.113.7";
         after.Spec.Config["gerbilEndpoint"] = "edge.example.net";
 
         Assert.NotEqual(PangolinProvisioner.DesiredMarker(before), PangolinProvisioner.DesiredMarker(after));
@@ -700,7 +700,7 @@ public sealed class ConvergeCoreTests
     {
         // When Gerbil moves off-site, connectors dial the VPS — this is the knob that turns.
         var s = PangolinWildcardShape();
-        s.Spec.Config["publicIp"] = "118.67.199.127";
+        s.Spec.Config["publicIp"] = "203.0.113.7";
         s.Spec.Config["gerbilEndpoint"] = "edge.example.net";
 
         Assert.Equal("edge.example.net", PangolinProvisioner.GerbilBaseEndpoint(s, "pangolin.chrison.dev"));
@@ -752,7 +752,11 @@ public sealed class ConvergeCoreTests
         // This test is the guard against quietly regressing to the SSH resource and re-introducing
         // that password: no resource in the shape may carry mode: ssh.
         var stackDir = Path.GetDirectoryName(FindRepoFile(Path.Combine("stacks", "Core", "pangolin.lxc.yaml")))!;
-        var shape = ShapeLoader.LoadStack(stackDir).Members.Single(m => m.Metadata.Name == "pangolin");
+        // Core's shapes carry `${HOME_WAN_IP}` (ShapeVars), and an unresolved variable is a
+        // hard load failure by design — so give the loader the values rather than depending
+        // on whoever runs the suite having a secrets.env.
+        var shape = ShapeLoader.LoadStack(stackDir, StubHomeEdgeVars())
+            .Members.Single(m => m.Metadata.Name == "pangolin");
         var resources = (System.Collections.IEnumerable)shape.Spec.Config["resources"]!;
 
         System.Collections.IDictionary? shell = null;
@@ -888,11 +892,11 @@ public sealed class ConvergeCoreTests
     public void Pangolin_WildcardARecords_OnePerZone_ToPublicIp_WhenPublicWildcard()
     {
         var s = PangolinWildcardShape();
-        s.Spec.Config["publicIp"] = "118.67.199.127";
+        s.Spec.Config["publicIp"] = "203.0.113.7";
         var recs = PangolinProvisioner.WildcardARecords(s);
         Assert.Equal(2, recs.Count);
-        Assert.Contains(("*.arr.chrison.dev", "118.67.199.127"), recs);
-        Assert.Contains(("*.lab.chrison.dev", "118.67.199.127"), recs);
+        Assert.Contains(("*.arr.chrison.dev", "203.0.113.7"), recs);
+        Assert.Contains(("*.lab.chrison.dev", "203.0.113.7"), recs);
     }
 
     [Fact]
@@ -903,7 +907,7 @@ public sealed class ConvergeCoreTests
 
         // cloudflared edge has no public :443, so no grey-cloud A records even with publicIp set.
         var cf = PangolinShape();
-        cf.Spec.Config["publicIp"] = "118.67.199.127";
+        cf.Spec.Config["publicIp"] = "203.0.113.7";
         Assert.Empty(PangolinProvisioner.WildcardARecords(cf));
     }
 
@@ -951,6 +955,125 @@ public sealed class ConvergeCoreTests
     }
 
     [Fact]
+    public void Pangolin_LogShipping_Off_LeavesComposeAndDeployUntouched()
+    {
+        var s = PangolinWildcardShape();
+        s.Spec.Config["includeGerbil"] = true;
+        Assert.DoesNotContain("journald", PangolinProvisioner.BuildComposeYaml(s));
+        Assert.DoesNotContain("otelcol",
+            PangolinProvisioner.BuildDockerDeploy(s, "m", "pangolin.chrison.dev", "https://pangolin.chrison.dev", "chrison.dev", "tok"));
+    }
+
+    [Fact]
+    public void Pangolin_LogShipping_On_PutsEveryServiceOnJournald()
+    {
+        var s = PangolinWildcardShape();
+        s.Spec.Config["includeGerbil"] = true;
+        s.Spec.Config["otlpLogsEndpoint"] = "monitoring.homelab.chrison.internal:4317";
+        var compose = PangolinProvisioner.BuildComposeYaml(s);
+
+        // One logging block per service — a service left on json-file would ship nothing.
+        Assert.Equal(3, System.Text.RegularExpressions.Regex.Matches(compose, "driver: journald").Count);
+    }
+
+    [Fact]
+    public void Pangolin_LogShipping_InstallsAgent_BeforeTheRecreate_AndFailsIfItDies()
+    {
+        var s = PangolinWildcardShape();
+        s.Spec.Config["otlpLogsEndpoint"] = "monitoring.homelab.chrison.internal:4317";
+        var script = PangolinProvisioner.BuildDockerDeploy(s, "m", "pangolin.chrison.dev",
+            "https://pangolin.chrison.dev", "chrison.dev", "tok");
+
+        // Agent first, so it is already following the journal when the containers come back.
+        Assert.True(script.IndexOf("systemctl restart otelcol-contrib", StringComparison.Ordinal)
+                    < script.IndexOf("docker compose up -d", StringComparison.Ordinal));
+        // Config must be on disk before dpkg: the postinst restarts the unit against it.
+        Assert.True(script.IndexOf("/etc/otelcol-contrib/config.yaml", StringComparison.Ordinal)
+                    < script.IndexOf("dpkg --force-confold -i", StringComparison.Ordinal));
+        Assert.Contains($"{PangolinProvisioner.DefaultOtelcolSha256}  /tmp/", script);
+        Assert.Contains("sha256sum -c -", script);
+        Assert.Contains("systemctl is-active --quiet otelcol-contrib", script);
+    }
+
+    [Fact]
+    public void Pangolin_JournaldCap_DefaultsTo500M_AndIsOverridable()
+    {
+        var s = PangolinWildcardShape();
+        s.Spec.Config["otlpLogsEndpoint"] = "monitoring.homelab.chrison.internal:4317";
+        var script = PangolinProvisioner.BuildJournaldCap(s);
+        var decoded = System.Text.RegularExpressions.Regex.Matches(script, "echo ([A-Za-z0-9+/=]{20,}) \\| base64 -d")
+            .Select(m => System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(m.Groups[1].Value)))
+            .Single();
+        Assert.Contains("[Journal]\nSystemMaxUse=500M", decoded);
+        // Restart journald only when the drop-in changed, never unconditionally.
+        Assert.Contains("journald-cap: ok", script);
+        Assert.True(script.IndexOf("exit 0", StringComparison.Ordinal) < script.IndexOf("systemctl restart systemd-journald", StringComparison.Ordinal));
+
+        s.Spec.Config["journaldMaxUse"] = "1G";
+        Assert.Equal("1G", PangolinProvisioner.JournaldMaxUse(s));
+    }
+
+    [Fact]
+    public void Pangolin_JournaldCap_DoesNotMoveTheDeployMarker()
+    {
+        // The marker gates a deploy that ends in `docker compose restart` (public ingress and
+        // every Newt tunnel bounce). A journal size limit must never trigger that.
+        var s = PangolinWildcardShape();
+        s.Spec.Config["otlpLogsEndpoint"] = "monitoring.homelab.chrison.internal:4317";
+        var before = PangolinProvisioner.DesiredMarker(s);
+        s.Spec.Config["journaldMaxUse"] = "1G";
+        Assert.Equal(before, PangolinProvisioner.DesiredMarker(s));
+    }
+
+    [Fact]
+    public void Pangolin_OtelcolConfig_ReadsTheBody_AndGroupsByContainer()
+    {
+        var s = PangolinWildcardShape();
+        s.Spec.Config["otlpLogsEndpoint"] = "monitoring.homelab.chrison.internal:4317";
+        var cfg = PangolinProvisioner.BuildOtelcolConfig(s);
+
+        // The journald receiver puts every field in the BODY; attributes are empty, so a
+        // filter on attributes["CONTAINER_NAME"] drops every record (seen on CT 2013).
+        Assert.Contains("body[\"CONTAINER_NAME\"] == nil", cfg);
+        Assert.DoesNotContain("attributes[\"CONTAINER_NAME\"]", cfg);
+        // service.name set on the shared resource would mislabel a mixed batch; it must go
+        // through a log attribute + groupbyattrs.
+        Assert.DoesNotContain("resource.attributes", cfg);
+        Assert.Contains("groupbyattrs:", cfg);
+        Assert.Contains("set(body, body[\"MESSAGE\"])", cfg);
+        Assert.Contains("endpoint: monitoring.homelab.chrison.internal:4317", cfg);
+        Assert.Contains("storage: file_storage", cfg);
+    }
+
+    [Fact]
+    public void Pangolin_LogShipping_MovesTheMarker()
+    {
+        var before = PangolinWildcardShape();
+        var after = PangolinWildcardShape();
+        after.Spec.Config["otlpLogsEndpoint"] = "monitoring.homelab.chrison.internal:4317";
+        Assert.NotEqual(PangolinProvisioner.DesiredMarker(before), PangolinProvisioner.DesiredMarker(after));
+    }
+
+    [Fact]
+    public void Pangolin_TraefikStatic_LogsErrorsOnly_AndNeverLogsHeaders()
+    {
+        var s = PangolinShape();
+        var st = PangolinProvisioner.BuildTraefikStatic(s, "chrison.dev");
+
+        // Without an access log a client failing auth is invisible from the homelab side:
+        // on 2026-09-12 a known 401 against otel.lab.chrison.dev produced zero Traefik log
+        // lines, so "nothing logged for that client" carried no information at all.
+        Assert.Contains("accessLog:", st);
+        Assert.Contains("\"400-599\"", st);
+
+        // Headers must never be logged. /v1/metrics carries the OTLP bearer token in the
+        // Authorization header; capturing it would leak a live credential into docker logs.
+        Assert.Contains("headers:", st);
+        Assert.Contains("defaultMode: \"drop\"", st);
+        Assert.DoesNotContain("defaultMode: \"keep\"", st);
+    }
+
+[Fact]
     public void Pangolin_TraefikStatic_UsesDnsChallengeWildcards_NotHttpChallenge()
     {
         var s = PangolinWildcardShape();
@@ -1072,8 +1195,8 @@ public sealed class ConvergeCoreTests
     {
         // The actual bug: live carried only the IPv4 home address while the shape had
         // grown the IPv6 prefix, so every dual-stack browser hit the OTP gate.
-        var live = new[] { "118.67.199.127/32" };
-        var desired = new[] { "118.67.199.127/32", "2407:8b00:116d:e500::/56" };
+        var live = new[] { "203.0.113.7/32" };
+        var desired = new[] { "203.0.113.7/32", "2001:db8:116d:e500::/56" };
         Assert.True(CloudflaredProvisioner.BypassDrifted(live, desired));
     }
 
@@ -1082,8 +1205,8 @@ public sealed class ConvergeCoreTests
     {
         // Cloudflare echoes back its own normalisation, and order is not meaningful.
         // Treating either as drift would rewrite the policy on every single converge.
-        var live = new[] { "2407:8B00:116D:E500:0:0:0:0/56", "118.67.199.127/32" };
-        var desired = new[] { "118.67.199.127/32", "2407:8b00:116d:e500::/56" };
+        var live = new[] { "2001:DB8:116D:E500:0:0:0:0/56", "203.0.113.7/32" };
+        var desired = new[] { "203.0.113.7/32", "2001:db8:116d:e500::/56" };
         Assert.False(CloudflaredProvisioner.BypassDrifted(live, desired));
     }
 
@@ -1092,16 +1215,16 @@ public sealed class ConvergeCoreTests
     {
         // /48 is Quic's pool, not the house — widening to it must never look like a no-op.
         Assert.True(CloudflaredProvisioner.BypassDrifted(
-            new[] { "2407:8b00:116d:e500::/56" }, new[] { "2407:8b00:116d::/48" }));
+            new[] { "2001:db8:116d:e500::/56" }, new[] { "2001:db8:116d::/48" }));
     }
 
     [Fact]
     public void BypassDrifted_DetectsARemovedEntryAndAnEmptyLivePolicy()
     {
         Assert.True(CloudflaredProvisioner.BypassDrifted(
-            new[] { "118.67.199.127/32", "203.0.113.5/32" }, new[] { "118.67.199.127/32" }));
+            new[] { "203.0.113.7/32", "203.0.113.5/32" }, new[] { "203.0.113.7/32" }));
         Assert.True(CloudflaredProvisioner.BypassDrifted(
-            Array.Empty<string>(), new[] { "118.67.199.127/32" }));
+            Array.Empty<string>(), new[] { "203.0.113.7/32" }));
     }
 
     [Fact]
@@ -1110,7 +1233,7 @@ public sealed class ConvergeCoreTests
         // A garbage entry must count as a difference, not normalise away to nothing and
         // silently compare equal — that would leave a broken policy in place forever.
         Assert.True(CloudflaredProvisioner.BypassDrifted(
-            new[] { "not-an-ip" }, new[] { "118.67.199.127/32" }));
+            new[] { "not-an-ip" }, new[] { "203.0.113.7/32" }));
         Assert.False(CloudflaredProvisioner.BypassDrifted(
             new[] { "not-an-ip" }, new[] { "not-an-ip" }));
     }
@@ -1139,6 +1262,16 @@ public sealed class ConvergeCoreTests
 
     // Walk up from the test assembly to a repo-relative file, the same way AppCatalogueTests
     // locates the catalogue — the test binary does not sit at the repo root.
+    // A SecretsEnv carrying the home-edge variables, from a throwaway file — the same
+    // code path production uses, with documentation-range values.
+    private static SecretsEnv StubHomeEdgeVars()
+    {
+        var tmp = Path.Combine(Path.GetTempPath(), $"secrets-{Guid.NewGuid():N}.env");
+        File.WriteAllText(tmp, "HOME_WAN_IP=203.0.113.7\nHOME_WAN_IPV6_PREFIX=2001:db8:116d:e500::\n");
+        try { return SecretsEnv.Load(tmp); }
+        finally { File.Delete(tmp); }
+    }
+
     private static string FindRepoFile(string relative)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
@@ -1354,8 +1487,24 @@ public sealed class ConvergeCoreTests
 
         var rendered = PodmanProvisioner.RenderVerify(run, PodmanProvisioner.EpochSince);
 
-        Assert.Contains("last_applied < '1970-01-01 00:00:00'", rendered, StringComparison.Ordinal);
+        Assert.Contains("last_applied < '1970-01-01 00:00:00+00'", rendered, StringComparison.Ordinal);
         Assert.Contains("status <> 'successful'", rendered, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Verify_SinceCarriesAnExplicitUtcOffset()
+    {
+        // The stamp is taken with `date -u`, but UTC that does not SAY it is UTC is resolved
+        // by the consumer in the consumer's timezone. Postgres parses an offset-less literal
+        // against the session TimeZone, and the authentik container runs TZ=Pacific/Auckland,
+        // so the stamp lands ~12 hours early and `last_applied < since` is false for anything
+        // applied today. The clause stops firing and the check quietly weakens to "is it
+        // successful right now" — which is how a converge passed verify over a blueprint it
+        // had shipped but authentik had not yet applied (#539).
+        //
+        // Asserted on the constant because the live stamp is produced by a shell call: if the
+        // two ever diverge in shape, this is the cheaper place to notice.
+        Assert.EndsWith("+00", PodmanProvisioner.EpochSince, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -1,0 +1,53 @@
+# pbs (CT 2004) — Proxmox Backup Server 4, on nuc-01. See stacks/Backup/README.md.
+#
+# This shape's job right now is to DECLARE the guest and, above all, pin its address:
+# `network.reservation` writes a DHCP reservation + local DNS record on converge --apply,
+# so the cluster's `pbs-homelab` storage (and any client) reaches PBS by name and a lease
+# change can never silently break every backup. The resource fields mirror the live CT so a
+# reconcile is a no-op — this is an ADOPTED, hand-built guest, not one converge should rebuild.
+#
+# ⚠ PBS-on-NFS DATASTORE. The datastore is an ext4 disk IMAGE on NAS volume-2 (mp0, below),
+#   NOT a bind mount. volume-2 all-squashes every uid to 1024:100; an unprivileged bind mount
+#   would leave PBS's chunk store owned by an out-of-range uid it sees as `nobody`, breaking
+#   garbage collection. An image gives PBS a normal local ext4 it fully owns; the squash only
+#   touches the single .raw file. The mount is declared for the record only — it's an allocated
+#   volume (storage + size, no source), which the mount reconciler does not render or touch.
+
+apiVersion: homelab/v1
+kind: LXC
+
+metadata:
+  name: pbs
+  stack: Backup
+  tags: [backup, infra, pbs, proxmox-backup-server]
+  services:            # dashboard tile (superproject ADR-0012)
+    - name: Proxmox Backup Server
+      url: https://pbs.homelab.chrison.internal:8007
+      icon: proxmox
+      description: Deduplicated, verified backups of the guest fleet (#513)
+
+spec:
+  app: proxmox-backup-server   # installed by hand (PBS 4 trixie no-subscription repo); adopted
+  ctid: 2004
+  cores: 2
+  memory: 4096          # MB
+  swap: 512             # MB
+  disk: 12              # GB — rootfs on local-lvm
+
+  features:
+    nesting: true       # Debian 13 / systemd 257 needs it to boot cleanly in an unprivileged CT
+
+  network:
+    reservation:
+      fixedIp: 10.10.137.27
+      localDnsRecord: pbs.homelab.chrison.internal
+      name: pbs (CT 2004)
+
+  mounts:
+    # The PBS datastore: a 300 GB ext4 image on NAS volume-2 (allocated volume → not a bind
+    # mount, and not rendered/reconciled by the engine). Documentation of live mp0.
+    - type: nfs
+      storage: ds1813-nfs-volume-2
+      size: 300G
+      target: /mnt/datastore
+      backup: false

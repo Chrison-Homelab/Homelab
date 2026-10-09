@@ -22,7 +22,7 @@ Replaces the Docker host **CT 4000**. ADR-0009 Phase 2b ([#303](https://github.c
 | `otel-collector.container` | `otel-collector` | scraped at `otel-collector:8889`; also the OTLP ingress |
 | `tempo.container` | `tempo` | `datasources.yml` → `http://tempo:3200` (uid 10001) |
 | `loki.container` | `loki` | `datasources.yml` → `http://loki:3100` (uid 10001) |
-| `pulse.container` | `pulse` | — (uid 1000) |
+| `homepage.container` | `homepage` | widgets reach `grafana:3000`, `prometheus:9090` by name; its `services.yaml` is rendered, see ADR-0012 |
 | `exportarr-{radarr,sonarr,prowlarr}` | same | scraped at `exportarr-<app>:{9708,9709,9710}` |
 | `unpoller.container` | `unpoller` | scraped at `unpoller:9130` (stateless — no data dir, no `UserNS`) |
 | `alertmanager.container` | `alertmanager` | the alert bus (ADR-0011); Prometheus sends to `alertmanager:9093` (uid 65534) |
@@ -49,7 +49,6 @@ that script's `sample.*.yml` → `*.yml` copy step.
 | Dir | uid | Size | Treatment |
 |---|---|---|---|
 | `data/tempo` | 10001 | **3.2 G** | `keep-id:uid=10001` + one-time chown |
-| `data/pulse` | 1000 | 616 M | `keep-id:uid=1000` — **already** the `podman` uid, no chown needed |
 | `data/grafana` | 472 | 50 M | `keep-id:uid=472` + one-time chown |
 | `data/loki` | 10001 | 68 K | `keep-id:uid=10001` + one-time chown |
 

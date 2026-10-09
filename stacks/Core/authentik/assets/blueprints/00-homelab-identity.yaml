@@ -99,7 +99,7 @@ entries:
       is_superuser: false
       attributes:
         homelab.chrison.dev/stack: monitoring
-        homelab.chrison.dev/purpose: Pulse, Grafana, Prometheus
+        homelab.chrison.dev/purpose: Grafana, Prometheus, Beszel
 
   - model: authentik_core.group
     id: grp-smarthome-admins
@@ -141,7 +141,7 @@ entries:
     identifiers: { name: Pangolin }
     attrs:
       client_type: confidential
-      # Both values are generated into Bitwarden Secrets Manager and reach this container as
+      # Both values are generated into OpenBao and reach this container as
       # podman secrets, so the pair is never typed into a UI and never copied out of one. The
       # SAME two values are handed to Pangolin's IdP registration — that is the whole point of
       # fixing them here rather than letting Authentik mint them.
@@ -222,54 +222,17 @@ entries:
     identifiers: { target: !KeyOf pangolin-app, group: !KeyOf grp-guests }
     attrs: { order: 7, enabled: true }
 
-  # ── Pulse: OAuth2/OIDC provider ───────────────────────────────────────────────────
-  # First Tier-1 migration off a local login (#485). Pulse is configured entirely from
-  # OIDC_* environment variables, which authentik never sees — the only contract between the
-  # two is this provider plus the client id/secret pair in Secrets Manager.
-  - model: authentik_providers_oauth2.oauth2provider
-    id: pulse-provider
-    identifiers: { name: Pulse }
-    attrs:
-      client_type: confidential
-      client_id: !Env AUTHENTIK_PULSE_CLIENT_ID
-      client_secret: !Env AUTHENTIK_PULSE_CLIENT_SECRET
-      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
-      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
-      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
-      include_claims_in_id_token: true
-      # See the Pangolin provider: an empty grant_types allow-list permits NOTHING and fails
-      # with a message that names no cause. It is not optional on 2026.8.
-      grant_types:
-        - authorization_code
-        - refresh_token
-      property_mappings:
-        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
-        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
-        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
-      # STRICT, unlike Pangolin's. Pulse's env-configured provider uses one fixed callback
-      # (`/api/oidc/callback`) rather than a generated per-provider id, so there is nothing to
-      # wildcard and a strict match is the tighter choice.
-      redirect_uris:
-        - matching_mode: strict
-          url: https://pulse.lab.chrison.dev/api/oidc/callback
-
+  # ── Pulse: RETIRED (#591, 2026-10-03) ─────────────────────────────────────────────
+  # Pulse was the first Tier-1 OIDC client (#485); Beszel + prometheus-pve-exporter replaced
+  # it. Removing the entries alone would leave the provider and application live in authentik
+  # (blueprints never garbage-collect), so they are declared absent. The application goes
+  # first; its policy bindings are deleted with it. Safe to drop these once applied.
   - model: authentik_core.application
-    id: pulse-app
     identifiers: { slug: pulse }
-    attrs:
-      name: Pulse
-      provider: !KeyOf pulse-provider
-      meta_launch_url: https://pulse.lab.chrison.dev
-      meta_description: Proxmox / Docker monitoring.
-      policy_engine_mode: any
-
-  # Its own stack group, plus the superset. This is the shape every Tier-1 app should take.
-  - model: authentik_policies.policybinding
-    identifiers: { target: !KeyOf pulse-app, group: !KeyOf grp-homelab-admins }
-    attrs: { order: 0, enabled: true }
-  - model: authentik_policies.policybinding
-    identifiers: { target: !KeyOf pulse-app, group: !KeyOf grp-monitoring-admins }
-    attrs: { order: 1, enabled: true }
+    state: absent
+  - model: authentik_providers_oauth2.oauth2provider
+    identifiers: { name: Pulse }
+    state: absent
 
   # ── Who is actually in a group ────────────────────────────────────────────────────
   # Without this the whole model is inert: the four bindings above admit only members of
@@ -289,10 +252,9 @@ entries:
         - !KeyOf grp-homelab-admins
 
   # ── Grafana: OAuth2/OIDC provider ─────────────────────────────────────────────────
-  # Second Tier-1 migration (#485). Grafana is reached on the LAN only — there is no Pangolin
-  # resource for it — so the redirect URI is the internal name, not a *.lab hostname. That is
-  # deliberately unchanged here: exposing it publicly is a separate decision, not a side
-  # effect of giving it SSO.
+  # Second Tier-1 migration (#485). Now published at grafana.lab.chrison.dev behind Pangolin's
+  # SSO gate (Admin role only), so Grafana's ROOT_URL — and therefore the redirect it sends —
+  # is the public https name. The LAN URI is kept so a revert of ROOT_URL alone still logs in.
   - model: authentik_providers_oauth2.oauth2provider
     id: grafana-provider
     identifiers: { name: Grafana }
@@ -311,12 +273,12 @@ entries:
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
-      # http, not https, and on purpose. Grafana has no TLS of its own and no reverse proxy
-      # in front of it, so claiming https here would produce a redirect the browser cannot
-      # follow. The authorization code therefore crosses the LAN in plaintext — acceptable on
-      # a VLAN-segmented home network, and the thing that fixes it properly is fronting
-      # Grafana with Pangolin, not lying in this field.
+      # The https URI is the live one: Traefik terminates TLS for grafana.lab.chrison.dev, so
+      # the authorization code no longer crosses the LAN in plaintext. The http LAN URI is the
+      # pre-publication one, kept only as the rollback path.
       redirect_uris:
+        - matching_mode: strict
+          url: https://grafana.lab.chrison.dev/login/generic_oauth
         - matching_mode: strict
           url: http://monitoring.homelab.chrison.internal:3000/login/generic_oauth
 
@@ -326,8 +288,8 @@ entries:
     attrs:
       name: Grafana
       provider: !KeyOf grafana-provider
-      meta_launch_url: http://monitoring.homelab.chrison.internal:3000
-      meta_description: Dashboards over Prometheus, Tempo and Loki. LAN only.
+      meta_launch_url: https://grafana.lab.chrison.dev
+      meta_description: Dashboards over Prometheus, Tempo and Loki.
       policy_engine_mode: any
 
   - model: authentik_policies.policybinding
@@ -336,6 +298,52 @@ entries:
   - model: authentik_policies.policybinding
     identifiers: { target: !KeyOf grafana-app, group: !KeyOf grp-monitoring-admins }
     attrs: { order: 1, enabled: true }
+
+  # ── OpenBao: OIDC for HUMAN login (#609 step 6) ───────────────────────────────────
+  # OpenBao (DevOps CT 3007) holds every homelab secret, so this is NOT a per-stack app: only
+  # homelab-admins may get a token, deliberately not devops-admins. OpenBao re-checks the same
+  # group in its own role (bound_claims groups: homelab-admins, scripts/openbao-setup-oidc.sh), so
+  # dropping the binding below alone would not widen access. Machines never come through here:
+  # they keep their AppRoles and the GitHub JWT role. The `christian` userpass login stays as
+  # the break-glass for when authentik itself is down.
+  - model: authentik_providers_oauth2.oauth2provider
+    id: openbao-provider
+    identifiers: { name: OpenBao }
+    attrs:
+      client_type: confidential
+      client_id: !Env AUTHENTIK_OPENBAO_CLIENT_ID
+      client_secret: !Env AUTHENTIK_OPENBAO_CLIENT_SECRET
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      # OpenBao's bound_claims check reads `groups` from the ID token.
+      include_claims_in_id_token: true
+      grant_types:
+        - authorization_code
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+      # The web UI's callback, and the CLI's (`bao login -method=oidc` listens on localhost:8250).
+      redirect_uris:
+        - matching_mode: strict
+          url: https://openbao.devops.chrison.internal:8200/ui/vault/auth/oidc/oidc/callback
+        - matching_mode: strict
+          url: http://localhost:8250/oidc/callback
+
+  - model: authentik_core.application
+    id: openbao-app
+    identifiers: { slug: openbao }
+    attrs:
+      name: OpenBao
+      provider: !KeyOf openbao-provider
+      meta_launch_url: https://openbao.devops.chrison.internal:8200/ui/
+      meta_description: The homelab secrets store.
+      policy_engine_mode: any
+
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf openbao-app, group: !KeyOf grp-homelab-admins }
+    attrs: { order: 0, enabled: true }
 
   # ── Forgejo: OAuth2/OIDC provider ─────────────────────────────────────────────────
   # Tier-1 migration (#485). Forgejo does its own group→role mapping from the claim
@@ -385,6 +393,459 @@ entries:
   - model: authentik_policies.policybinding
     identifiers: { target: !KeyOf forgejo-app, group: !KeyOf grp-devops-admins }
     attrs: { order: 1, enabled: true }
+
+  # ⚠ ORDER MATTERS: this block sits ABOVE the passkey block because the identification
+  # stage entry there resolves `!KeyOf plex-source`, and KeyOf requires the referenced
+  # entry to have been APPLIED already — it looks for an entry with that id AND a model
+  # instance, so a forward reference fails at apply time, not at parse time.
+  # ── Plex: identity SOURCE (#316) ──────────────────────────────────────────────────
+  # A SOURCE, not a client. Plex speaks neither OIDC nor SAML, and does not have to: it
+  # terminates here, and every downstream app keeps talking OIDC to authentik and knows
+  # nothing about Plex. This is what #467 means by "providers terminate at the IdP once" —
+  # the alternative was a bespoke Plex→OIDC shim on the auth path for the whole house.
+  #
+  # ADMISSION IS AN `OR`, AND BOTH HALVES SURPRISE. Read off api/source.py at 2026.8:
+  #
+  #     friends_allowed = False
+  #     if source.allow_friends:
+  #         friends_allowed = owner_api.check_friends_overlap(identifier)
+  #     servers_allowed = auth_api.check_server_overlap()
+  #     if any([friends_allowed, servers_allowed]):   # OR
+  #
+  #   * `allowed_servers` EMPTY DOES NOT "ALLOW EVERY SERVER", whatever the field help says.
+  #     check_server_overlap iterates the USER's servers and tests membership in this list;
+  #     an empty list matches nothing and the check is simply dead. Left empty, admission
+  #     would rest entirely on the friends list.
+  #   * `allow_friends` DEFAULTS TO TRUE and is broader than "uses my server" — it admits
+  #     anyone on the owner's Plex FRIENDS list, including people who share no server.
+  #
+  # So `allow_friends: false` here is a deliberate narrowing, not an omission. The intent is
+  # "has access to MY server", and `allowed_servers` is the only check that says that.
+  #
+  # ⚠ AND `allow_friends: true` IS CURRENTLY BROKEN UPSTREAM, WHICH IS THE STRONGER REASON.
+  # plex.tv now answers GET /api/v2/friends with **HTTP 410 Gone** and an empty body —
+  # verified live from CT 5008 with the owner token on 2026-09-06. authentik's get_friends()
+  # calls raise_for_status(), and unlike check_server_overlap — which wraps its call and turns
+  # a failure into a clean 404 — check_friends_overlap has NO exception handling at all. So
+  # with allow_friends on, EVERY Plex login raises rather than being denied. Turning it on to
+  # "be more permissive" would take the whole source down.
+  #
+  # ⚠ `allowed_servers` HOLDS THE *PROCESSED* IDENTIFIER. Plex's Preferences.xml carries both
+  # `MachineIdentifier` (a UUID) and `ProcessedMachineIdentifier` (40 hex chars), and plex.tv
+  # reports the PROCESSED one as a resource's `clientIdentifier` — which is what
+  # check_server_overlap compares against. The UUID is the more plausible-looking of the two
+  # and matches nothing; combined with allow_friends off, that is a source that admits NOBODY
+  # while looking perfectly configured. Confirmed against live /api/v2/resources, not assumed.
+  #
+  # ⚠ AUTHENTICATED IS NOT AUTHORISED, and this source is exactly why that matters. A new
+  # Plex user is enrolled by `default-source-enrollment` into NO GROUP, matches no policy
+  # binding above, and reaches nothing at all. Access is granted deliberately afterwards by
+  # putting them in `family` or `guests`. Removing someone from the Plex server does NOT
+  # delete their account — decided on #316, because they may be family and the group model,
+  # not Plex membership, should own that call.
+  #
+  # ⚠ BUT THE ACCOUNT SURVIVING IS NOT ACCESS SURVIVING. Both checks run on EVERY login, so
+  # once someone is off the server they cannot authenticate; the account persists, inert,
+  # with its groups intact. Anyone who should keep access after leaving the Plex server needs
+  # a second auth method (password or passkey) on their authentik account.
+  #
+  # `plex_token` is the OWNER's token. With allow_friends off, authentik uses it only for
+  # /api/v2/user; the friends call it would otherwise make is the one that now 410s. Plex
+  # cannot issue a narrower token, so it is a credential for the whole Plex account and lives
+  # in OpenBao like any other. Read from PlexOnlineToken in Preferences.xml on CT 5008.
+  - model: authentik_sources_plex.plexsource
+    id: plex-source
+    identifiers: { slug: plex }
+    attrs:
+      name: Plex
+      enabled: true
+      allow_friends: false
+      allowed_servers:
+        - !Env PLEX_SERVER_CLIENT_IDENTIFIER
+      plex_token: !Env PLEX_TOKEN
+      # IDENTIFIER, not email_link. Linking on email would let a Plex account with an address
+      # matching an existing authentik user take that user over — including akadmin. Plex does
+      # verify its addresses, but the blast radius of being wrong is the admin account, and
+      # nothing here needs email linking to work.
+      user_matching_mode: identifier
+      authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
+      enrollment_flow: !Find [authentik_flows.flow, [slug, default-source-enrollment]]
+
+  # ── Passkey-first login (#245) ────────────────────────────────────────────────────
+  # Makes a passkey a FIRST factor on the existing login page, with password as the
+  # fallback. Additive: nobody who has not enrolled a passkey sees any change.
+  #
+  # WHY THIS IS THREE SMALL ENTRIES AND NOT A NEW FLOW. The stock authentication flow
+  # ALREADY contains the whole passwordless mechanism — authentik ships two expression
+  # policies on it, both bound with `failure_result: true`:
+  #
+  #   * default-authentication-flow-password-stage, on the PASSWORD binding:
+  #       return not hasattr(flow_plan.context.get("pending_user"), "backend")
+  #     A user authenticated at identification already carries a backend, so the password
+  #     stage is skipped for them and runs for everyone else.
+  #   * default-authentication-flow-authenticator-validate-stage, on the MFA binding:
+  #       return not (flow_plan.context.get("auth_method") == "auth_webauthn_pwl")
+  #     A passkey login is already user-verified, so the second factor is not asked twice.
+  #
+  # The ONLY missing piece is `webauthn_stage` on the identification stage. Building a
+  # parallel "passwordless flow" instead would duplicate a flow that authentik maintains,
+  # and would have to be kept in step with it forever.
+  #
+  # ⚠ WE ARE EDITING TWO OBJECTS OWNED BY AUTHENTIK'S OWN DEFAULT BLUEPRINTS
+  # (`default-authentication-identification`, `default-authenticator-webauthn-setup`).
+  # That is safe for a specific reason worth knowing before copying this pattern: a
+  # blueprint writes ONLY the attrs it declares and leaves every other field untouched.
+  # The stock entries declare `user_fields` and `configure_flow`/`friendly_name`
+  # respectively — neither declares what we set below — so an authentik upgrade re-applying
+  # its defaults will not revert this. Verified against the 2026.8 default blueprints, not
+  # assumed. If a future release starts declaring these fields, this silently loses.
+  #
+  # NOT `passwordless_flow`. That field exists and does something different: it renders a
+  # separate link BELOW the login form leading to its own flow. `webauthn_stage` instead
+  # uses the browser's conditional-UI ("autofill") path, so the passkey is offered inside
+  # the normal username box and there is no second door to reason about.
+
+  # 1. The validation stage used as the first factor. Restricted to WebAuthn only — this
+  #    is not the MFA stage and must never offer TOTP or static codes as a way IN.
+  - model: authentik_stages_authenticator_validate.authenticatorvalidatestage
+    id: passkey-validation
+    identifiers: { name: homelab-passkey-validation }
+    attrs:
+      device_classes: [webauthn]
+      # SKIP, NOT DENY. `deny` here would refuse everyone who has not enrolled a passkey —
+      # which, on the day this first applies, is every account including yours.
+      not_configured_action: skip
+      # REQUIRED, not the `preferred` default. User verification is what makes a passkey a
+      # genuine single-factor login rather than "something you have" alone, and it is the
+      # condition under which authentik sets auth_method = auth_webauthn_pwl — the value the
+      # stock policy above reads to skip the MFA stage. Left at `preferred`, an authenticator
+      # may return an unverified assertion and the login is weaker than the password it replaced.
+      webauthn_user_verification: required
+
+  # 2. Offer it at identification. `webauthn_stage` is the entire behavioural change.
+  #
+  # ⚠ `user_fields` IS RE-DECLARED HERE AND MUST NOT BE REMOVED, even though it changes
+  # nothing and the live stage already has exactly these two values. Blueprints apply an
+  # entry with `partial=True`, so an unlisted field keeps its stored value — but
+  # IdentificationStageSerializer.validate() reads the INCOMING dict, not the merged model:
+  #
+  #     sources = attrs.get("sources", [])
+  #     user_fields = attrs.get("user_fields", [])
+  #     if len(user_fields) < 1 and len(sources) < 1:
+  #         raise ValidationError("When no user fields are selected, at least one source ...")
+  #
+  # So a partial update that omits `user_fields` fails that check against an empty dict while
+  # the stage plainly has both fields set, and rejects the WHOLE blueprint file with it (#497).
+  # That is what happened on the first deploy of this block.
+  #
+  # The log makes it worse than it needs to be: the entry is logged with
+  # `webauthn_stage: <KeyOf> (failed to resolve: ...)`, which reads like the reference is
+  # broken. It is not — YAMLTag.__repr__ resolves against an empty Blueprint() purely to
+  # render itself for the log, so a KeyOf ALWAYS prints that way in an error. The real cause
+  # is the non_field_errors line underneath it.
+  - model: authentik_stages_identification.identificationstage
+    identifiers: { name: default-authentication-identification }
+    attrs:
+      user_fields: [email, username]
+      webauthn_stage: !KeyOf passkey-validation
+      # A source is NOT offered on the login page just by existing — it has to be listed
+      # here. That is how its absence was found: the live flow returned `sources: []` while
+      # this file's own comments described a Plex source as though it were running.
+      # ⚠ REPLACES the list rather than appending, so every source we want must be named.
+      sources: [!KeyOf plex-source]
+      show_source_labels: true
+
+  # 3. Make newly-enrolled credentials DISCOVERABLE, so they can be used without first
+  #    typing a username. Both fields default to `preferred`, and `preferred` is the trap
+  #    here: an authenticator is free to create a non-resident credential, which works fine
+  #    as a second factor and then cannot be offered by the browser's passkey picker at all
+  #    — producing a passkey that exists, works, and never appears on the login page.
+  #
+  #    ⚠ APPLIES TO NEW ENROLMENTS ONLY. Anything already registered keeps the requirements
+  #    it was created under, so this wants to land before the first enrolment rather than after.
+  #
+  #    It did not, as it happens: a Bitwarden and an Apple Passwords credential were both
+  #    registered on 2026-09-05, before this applied at 12:29. Neither needed re-enrolling, and
+  #    the reason is the useful part — both are PASSKEY PROVIDERS, which always create a
+  #    discoverable credential whatever the relying party asks for. `preferred` only decides the
+  #    outcome for an authenticator that can also make a non-discoverable one, typically a
+  #    hardware key. User verification is separately enforced at ASSERTION time by
+  #    homelab-passkey-validation above, so credentials enrolled under `preferred` still have to
+  #    verify the user at login. Do not read that as "the setting does not matter" — it decides
+  #    the outcome for the next YubiKey-shaped thing that gets enrolled.
+  - model: authentik_stages_authenticator_webauthn.authenticatorwebauthnstage
+    identifiers: { name: default-authenticator-webauthn-setup }
+    attrs:
+      resident_key_requirement: required
+      user_verification: required
+
+  # ── Audiobookshelf: OAuth2/OIDC provider (#485) ───────────────────────────────────
+  # First HOUSEHOLD-facing migration, and the first thing the `family` group actually gates.
+  #
+  # WHY THIS ONE FIRST: its Pangolin resource carries `sso: false`, so audiobookshelf.arr is
+  # reachable from the public internet with only its own login in front of it. That is not an
+  # oversight — a native mobile client cannot complete the SSO interstitial, so the gate had
+  # to come off. OIDC is the real fix rather than the workaround, because the apps do PKCE.
+  #
+  # ⚠ THE APP SIDE IS UI-ONLY. Audiobookshelf keeps these settings in its database
+  # (ServerSettings.authOpenID*) and exposes no environment variables for them, unlike Pulse,
+  # Grafana and Forgejo. So this half is IaC and the other half is not, which is a real
+  # deviation from how every previous client was done — recorded rather than hidden.
+
+  # ABS's group→role mapping needs a scope LITERALLY NAMED `groups`, and values from ITS
+  # vocabulary. Both halves are non-obvious and both fail closed:
+  #
+  #   1. getScope() APPENDS THE CLAIM NAME TO THE SCOPE LIST:
+  #        let scope = 'openid profile email'
+  #        if (authOpenIDGroupClaim) scope += ' ' + authOpenIDGroupClaim
+  #      so setting the claim to `groups` makes ABS request a SCOPE called `groups`. The stock
+  #      `profile` scope already emits a groups CLAIM, but there is no scope by that name, and
+  #      a claim ABS never requested is a claim it never sees.
+  #
+  #   2. setUserGroup() MATCHES THE LITERAL STRINGS `admin`, `user`, `guest`:
+  #        const groupsList = userinfo[claim].map((g) => g.toLowerCase())
+  #        let userType = ['admin','user','guest'].find((r) => groupsList.includes(r))
+  #        if (!userType) throw new Error(`No valid group found in userinfo`)
+  #      Our names match NONE of those — note `guests` is not `guest` — and the miss is not a
+  #      downgrade, it is a thrown error and a refused login.
+  #
+  # So this mapping TRANSLATES rather than exposes. It is attached to the Audiobookshelf
+  # provider only, so ABS's vocabulary never leaks into any other application's claims, and
+  # our group names stay the ones we chose rather than ones an app dictated.
+  - model: authentik_providers_oauth2.scopemapping
+    id: abs-groups-scope
+    identifiers: { name: "Audiobookshelf groups → ABS role" }
+    attrs:
+      scope_name: groups
+      description: "Translates homelab groups into the admin/user/guest vocabulary Audiobookshelf requires."
+      expression: |
+        groups = [group.name for group in request.user.groups.all()]
+        if "homelab-admins" in groups or "media-admins" in groups:
+            return {"groups": ["admin"]}
+        if "family" in groups:
+            return {"groups": ["user"]}
+        if "guests" in groups:
+            return {"groups": ["guest"]}
+        # Unreachable in practice — the policy bindings below refuse a token to anyone in no
+        # group at all. Returning an empty list rather than None keeps the failure ABS's own
+        # ("No valid group found") instead of a claim-missing error that names nothing.
+        return {"groups": []}
+
+  - model: authentik_providers_oauth2.oauth2provider
+    id: audiobookshelf-provider
+    identifiers: { name: Audiobookshelf }
+    attrs:
+      client_type: confidential
+      client_id: !Env AUTHENTIK_AUDIOBOOKSHELF_CLIENT_ID
+      client_secret: !Env AUTHENTIK_AUDIOBOOKSHELF_CLIENT_SECRET
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      include_claims_in_id_token: true
+      # See the Pangolin provider: an empty grant_types allow-list permits NOTHING and fails
+      # with a message that names no cause. Not optional on 2026.8.
+      grant_types:
+        - authorization_code
+        - refresh_token
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+        - !KeyOf abs-groups-scope
+      # TWELVE: every hostname ABS is reachable on, times both path forms.
+      #
+      # ⚠ ABS DERIVES ITS redirect_uri FROM THE HOST IT WAS REACHED ON — `new URL(..., hostUrl)`
+      # — so the front door you walk through decides the URI it sends. This guest has THREE,
+      # and registering only some is a login that works for whoever tests it and fails for
+      # everyone else:
+      #   * audiobookshelf.tao-simon.family — THE HOUSEHOLD'S ACTUAL DOOR (#322). A separate
+      #     zone our Cloudflare token cannot read, but the route itself IS declared here:
+      #     stacks/Media/cloudflared.lxc.yaml, `public: true`, origin 10.10.182.200:13378.
+      #   * audiobookshelf.chrison.dev      — the apex, via the Media cloudflared tunnel.
+      #   * audiobookshelf.arr.chrison.dev  — the Pangolin resource.
+      #
+      # THIS TRAP HAS NOW FIRED TWICE, each time one host further out:
+      #   #538/#541 registered only `.arr`, so the flow passed a browser test on that hostname
+      #   and failed with `Redirect URI Error` for real use. #560 added the apex and called it
+      #   fixed. It was not: `tao-simon.family` was never registered, and per #322 that is the
+      #   path the household genuinely uses — it is why the retired Seerr kept collecting
+      #   requests until July while we believed it was unused.
+      #
+      # All three are ours; a redirect URI is only dangerous when someone else controls the
+      # target, so listing every door we own costs nothing and removes the trap.
+      #
+      # ⚠ Adding a new public hostname for this guest means adding its FOUR entries HERE too.
+      # Nothing derives these from the tunnel/Pangolin declarations, so the two can silently
+      # disagree.
+      #
+      # THE CHECK IS CONCRETE, so do it rather than reasoning about it. The set of hostnames
+      # that reach this app is the union of:
+      #     stacks/Media/cloudflared.lxc.yaml   — tunnel ingress (incl. the tao-simon.family
+      #                                            zone; grep for `audiobookshelf`)
+      #     stacks/Core/pangolin.lxc.yaml       — the `.arr` resource
+      # Every hostname in that union needs four entries below. Both lists are in this repo;
+      # the reason this was missed twice is that nobody diffed them, not that one was hidden.
+      #
+      # ALL FOUR that upstream lists per host, and the `/audiobookshelf/` pair is NOT redundant.
+      # This was originally trimmed to two on the reasoning that a subpath variant cannot be
+      # reached by an install served at the root of its own subdomain. That reasoning is
+      # wrong, and the field name is what makes it wrong:
+      #
+      #   `authOpenIDSubfolderForRedirectURLs` does not describe how ABS is SERVED. It is
+      #   prepended when ABS BUILDS its callback —
+      #       new URL(`${authOpenIDSubfolderForRedirectURLs}/auth/openid/callback`, hostUrl)
+      #   — and the settings UI DEFAULTS it to the app's routerBasePath when it has never
+      #   been set (authentication.vue: `=== undefined ? this.$config.routerBasePath : ...`).
+      #   Ours therefore persisted as `/audiobookshelf` without anyone choosing it, and the
+      #   redirect_uri sent to authentik carries that prefix.
+      #
+      # A mismatch here is an `invalid_redirect_uri` at the very end of an otherwise correct
+      # login, which reads like a broken client rather than one extra path segment. Both
+      # forms are registered so the login works whichever way that dropdown is left, and so
+      # changing it later cannot silently break authentication.
+      #
+      # `mobile-redirect` is NOT optional and is easy to read as web-only duplication: the
+      # phone apps come back through it, and it is the server that then hands off to
+      # `audiobookshelf://oauth` (ABS's own Allowed Mobile Redirect URIs setting, not ours).
+      # Omit it and the web works while every phone silently fails.
+      redirect_uris:
+        - matching_mode: strict
+          url: https://audiobookshelf.tao-simon.family/auth/openid/callback
+        - matching_mode: strict
+          url: https://audiobookshelf.tao-simon.family/auth/openid/mobile-redirect
+        - matching_mode: strict
+          url: https://audiobookshelf.tao-simon.family/audiobookshelf/auth/openid/callback
+        - matching_mode: strict
+          url: https://audiobookshelf.tao-simon.family/audiobookshelf/auth/openid/mobile-redirect
+        - matching_mode: strict
+          url: https://audiobookshelf.arr.chrison.dev/auth/openid/callback
+        - matching_mode: strict
+          url: https://audiobookshelf.arr.chrison.dev/auth/openid/mobile-redirect
+        - matching_mode: strict
+          url: https://audiobookshelf.arr.chrison.dev/audiobookshelf/auth/openid/callback
+        - matching_mode: strict
+          url: https://audiobookshelf.arr.chrison.dev/audiobookshelf/auth/openid/mobile-redirect
+        - matching_mode: strict
+          url: https://audiobookshelf.chrison.dev/auth/openid/callback
+        - matching_mode: strict
+          url: https://audiobookshelf.chrison.dev/auth/openid/mobile-redirect
+        - matching_mode: strict
+          url: https://audiobookshelf.chrison.dev/audiobookshelf/auth/openid/callback
+        - matching_mode: strict
+          url: https://audiobookshelf.chrison.dev/audiobookshelf/auth/openid/mobile-redirect
+
+  - model: authentik_core.application
+    id: audiobookshelf-app
+    identifiers: { slug: audiobookshelf }
+    attrs:
+      name: Audiobookshelf
+      provider: !KeyOf audiobookshelf-provider
+      # The apex, not the Pangolin host — this is the URL the household uses.
+      meta_launch_url: https://audiobookshelf.chrison.dev
+      meta_description: Audiobooks and podcasts. Household-facing.
+      policy_engine_mode: any
+
+  # `family` appears here for the first time in this file. Everything until now has been
+  # admin-only, so this is the binding that makes the household half of the group model do
+  # any work at all.
+  #
+  # `guests` is deliberately NOT bound — that group is media requests only (Seerr), and the
+  # scope mapping's `guest` branch exists for a decision not yet taken rather than this one.
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf audiobookshelf-app, group: !KeyOf grp-homelab-admins }
+    attrs: { order: 0, enabled: true }
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf audiobookshelf-app, group: !KeyOf grp-media-admins }
+    attrs: { order: 1, enabled: true }
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf audiobookshelf-app, group: !KeyOf grp-family }
+    attrs: { order: 2, enabled: true }
+
+  # ── RomM: OAuth2/OIDC provider (#485) ─────────────────────────────────────────────
+  # Second household-facing migration. Unlike Audiobookshelf, RomM is configured ENTIRELY
+  # from environment variables, so its half is real IaC in the Media stack rather than a UI
+  # step — which is why it follows ABS rather than leading.
+  #
+  # SAME SCOPE TRAP AS ABS, INDEPENDENTLY ARRIVED AT. RomM builds its scope request as
+  #     "scope": f"openid profile email {OIDC_CLAIM_ROLES}".strip()
+  # so the claim name is ALSO a scope name here. Two apps, two codebases, the same design —
+  # assume it of the next one and check rather than be surprised.
+  #
+  # A SEPARATE MAPPING FROM ABS'"'"'s, DELIBERATELY, even though both could read one `groups`
+  # scope. Sharing it would mean an edit made for one app silently re-roles the other, and
+  # the two have different vocabularies and different role counts. A distinct scope name per
+  # application costs one entry and keeps the blast radius at one app.
+  #
+  # WHY IT TRANSLATES RATHER THAN EMITTING OUR NAMES. RomM can map role values itself
+  # (OIDC_ROLE_ADMIN etc.), which looks like it removes the need — but each is a SINGLE
+  # string tested with `OIDC_ROLE_ADMIN in roles`, so only ONE group can mean admin. Our
+  # model has two (`homelab-admins` as the superset, `media-admins` for this stack), and that
+  # cannot be expressed. Collapsing them here keeps the superset convention intact.
+  #
+  # ⚠ A NON-MATCH IS A 403, NOT A DOWNGRADE:
+  #     else: raise HTTPException(403, "User has not been granted any roles for this application.")
+  # so every group bound to the application below must come out of this mapping as something
+  # RomM recognises. `family` must therefore map to `user`, not to nothing.
+  - model: authentik_providers_oauth2.scopemapping
+    id: romm-roles-scope
+    identifiers: { name: "RomM roles" }
+    attrs:
+      scope_name: romm_roles
+      description: "Collapses the homelab groups into the single admin value RomM can express."
+      expression: |
+        groups = [group.name for group in request.user.groups.all()]
+        if "homelab-admins" in groups or "media-admins" in groups:
+            return {"romm_roles": ["admin"]}
+        return {"romm_roles": ["user"]}
+
+  - model: authentik_providers_oauth2.oauth2provider
+    id: romm-provider
+    identifiers: { name: RomM }
+    attrs:
+      client_type: confidential
+      client_id: !Env AUTHENTIK_ROMM_CLIENT_ID
+      client_secret: !Env AUTHENTIK_ROMM_CLIENT_SECRET
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      include_claims_in_id_token: true
+      grant_types:
+        - authorization_code
+        - refresh_token
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+        - !KeyOf romm-roles-scope
+      # ONE URI, and unlike Audiobookshelf that is not a guess to be regretted: RomM takes the
+      # callback as an absolute OIDC_REDIRECT_URI we set ourselves, so there is no second form
+      # it can decide to send. The path is fixed by its router — `@router.get("/oauth/openid")`
+      # under main.py's `prefix="/api"`.
+      redirect_uris:
+        - matching_mode: strict
+          url: https://romm.arr.chrison.dev/api/oauth/openid
+
+  - model: authentik_core.application
+    id: romm-app
+    identifiers: { slug: romm }
+    attrs:
+      name: RomM
+      provider: !KeyOf romm-provider
+      meta_launch_url: https://romm.arr.chrison.dev
+      meta_description: Game library. Household-facing.
+      policy_engine_mode: any
+
+  # Every bound group must map to a role RomM recognises, or its members authenticate and are
+  # then refused with a 403 — see the mapping above. All three do.
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf romm-app, group: !KeyOf grp-homelab-admins }
+    attrs: { order: 0, enabled: true }
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf romm-app, group: !KeyOf grp-media-admins }
+    attrs: { order: 1, enabled: true }
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf romm-app, group: !KeyOf grp-family }
+    attrs: { order: 2, enabled: true }
 
   # ── Retire the previous title-case groups ─────────────────────────────────────────
   # A blueprint keys objects by `identifiers`, so changing `name` does NOT rename a group —

@@ -8,6 +8,11 @@
   [ADR-0009 podman/quadlet migration](ADR-0009-podman-quadlet-migration.md) (how the container
   lands on CT 4001).
 
+
+> **Amended 2026-10-03 (#591):** Pulse is retired. Its Proxmox/NAS alerts now come from
+> prometheus-pve-exporter rules in Prometheus and from Beszel (#590), both via Alertmanager.
+> The Pulse rows below are history.
+
 ## Context
 
 UniFi monitoring landed with Grafana unified alerting posting straight to a Home Assistant
@@ -78,6 +83,31 @@ Two supporting decisions:
 - Grafana's previously provisioned rules and contact point had to be deleted explicitly via
   `deleteRules` / `deleteContactPoints` — removing the provisioning files alone leaves them in
   Grafana's database, still evaluating.
+
+## What does NOT go through the bus, and why
+
+The decision above is about **alerts**: conditions that fire, persist and resolve. Some things a
+producer sends aren't conditions, and forcing them through Alertmanager makes them worse. Those
+publish **straight to ntfy**, on their own topic, and are listed here so they read as decisions,
+not drift.
+
+| producer | publishes to | why it bypasses the bus |
+|---|---|---|
+| `trackerwatch` (Media stack, CT 5114): freeleech digest and site-wide freeleech events | ntfy `freeleech`, its own write-only user | A digest is a **message**. On the bus it would repeat on `repeat_interval` and send a meaningless RESOLVED whenever it stopped being re-sent. An "event started/ended" is a one-time announcement, not a state to hold. |
+
+The rule for adding to this table: **if it has a meaningful "resolved", it's an alert and goes
+through the bus.** That holds even for the producers above. `trackerwatch` sends
+`TrackerUnreachable` through Alertmanager, because "this tracker isn't answering" fires and
+resolves.
+
+Two consequences:
+
+- Publishing direct means **no dedup, grouping, inhibition or silences**. A direct producer has to
+  pace itself, and its topic must be one the user can mute without losing a real alert. That's why
+  `freeleech` is separate from `trackers`, which carries SoulVoice check-in failures.
+- Alertmanager keeps the alert set **in memory only** (#602). A producer that *does* use the bus
+  must re-assert while the condition holds, with a short `endsAt`. A single POST with a long
+  `endsAt` doesn't survive a restart.
 
 ## Notes for whoever touches this next
 

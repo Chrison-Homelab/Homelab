@@ -76,6 +76,8 @@ public sealed class ProvisionerRegistry
         new ShelfmarkProvisioner(),
         new SeerrProvisioner(),
         new PlexProvisioner(),
+        new RomMProvisioner(),
+        new OpenBaoProvisioner(),
         new InvenTreeProvisioner(),
     });
 }
@@ -161,7 +163,7 @@ public sealed class ForgejoProvisioner : IAppProvisioner
     // THE CLIENT SECRET IS NOT READABLE BACK from `auth list`, which prints only
     // ID/Name/Type/Enabled. So drift on the secret is undetectable and the update runs
     // unconditionally when the source exists — cheap, and it makes rotation work by simply
-    // changing the value in Secrets Manager. The same limitation the Pangolin IdP reconciler
+    // changing the value in OpenBao. The same limitation the Pangolin IdP reconciler
     // has, handled the opposite way because here the update costs nothing.
     internal readonly record struct ForgejoOidc(
         string Name, string DiscoveryUrl, string ClientIdFrom, string ClientSecretFrom,
@@ -584,8 +586,8 @@ public sealed class CloudflaredProvisioner : IAppProvisioner
 
     // True when a live bypass policy's CIDR list differs from the shape's — the signal to
     // rewrite it. Set comparison, so order never matters; CIDRs are normalised first
-    // because one IPv6 prefix has many spellings (`2407:8B00:116D:E500:0:0:0:0/56` and
-    // `2407:8b00:116d:e500::/56` are the same network) and Cloudflare echoes back its own.
+    // because one IPv6 prefix has many spellings (`2001:DB8:116D:E500:0:0:0:0/56` and
+    // `2001:db8:116d:e500::/56` are the same network) and Cloudflare echoes back its own.
     // Without that, an unchanged list would look drifted and be rewritten every converge.
     public static bool BypassDrifted(IEnumerable<string> live, IEnumerable<string> desired)
         => !NormalizeCidrs(live).SetEquals(NormalizeCidrs(desired));
@@ -757,6 +759,14 @@ public sealed class PangolinProvisioner : IAppProvisioner
     internal const string DefaultTraefikImage = "traefik:v3.6";
     internal const string DefaultBadgerVersion = "v1.2.0";
     internal const string PublicWildcard = "public-wildcard";
+    // Host log agent (#587). Pinned version + the checksum published beside it on the upstream
+    // release; overriding the version means overriding the checksum too, or the install fails.
+    internal const string DefaultOtelcolVersion = "0.161.0";
+    internal const string DefaultOtelcolSha256 = "9ea10aff606104408b253925ab66e8bd2a09217359e675a3c28b34e2b56aee5b";
+    // journald's own cap on the CT once logs ship from the journal (#587 step 3). Loki holds
+    // the long-term copy, so the local journal is only a buffer for an agent or Loki outage.
+    // CT 2013 grew ~4 MB/day (429 MB since June), so 500M is about four months of buffer.
+    internal const string DefaultJournaldMaxUse = "500M";
     private const string LeProd = "https://acme-v02.api.letsencrypt.org/directory";
     private const string LeStaging = "https://acme-staging-v02.api.letsencrypt.org/directory";
 
@@ -770,6 +780,11 @@ public sealed class PangolinProvisioner : IAppProvisioner
             yield return $"render /opt/pangolin/{{compose.yml,.env,config/*}} — Docker EE {img}; generate+preserve server.secret";
             yield return $"Traefik owns :443 with LE wildcard certs (DNS-01 via Cloudflare) for {string.Join(" + ", WildcardFqdns(s))}";
             yield return "docker compose up -d (idempotent via managed marker) — then activate EE once at /admin/license (manual)";
+            if (OtlpLogsEndpoint(s) is { } otlp)
+            {
+                yield return $"containers log to journald; host otelcol-contrib {s.Spec.Config.Str("otelcolVersion") ?? DefaultOtelcolVersion} ships them to {otlp}";
+                yield return $"cap the CT's journal at SystemMaxUse={JournaldMaxUse(s)} (journald drop-in; checked every converge, outside the deploy marker)";
+            }
             if (s.Spec.Config.Str("publicIp") is { Length: > 0 } pip)
                 yield return $"ensure grey-cloud A record(s) {string.Join(" + ", WildcardFqdns(s))} → {pip} (add-only)";
         }
@@ -781,7 +796,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
                 : $"edge '{edge}': leave stock Traefik (Let's Encrypt public ingress)";
             yield return "restart pangolin + gerbil if config changed (idempotent via managed marker)";
         }
-        yield return "reconcile declared resources via the integration API (add-only by fullDomain)";
+        yield return "reconcile declared resources via the integration API (add-only by fullDomain; per-resource access rules reconciled where declared)";
         foreach (var idp in DeclaredIdps(s))
             yield return $"reconcile identity provider '{idp.Name}' + its claim→role mapping via the integration API";
     }
@@ -1005,6 +1020,24 @@ public sealed class PangolinProvisioner : IAppProvisioner
             done.Count == 0 ? reason : $"{reason} — completed before this: {string.Join("; ", done)}");
         if (configMsg is not null) done.Add(configMsg);
 
+        // journald cap (#587 step 3). Deliberately NOT part of the deploy script or the marker:
+        // anything that moves the marker reruns the whole deploy, including `docker compose
+        // restart`, which bounces public ingress and every Newt tunnel. A journal size limit
+        // needs none of that, so it is its own idempotent step that only restarts journald,
+        // and only when the drop-in actually changed.
+        string? journalMsg = null;
+        var journalChanged = false;
+        if (OtlpLogsEndpoint(s) is not null)
+        {
+            var jr = await ctx.Exec.InContainerAsync(node, ctid, BuildJournaldCap(s));
+            if (!jr.Ok) return FailWithContext($"journald cap failed: {jr.Stderr.Trim()}");
+            journalChanged = jr.Stdout.Contains("journald-cap: changed");
+            journalMsg = journalChanged
+                ? $"journal capped at SystemMaxUse={JournaldMaxUse(s)} (journald restarted)"
+                : null;
+            if (journalMsg is not null) done.Add(journalMsg);
+        }
+
         var (dnsMsg, dnsChanged, dnsFailed) = await ReconcileWildcardDnsAsync(s, ctx);
         if (dnsFailed is not null) return FailWithContext(dnsFailed);
         if (dnsMsg is not null) done.Add(dnsMsg);
@@ -1021,11 +1054,11 @@ public sealed class PangolinProvisioner : IAppProvisioner
         var (idpMsg, idpChanged, idpFailed) = await ReconcileIdpsAsync(s, ctx, node, ctid);
         if (idpFailed is not null) return FailWithContext(idpFailed);
 
-        if (configMsg is null && !dnsChanged && !resChanged && !idpChanged)
+        if (configMsg is null && !journalChanged && !dnsChanged && !resChanged && !idpChanged)
             return ApplyResult.NoChange($"config current (marker {marker})"
                 + (dnsMsg is null ? "" : $"; {dnsMsg}") + (resMsg is null ? "" : $"; {resMsg}")
                 + (idpMsg is null ? "" : $"; {idpMsg}"));
-        return ApplyResult.Applied(string.Join("; ", new[] { configMsg, dnsMsg, resMsg, idpMsg }.Where(x => x is not null)));
+        return ApplyResult.Applied(string.Join("; ", new[] { configMsg, journalMsg, dnsMsg, resMsg, idpMsg }.Where(x => x is not null)));
     }
 
     // ── Identity providers (#468) ─────────────────────────────────────────────────────
@@ -1090,7 +1123,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
     //
     // THE CLIENT SECRET IS NOT DRIFT-CHECKED, because it cannot be: the API never reads one
     // back. It is written on create and on any update we make for another reason. To rotate
-    // it, change the value in Secrets Manager and edit something else on the IdP, or delete
+    // it, change the value in OpenBao and edit something else on the IdP, or delete
     // the IdP and let this recreate it.
     //
     // Skipped — not failed — when the API key or the client credentials are absent, matching
@@ -1337,7 +1370,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
                     ? tarr.EnumerateArray().Count() : 0);
         }
 
-        int total = 0, created = 0, retargeted = 0, regated = 0;
+        int total = 0, created = 0, retargeted = 0, regated = 0, ruled = 0;
         var notes = new List<string>();
         foreach (var it in items)
         {
@@ -1417,6 +1450,11 @@ public sealed class PangolinProvisioner : IAppProvisioner
                     notes.Add($"{fqdn}: ssl {live.Ssl}→{publicWildcard}, sso {live.Sso}→{sso}");
                     regated++;
                 }
+
+                var (rnotes, rchanged, rfail) = await ReconcileRulesAsync(pg, live.Id, rd, fqdn, ct);
+                if (rfail is not null) return (null, false, rfail);
+                notes.AddRange(rnotes);
+                if (rchanged) ruled++;
                 continue;
             }
 
@@ -1435,12 +1473,113 @@ public sealed class PangolinProvisioner : IAppProvisioner
             // ssl: public-wildcard → Traefik terminates TLS (true); cloudflared → CF does (false).
             // sso: gate the resource behind Pangolin auth unless it explicitly opts out.
             await pg.CallAsync("POST", $"/resource/{resourceId}", JsonSerializer.Serialize(new { ssl = publicWildcard, sso }), ct);
+            var (cnotes, cchanged, cfail) = await ReconcileRulesAsync(pg, resourceId, rd, fqdn, ct);
+            if (cfail is not null) return (null, false, cfail);
+            notes.AddRange(cnotes);
+            if (cchanged) ruled++;
             created++;
         }
 
-        var summary = $"{total} resource(s) declared, {created} created, {retargeted} retargeted, {regated} re-gated";
+        var summary = $"{total} resource(s) declared, {created} created, {retargeted} retargeted, {regated} re-gated, {ruled} rule set(s) changed";
         if (notes.Count > 0) summary += "\n      " + string.Join("\n      ", notes);
-        return (summary, created + retargeted + regated > 0, null);
+        return (summary, created + retargeted + regated + ruled > 0, null);
+    }
+
+    // Reconcile one resource's ACCESS RULES — the per-path / per-IP layer Pangolin evaluates
+    // BEFORE the sso/pincode/password gates (badger verifySession → checkRules, when the
+    // resource's applyRules is on). This is how a native client that cannot render the SSO
+    // interstitial — Ruddarr talking to Sonarr/Radarr with an X-Api-Key header — gets through
+    // on `/api/*` while the UI on the SAME hostname stays behind SSO. Declared per resource:
+    //
+    //   rules:
+    //     - { action: ACCEPT, match: PATH, value: "/api/*" }
+    //
+    // `action` is Pangolin's own enum, kept verbatim so the shape and the UI never disagree:
+    // ACCEPT = BYPASS auth (let it through), DROP = block outright, PASS = fall through to the
+    // normal auth gates. `priority` defaults to the list position (ascending, first match
+    // wins); `enabled` defaults true. A `*` segment matches whole segments at any depth, so
+    // "/api/*" covers /api/v3/series/12 — but matching is segment-based, so "/api*" would NOT.
+    //
+    // Keyed by (match, value): declared-but-absent → create; present-but-different
+    // (action/priority/enabled) → update; LIVE RULES NOT DECLARED HERE ARE LEFT ALONE and
+    // reported — the same add-only stance the resource list takes. applyRules (without which
+    // rules are inert) is switched on only for a resource that declares rules, and only after
+    // they exist. A resource declaring no rules costs no extra calls and is not touched, so the
+    // dozen SSO-only entries behave exactly as before.
+    private static async Task<(List<string> notes, bool changed, string? failed)> ReconcileRulesAsync(
+        PangolinClient pg, int resourceId, System.Collections.IDictionary rd, string fqdn, CancellationToken ct)
+    {
+        var notes = new List<string>();
+        if (rd["rules"] is not IEnumerable<object> declared) return (notes, false, null);
+
+        var wanted = new List<(string Action, string Match, string Value, int Priority, bool Enabled)>();
+        var i = 0;
+        foreach (var o in declared)
+        {
+            i++;
+            if (o is not System.Collections.IDictionary r) continue;
+            var action = r["action"]?.ToString()?.ToUpperInvariant() ?? "";
+            var match = r["match"]?.ToString()?.ToUpperInvariant() ?? "";
+            var value = r["value"]?.ToString() ?? "";
+            // A malformed rule is a security-relevant config error — fail the apply rather than
+            // silently skipping it and leaving the resource in an undeclared state.
+            if (action is not ("ACCEPT" or "DROP" or "PASS"))
+                return (notes, false, $"pangolin: {fqdn} rule {i}: action '{action}' is not ACCEPT|DROP|PASS");
+            if (match.Length == 0 || value.Length == 0)
+                return (notes, false, $"pangolin: {fqdn} rule {i}: match and value are required");
+            var priority = int.TryParse(r["priority"]?.ToString(), out var pr) ? pr : i;
+            var enabled = !(r["enabled"] is { } en && bool.TryParse(en.ToString(), out var eb) && !eb);
+            wanted.Add((action, match, value, priority, enabled));
+        }
+        if (wanted.Count == 0) return (notes, false, null);
+
+        var (lok, lroot) = await pg.CallAsync("GET", $"/resource/{resourceId}/rules", null, ct);
+        if (!lok) return (notes, false, $"pangolin: GET rules failed for {fqdn} — cannot reconcile safely");
+        var live = new Dictionary<(string Match, string Value), (int Id, string Action, int Priority, bool Enabled)>();
+        foreach (var lr in DataArray(lroot, "rules"))
+        {
+            if (!lr.TryGetProperty("ruleId", out var rid)) continue;
+            var m = lr.TryGetProperty("match", out var mv) ? (mv.GetString() ?? "").ToUpperInvariant() : "";
+            var v = lr.TryGetProperty("value", out var vv) ? vv.GetString() ?? "" : "";
+            var a = lr.TryGetProperty("action", out var av) ? (av.GetString() ?? "").ToUpperInvariant() : "";
+            var p = lr.TryGetProperty("priority", out var pv) && pv.TryGetInt32(out var pi) ? pi : 0;
+            live[(m, v)] = (rid.GetInt32(), a, p, Truthy(lr, "enabled"));
+        }
+
+        var changed = false;
+        foreach (var w in wanted)
+        {
+            var body = JsonSerializer.Serialize(new { action = w.Action, match = w.Match, value = w.Value, priority = w.Priority, enabled = w.Enabled });
+            if (live.Remove((w.Match, w.Value), out var l))
+            {
+                if (l.Action == w.Action && l.Priority == w.Priority && l.Enabled == w.Enabled) continue;
+                var (uok, _) = await pg.CallAsync("POST", $"/resource/{resourceId}/rule/{l.Id}", body, ct);
+                if (!uok) return (notes, false, $"pangolin: failed to update rule {w.Match} {w.Value} on {fqdn}");
+                notes.Add($"{fqdn}: rule {w.Match} {w.Value}: {l.Action}/p{l.Priority}/{(l.Enabled ? "on" : "off")} → {w.Action}/p{w.Priority}/{(w.Enabled ? "on" : "off")}");
+            }
+            else
+            {
+                var (cok, _) = await pg.CallAsync("PUT", $"/resource/{resourceId}/rule", body, ct);
+                if (!cok) return (notes, false, $"pangolin: failed to create rule {w.Match} {w.Value} on {fqdn}");
+                notes.Add($"{fqdn}: rule added {w.Action} {w.Match} {w.Value}");
+            }
+            changed = true;
+        }
+        foreach (var (k, l) in live)
+            notes.Add($"{fqdn}: undeclared live rule {l.Action} {k.Match} {k.Value} — left alone, delete by hand if unwanted");
+
+        // applyRules gates the whole layer and the embedded resource list omits it, so it costs
+        // one detail call — only for resources that declare rules.
+        var (dok, droot) = await pg.CallAsync("GET", $"/resource/{resourceId}", null, ct);
+        if (!dok) return (notes, false, $"pangolin: GET resource failed for {fqdn}");
+        if (!Truthy(Data(droot), "applyRules"))
+        {
+            var (aok, _) = await pg.CallAsync("POST", $"/resource/{resourceId}", JsonSerializer.Serialize(new { applyRules = true }), ct);
+            if (!aok) return (notes, false, $"pangolin: failed to enable applyRules on {fqdn}");
+            notes.Add($"{fqdn}: rules enabled (applyRules on)");
+            changed = true;
+        }
+        return (notes, changed, null);
     }
 
     // What a live Pangolin resource looks like, as far as reconciliation cares.
@@ -1714,6 +1853,9 @@ public sealed class PangolinProvisioner : IAppProvisioner
         sb.Append($"echo {env} | base64 -d > .env && chmod 600 .env\n");
         sb.Append($"echo {tStatic} | base64 -d > config/traefik/traefik_config.yml\n");
         sb.Append($"echo {tDynamic} | base64 -d > config/traefik/dynamic_config.yml\n");
+        // The log agent goes in BEFORE the recreate, so it is already following the journal
+        // when the containers come back on the journald driver and the first lines are kept.
+        if (OtlpLogsEndpoint(s) is not null) sb.Append(BuildLogAgentInstall(s));
         sb.Append("docker compose up -d\n");
         // ...then RESTART, because `up -d` is not enough. It only recreates a service whose
         // DEFINITION changed, and config.yml / traefik_config.yml are bind-mounted files — so a
@@ -1734,6 +1876,136 @@ public sealed class PangolinProvisioner : IAppProvisioner
     }
 
     private static string B64(string s) => Convert.ToBase64String(Encoding.UTF8.GetBytes(s));
+
+    // ── Log shipping (#587) ─────────────────────────────────────────────────────
+    // config.otlpLogsEndpoint (host:port, OTLP/gRPC, LAN) switches it on: the compose services
+    // move to the journald driver and a HOST otelcol-contrib follows the journal and ships each
+    // container's lines to it. Unset → neither happens, and the compose is unchanged.
+    internal static string? OtlpLogsEndpoint(Shape s) =>
+        s.Spec.Config.Str("otlpLogsEndpoint") is { Length: > 0 } e ? e : null;
+
+    // config.journaldMaxUse — journald size syntax (K/M/G/T suffix), e.g. "500M".
+    internal static string JournaldMaxUse(Shape s) =>
+        s.Spec.Config.Str("journaldMaxUse") is { Length: > 0 } v ? v : DefaultJournaldMaxUse;
+
+    // Idempotent: writes the drop-in only when its content differs, and restarts journald only
+    // then. On restart journald applies the cap straight away, vacuuming archived files down to
+    // it. Prints "journald-cap: changed" or "journald-cap: ok" for ApplyAsync to read.
+    internal static string BuildJournaldCap(Shape s)
+    {
+        var want = $"# homelab-managed (#587): Loki holds the long-term copy; this is a local buffer.\n[Journal]\nSystemMaxUse={JournaldMaxUse(s)}\n";
+        var f = "/etc/systemd/journald.conf.d/homelab.conf";
+        var sb = new StringBuilder();
+        sb.Append("set -e\n");
+        sb.Append("mkdir -p /etc/systemd/journald.conf.d\n");
+        sb.Append($"want=$(echo {B64(want)} | base64 -d)\n");
+        sb.Append($"if [ \"$(cat {f} 2>/dev/null)\" = \"$want\" ]; then echo 'journald-cap: ok'; exit 0; fi\n");
+        sb.Append($"printf '%s\\n' \"$want\" > {f}\n");
+        sb.Append("systemctl restart systemd-journald\n");
+        sb.Append("echo 'journald-cap: changed'\n");
+        return sb.ToString();
+    }
+
+    // A host systemd unit, NOT a compose service: the journald receiver shells out to
+    // `journalctl`, which the otel-collector-contrib image does not ship, so as a container it
+    // starts and ships nothing. A log agent in a container would also have to ship its own
+    // logs and would die exactly when you most want to know why.
+    //
+    // Order matters. The config and the journal-group drop-in are written BEFORE dpkg, because
+    // the package's postinst enables and restarts the unit against whatever config.yaml is on
+    // disk; --force-confold keeps ours over the packaged sample on first install and upgrade.
+    // Only amd64 is pinned — every Proxmox node is x86-64.
+    internal static string BuildLogAgentInstall(Shape s)
+    {
+        var c = s.Spec.Config;
+        var ver = c.Str("otelcolVersion") ?? DefaultOtelcolVersion;
+        var sha = c.Str("otelcolSha256") ?? DefaultOtelcolSha256;
+        var deb = $"otelcol-contrib_{ver}_linux_amd64.deb";
+        var url = $"https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v{ver}/{deb}";
+        // The service runs as otelcol-contrib, which cannot read the system journal without
+        // this group — journalctl then returns nothing and exits 0, so nothing ever errors.
+        var dropIn = "[Service]\nSupplementaryGroups=systemd-journal\n";
+
+        var sb = new StringBuilder();
+        sb.Append("mkdir -p /etc/otelcol-contrib /etc/systemd/system/otelcol-contrib.service.d\n");
+        sb.Append($"echo {B64(BuildOtelcolConfig(s))} | base64 -d > /etc/otelcol-contrib/config.yaml\n");
+        sb.Append($"echo {B64(dropIn)} | base64 -d > /etc/systemd/system/otelcol-contrib.service.d/homelab.conf\n");
+        sb.Append($"if [ \"$(dpkg-query -W -f='${{Version}}' otelcol-contrib 2>/dev/null)\" != \"{ver}\" ]; then\n");
+        sb.Append($"  curl -fsSL -o /tmp/{deb} {url}\n");
+        sb.Append($"  echo \"{sha}  /tmp/{deb}\" | sha256sum -c -\n");
+        sb.Append($"  DEBIAN_FRONTEND=noninteractive dpkg --force-confold -i /tmp/{deb}\n");
+        sb.Append($"  rm -f /tmp/{deb}\n");
+        sb.Append("fi\n");
+        sb.Append("systemctl daemon-reload\n");
+        sb.Append("systemctl enable otelcol-contrib\n");
+        sb.Append("systemctl restart otelcol-contrib\n");
+        // `restart` returns 0 even if the process dies a second later on a bad config. Check it
+        // is still up, so a broken agent fails the deploy (no marker → next converge retries)
+        // instead of reporting APPLIED over a pipeline that ships nothing.
+        sb.Append("sleep 3\n");
+        sb.Append("systemctl is-active --quiet otelcol-contrib || { journalctl -u otelcol-contrib -n 30 --no-pager; exit 1; }\n");
+        return sb.ToString();
+    }
+
+    // The collector config, verified on CT 2013 against a real journald-driver container on
+    // 0.161.0. Two things in it are not obvious and both fail SILENTLY if got wrong:
+    //
+    //  * The journald receiver puts every journal field in the record BODY (a map); attributes
+    //    are empty. A filter on attributes["CONTAINER_NAME"] drops every record.
+    //  * service.name must not be set on resource.attributes from the log context: the receiver
+    //    emits one resource per batch, so every line in a batch would get the LAST record's
+    //    container name. Set a log attribute, then groupbyattrs lifts it into its own resource.
+    //
+    // The body becomes the bare MESSAGE, so Loki holds the line the container wrote (traefik's
+    // JSON access log stays parseable) rather than the whole journal record around it.
+    // file_storage keeps the journal cursor, so an agent restart neither re-ships nor skips.
+    internal static string BuildOtelcolConfig(Shape s)
+    {
+        var endpoint = OtlpLogsEndpoint(s) ?? "";
+        var L = new List<string>
+        {
+            "extensions:",
+            "  file_storage:",
+            "    directory: /var/lib/otelcol-contrib",
+            "receivers:",
+            "  journald:",
+            "    units: [ docker.service ]",
+            "    priority: info",
+            "    storage: file_storage",
+            "processors:",
+            "  filter/containers_only:",       // dockerd's own daemon lines have no CONTAINER_NAME
+            "    error_mode: ignore",
+            "    logs:",
+            "      log_record:",
+            "        - 'body[\"CONTAINER_NAME\"] == nil'",
+            "  transform/hoist:",
+            "    error_mode: ignore",
+            "    log_statements:",
+            "      - context: log",
+            "        statements:",
+            "          - set(attributes[\"service.name\"], body[\"CONTAINER_NAME\"])",
+            "          - set(body, body[\"MESSAGE\"])",
+            "  groupbyattrs:",
+            "    keys: [ service.name ]",
+            "  resource/host:",
+            "    attributes:",
+            "      - { key: host.name, value: pangolin, action: upsert }",
+            "  batch: {}",
+            "exporters:",
+            "  otlp:",
+            $"    endpoint: {endpoint}",
+            "    tls:",
+            "      insecure: true",              // LAN-only :4317, unauthenticated by design
+            "service:",
+            "  extensions: [ file_storage ]",
+            "  pipelines:",
+            "    logs:",
+            "      receivers: [ journald ]",
+            "      processors: [ filter/containers_only, transform/hoist, groupbyattrs, resource/host, batch ]",
+            "      exporters: [ otlp ]",
+        };
+        return string.Join("\n", L) + "\n";
+    }
 
     // config.yml lines (shared shape with the native path; cert_resolver points Pangolin's
     // HTTP-provider routers at Traefik's `letsencrypt` resolver). secret is "$SECRET".
@@ -1792,6 +2064,13 @@ public sealed class PangolinProvisioner : IAppProvisioner
         var traefik = c.Str("traefikImage") ?? DefaultTraefikImage;
         var gerbil = c.Str("gerbilImage") ?? DefaultGerbilImage;
         var withGerbil = CBool(c, "includeGerbil", false);
+        // With log shipping on, every service logs to journald instead of docker's json-file:
+        // journald records carry CONTAINER_NAME, whereas a json-file log is identified only by
+        // the container ID in its path, which changes on every recreate — so dashboards and
+        // alert rules keyed on it would silently match nothing after a rebuild (#587).
+        var logging = OtlpLogsEndpoint(s) is null
+            ? Array.Empty<string>()
+            : new[] { "    logging:", "      driver: journald" };
 
         var L = new List<string>
         {
@@ -1812,6 +2091,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
             "      timeout: 10s",
             "      retries: 15",
         };
+        L.AddRange(logging);
         if (withGerbil)
         {
             L.AddRange(new[]
@@ -1849,6 +2129,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
                 "      - 443:443/udp",
                 "      - 80:80",
             });
+            L.AddRange(logging);
         }
         L.AddRange(new[]
         {
@@ -1876,6 +2157,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
             "      - ./config/traefik:/etc/traefik:ro",
             "      - ./config/letsencrypt:/letsencrypt",
         });
+        L.AddRange(logging);
         return string.Join("\n", L) + "\n";
     }
 
@@ -1908,6 +2190,23 @@ public sealed class PangolinProvisioner : IAppProvisioner
             $"      version: \"{badger}\"",
             "log:",
             "  level: \"INFO\"",
+            // Access logging, 4xx/5xx ONLY. The public ingress had no request log at all, so a
+            // client that fails auth was invisible from the homelab side -- established by
+            // control on 2026-09-12, when a known 401 produced zero log lines and "no entries"
+            // therefore proved nothing. Filtering to 400-599 keeps a healthy ingress quiet;
+            // success needs no log line because it shows up as data.
+            //
+            // Headers are DROPPED, deliberately: /v1/metrics carries the OTLP bearer token in
+            // Authorization, and an access log that captured it would turn a debugging aid into
+            // a credential leak in `docker logs`.
+            "accessLog:",
+            "  format: \"json\"",
+            "  filters:",
+            "    statusCodes:",
+            "      - \"400-599\"",
+            "  fields:",
+            "    headers:",
+            "      defaultMode: \"drop\"",
             "certificatesResolvers:",
             "  letsencrypt:",
             "    acme:",

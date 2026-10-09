@@ -28,3 +28,74 @@ schema_config:
 
 limits_config:
   allow_structured_metadata: true
+
+  # Raised from the 4 MB/s / 6 MB defaults. Single tenant, one collector, and a push over
+  # the burst size is rejected outright (not slowed), so a modest burst costs data. Paired
+  # with the capped `batch/logs` processor in otel-collector.yml (2026-10-09).
+  ingestion_rate_mb: 8
+  ingestion_burst_size_mb: 16
+
+  # Required for delete requests to be accepted at all (#587). Without it the API returns
+  # success-shaped responses and nothing is ever deleted.
+  deletion_mode: filter-and-delete
+
+  # ⚠ EXPLICIT, AND DELIBERATELY UNCHANGED BEHAVIOUR.
+  # `compactor.retention_enabled: true` below is required for delete requests, but it also
+  # switches on the retention loop. Loki's DEFAULT retention_period is not obviously safe to
+  # inherit here, and an age-based sweep is not what this change is for -- enabling deletion
+  # must not quietly start deleting things nobody asked to delete.
+  # 0s = retain forever, which is exactly what this Loki does today.
+  # Setting a real retention period is a separate decision about how long homelab logs are
+  # worth keeping, and it is Christian's to make, not a side effect of a bug fix.
+  retention_period: 0s
+
+  # ── Historical log import (#587) ──────────────────────────────────────────────────
+  # Loki rejects samples older than `reject_old_samples_max_age` AT INGEST, and says so
+  # only in its own logs -- the pushing side gets no error it surfaces, so a replay of
+  # old data looks like it succeeded while its oldest lines are silently gone.
+  #
+  # The default is 7d. CT 2013's Traefik access log is being replayed into Loki after
+  # being copied off the host, and it ages in real time while the deploy is scheduled, so
+  # the default put a ~5.5 day clock on a task with no other urgency. 30d removes that
+  # clock without making it unbounded.
+  #
+  # This is deliberately an EXPLICIT value rather than a raised default: the whole point
+  # is not to depend on what the default happens to be.
+  reject_old_samples: true
+  reject_old_samples_max_age: 720h
+
+# ── Ruler: log-based alerting (#587) ──────────────────────────────────────────────────
+# Evaluates LogQL rules and pushes to Alertmanager, which routes to ntfy like any other
+# producer. Log-based rather than a Prometheus rule ON PURPOSE: the useful signal is the
+# CLIENT IP, and that exists only in the access log -- Traefik's Prometheus metrics carry
+# no such label.
+#
+# `auth_enabled: false` means the single tenant is literally named `fake`, so rule files
+# must live at <directory>/fake/. That is not a placeholder left in by mistake; renaming it
+# breaks rule discovery silently -- the ruler starts clean and simply evaluates nothing.
+ruler:
+  alertmanager_url: http://alertmanager:9093
+  enable_alertmanager_v2: true
+  enable_api: true
+  # Where evaluated rules are staged. Distinct from storage.local.directory below.
+  rule_path: /tmp/loki-rule-eval
+  storage:
+    type: local
+    local:
+      directory: /loki/rules
+  ring:
+    kvstore:
+      store: inmemory
+
+# ── Compactor: required for delete requests (#587) ────────────────────────────────────
+# The historical import of CT 2013's access log landed partially -- 8,021 of 20,894 lines,
+# the rest dropped by a gRPC message-size limit -- and the missing lines are OLDER than the
+# newest landed line. Loki rejects out-of-order writes into an existing stream, so the
+# partial stream cannot be topped up; it has to be deleted and re-imported.
+#
+# Deletion is not available without this block, and `retention_enabled` is required even
+# when retention itself is off (see retention_period above).
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem

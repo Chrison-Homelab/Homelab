@@ -7,16 +7,10 @@ Automation scripts designed to run on a Synology DSM NAS (`DS1813-01`,
 
 ### Monitoring
 
-- **install-pulse-agent.sh**
-  - Installs, updates or removes the [Pulse](https://github.com/rcourtman/Pulse) unified agent
-  - Registers the NAS with the Pulse server on CT 4001 (`monitoring.homelab.chrison.internal:7655`)
-  - Excludes DSM's `md0`/`md1` by default to suppress a known permanent false-positive alert
-  - Bash only — DSM has no PowerShell, so there is no `.ps1` twin here
-
 - **build-static-smartctl.sh**
   - Builds a statically linked smartctl 7.5 from the checksum-verified upstream tarball
-  - DSM ships smartctl 6.5, which predates the `--json` output the Pulse agent parses, so
-    without this every disk reports `health=UNKNOWN, temperature=0`
+  - DSM ships smartctl 6.5, too old for the monitoring agents' S.M.A.R.T. reads; Beszel's
+    agent uses this copy (`/usr/local/bin/smartctl-7`) through a PATH shim — keep it installed
   - Runs the build in a throwaway container; nothing is installed on your workstation
 
 ## Why this directory has no PowerShell twins
@@ -44,7 +38,7 @@ Never pass a token or password as a command-line argument — argv is world-read
 `PULSE_API_TOKEN`, `--token-file`, or `--token-stdin`.
 
 Credentials come from the gitignored `secrets.env`, generated from `secrets.env.template` plus
-Bitwarden Secrets Manager:
+OpenBao:
 
 ```bash
 scripts/secrets-sync.sh

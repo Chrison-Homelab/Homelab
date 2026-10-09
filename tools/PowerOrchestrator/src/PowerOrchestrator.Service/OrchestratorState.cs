@@ -24,7 +24,7 @@ public sealed class OrchestratorState
             Nodes: options.ManagedNodes
                 .Select(n => new NodeReport(n, Online: false, RunningGuests: 0, Idle: false, "-", "startup"))
                 .ToList(),
-            ArmPreconditions: ArmGuard.Preconditions());
+            ArmPreconditions: ArmGuard.Unknown());
     }
 
     public StatusReport Current => _report;

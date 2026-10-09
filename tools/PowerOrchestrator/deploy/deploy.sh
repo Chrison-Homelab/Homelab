@@ -6,7 +6,7 @@
 # output — it does NOT build. Drive it through the Fallout target so publish always runs first:
 #
 #   ./build.sh DeployPowerOrchestrator                          # publish → copy → systemd (recommended)
-#   ORCH_DEPLOY_HOST=192.168.179.1 ./build.sh DeployPowerOrchestrator
+#   ORCH_DEPLOY_HOST=nuc-01.homelab.chrison.internal ./build.sh DeployPowerOrchestrator
 #
 # Running this script directly is supported too, but only after a publish exists:
 #   ./build.sh PublishPowerOrchestrator && tools/PowerOrchestrator/deploy/deploy.sh
@@ -21,7 +21,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../../.." && pwd)"
 PUBLISH_DIR="$HERE/../publish"
 
-HOST="${ORCH_DEPLOY_HOST:-192.168.179.1}"   # nuc-01
+HOST="${ORCH_DEPLOY_HOST:-nuc-01.homelab.chrison.internal}"   # the sentinel node, by its UniFi name
 USER="${ORCH_DEPLOY_USER:-root}"
 TARGET=/opt/power-orchestrator
 SSH="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new ${USER}@${HOST}"
@@ -46,7 +46,7 @@ else
     echo "!! secrets.env not found at repo root — writing a template; edit on the node before arming." >&2
     cat > "$ENV_TMP" <<'EOF'
 # Fill these in (see secrets.env.template / run scripts/secrets-sync.sh). Service stays in dry-run until ORCH_ARMED=true.
-PROXMOX_BASE_URL=https://192.168.179.1:8006/api2/json
+PROXMOX_BASE_URL=https://hpe-01.homelab.chrison.internal:8006/api2/json
 PROXMOX_TOKEN_ID=
 PROXMOX_TOKEN_SECRET=
 PROXMOX_VERIFY_TLS=false

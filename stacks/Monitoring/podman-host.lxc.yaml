@@ -19,7 +19,7 @@
 #     marker so editing a config re-converges and restarts the units consuming it. This
 #     replaced stacks/Monitoring/deploy/install.sh (since deleted), which shipped it by tar.
 #
-#  2. FIXED-UID DATA DIRS on 3.9 GB of state (tempo 3.2G · pulse 616M · grafana 50M ·
+#  2. FIXED-UID DATA DIRS on 3.9 GB of state (tempo 3.2G · grafana 50M ·
 #     loki 68K). Each container runs as a uid we don't control, so each gets
 #     `UserNS=keep-id:uid=N,gid=N` with its host dir owned by `podman`.
 #     `:U` is REJECTED here — it chowns RECURSIVELY on EVERY container start, i.e. 3.9 GB
@@ -27,7 +27,7 @@
 #     `:U` is not merely wasteful but dangerous; see stacks/Media/podman-host.)
 #     Per-image, verified against the LIVE containers rather than assumed: grafana 472,
 #     tempo/loki 10001, prometheus 65534 (nobody), exportarr 65532 (distroless) all need
-#     keep-id; snmp_exporter and pulse run as ROOT and must NOT have it (the default mapping
+#     keep-id; snmp_exporter runs as ROOT and must NOT have it (the default mapping
 #     already sends container-root to the `podman` user).
 #
 # NETWORKING: DHCP, deliberately. CT 4000 pinned 10.10.0.40 and things hard-coded it
@@ -43,13 +43,53 @@ metadata:
   name: podman-host
   stack: Monitoring
   tags: [podman, quadlet, container-host, adr-0009]
+  # What this host offers a human, for the dashboard (ADR-0012). One entry per UI; `group`
+  # defaults to the stack. A `widget` is a Homepage service widget; `keyFrom`/`passwordFrom`
+  # name a SECRET (as exported by quadlets/homepage.container), never a value. Widget URLs use
+  # container names because Homepage sits on monitoring.network with them.
+  services:
+    - name: Grafana
+      url: http://monitoring.homelab.chrison.internal:3000
+      icon: grafana
+      description: Dashboards over Prometheus, Tempo and Loki
+      widget: { type: grafana, version: 2, url: http://grafana:3000, username: admin, passwordFrom: GF_SECURITY_ADMIN_PASSWORD }
+    - name: Prometheus
+      url: http://monitoring.homelab.chrison.internal:9091
+      icon: prometheus
+      description: Metrics and alert rules
+      widget: { type: prometheus, url: http://prometheus:9090 }
+    - name: Alertmanager
+      url: http://monitoring.homelab.chrison.internal:9093
+      icon: alertmanager
+      description: The alert bus (ADR-0011)
+    - name: ntfy
+      url: https://ntfy.lab.chrison.dev
+      icon: ntfy
+      description: Notification bus — where alerts land (#466)
+    - name: Cockpit
+      url: https://monitoring.homelab.chrison.internal:9090
+      icon: cockpit
+      description: Host console for CT 4001
+    - name: Homepage
+      url: http://monitoring.homelab.chrison.internal:3010
+      icon: homepage
+      description: This dashboard, rendered from the shapes
+    - name: OTel Collector
+      url: http://monitoring.homelab.chrison.internal:4318
+      icon: opentelemetry
+      description: OTLP/HTTP ingest (Claude Code telemetry → Tempo/Loki); no UI, no auth
 
 spec:
   app: podman            # community-scripts ct/podman.sh + the `podman` provisioner
   ctid: 4001             # in-block (4000–4099); 4000 is the Docker host this replaces
   cores: 2               # matches CT 4000
-  memory: 4096           # MB — Prometheus TSDB + Loki + Tempo + Grafana + collector + Pulse
-  disk: 30               # GB — matches CT 4000; 3.9 GB of state today, grows with retention
+  memory: 4096           # MB — Prometheus TSDB + Loki + Tempo + Grafana + collector + Beszel
+  disk: 50               # GB — raised from 30 (was 73% full). Measured breakdown at the time:
+                         # tempo 11 GB of traces, pulse 377 MB, prometheus 182 MB, grafana
+                         # 116 MB, beszel 8 MB — plus ~9 GB of OS and container images.
+                         # NOTE this is hpe-01's LOCAL SSD (local-lvm thin pool), not the
+                         # NAS: a TSDB on NFS is explicitly unsupported by Prometheus.
+                         # Pool headroom when raised: 319 GB pool, 58% used.
 
   # DHCP reservation + the local DNS name (#416). `monitoring.homelab.chrison.internal`
   # is a per-client record ON this reservation, so it is what scrape targets and the
@@ -104,13 +144,43 @@ spec:
       radarr_api_key: RADARR_API_KEY
       sonarr_api_key: SONARR_API_KEY
       prowlarr_api_key: PROWLARR_API_KEY
-      # Pulse's OIDC client credentials (#485). The same pair is read by authentik's
-      # blueprint via `!Env`, so both ends of the relationship come from one source.
-      authentik_pulse_client_id: AUTHENTIK_PULSE_CLIENT_ID
-      authentik_pulse_client_secret: AUTHENTIK_PULSE_CLIENT_SECRET
       # unpoller polls the controller with the same key the *Sharp CLIs use — read-only.
       unifi_api_key: UNIFI_API_KEY
       # Grafana's alert contact point posts here (HA automation webhook).
-      ha_alert_webhook_url: HA_ALERT_WEBHOOK_URL
+      # Gates the OTLP/HTTP receiver on :4318, which Pangolin publishes as
+      # otel.lab.chrison.dev for Claude Code telemetry. The :4317 gRPC receiver stays
+      # unauthenticated for PowerOrchestrator on the LAN.
+      otel_bearer_token: OTEL_BEARER_TOKEN
+      # ntfy declarative auth (#466). Users/tokens are secret; the topic ACLs are not and
+      # live in assets/config/ntfy/server.yml. ntfy deletes anything missing from these on
+      # restart, so they are authoritative, not additive.
+      ntfy_auth_users: NTFY_AUTH_USERS
+      ntfy_auth_tokens: NTFY_AUTH_TOKENS
+      # The same alertmanager token on its own: Alertmanager needs it as a FILE for
+      # http_config.authorization.credentials_file and cannot pick one entry out of the
+      # combined string above.
+      ntfy_alertmanager_token: NTFY_ALERTMANAGER_TOKEN
       authentik_grafana_client_id: AUTHENTIK_GRAFANA_CLIENT_ID
       authentik_grafana_client_secret: AUTHENTIK_GRAFANA_CLIENT_SECRET
+      # Beszel's first-user bootstrap (#590) — see quadlets/beszel.container.
+      beszel_admin_password: BESZEL_ADMIN_PASSWORD
+      # prometheus-pve-exporter's own PVE token (#591), monitoring@pve!exporter.
+      pve_exporter_token: PVE_EXPORTER_TOKEN
+      # pbs-exporter's read-only PBS token (#591), monitoring@pbs!exporter.
+      pbs_exporter_token: PBS_EXPORTER_TOKEN
+      homeassistant_token: HOMEASSISTANT_TOKEN
+      bazarr_api_key: BAZARR_API_KEY
+      seerr_api_key: SEERR_API_KEY
+      plex_token: PLEX_TOKEN
+      abs_api_key: ABS_API_KEY
+      qbit_user: QBIT_USER
+      qbit_password: QBIT_PASSWORD
+
+    # ── Dashboard host (ADR-0012). Marks THIS shape as where `homelab-infra dashboard
+    #    --deploy` delivers the rendered services.yaml: <assetsTarget>/<services>, then restarts
+    #    <unit> as the podman user. Rendering is deliberately NOT part of converge — a converge of
+    #    this host restarts every monitoring unit, and a new app elsewhere must not do that. The
+    #    `dashboard` workflow (push to main touching stacks/**) and `./build.sh Dashboard` do it.
+    dashboard:
+      services: homepage/services.yaml
+      unit: homepage.service

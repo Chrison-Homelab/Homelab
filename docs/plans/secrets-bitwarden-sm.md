@@ -1,3 +1,6 @@
+> **Superseded (2026-10-03).** OpenBao (DevOps CT 3007) replaced Bitwarden Secrets Manager as the
+> only secrets store (#609). SM is frozen as a cold copy and nothing reads it. Kept for history.
+
 # Plan: Secrets from Bitwarden Secrets Manager (single canonical store)
 
 **Status:** Hub built + validated — 2026-07-17. `secrets.env` now generated from
@@ -65,7 +68,7 @@ Template sketch:
 
 ```bash
 # ── non-secret: literal, passed through verbatim ──
-PROXMOX_BASE_URL=https://192.168.179.3:8006/api2/json
+PROXMOX_BASE_URL=https://hpe-01.homelab.chrison.internal:8006/api2/json
 PROXMOX_VERIFY_TLS=false
 GH_ORG=Chrison-Homelab
 ARR_USER=csimon

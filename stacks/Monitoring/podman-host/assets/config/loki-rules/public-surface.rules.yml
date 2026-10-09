@@ -1,0 +1,70 @@
+# Loki ruler — public-surface auth failures (#587).
+#
+# Lives on CT 4001 (Monitoring), evaluated by Loki's ruler and pushed to Alertmanager,
+# which routes to ntfy. Log-based rather than a Prometheus rule ON PURPOSE: the useful
+# discriminator is the CLIENT IP, and that exists only in the access log -- Traefik's
+# Prometheus metrics have no such label.
+#
+# ── `| json` IS REQUIRED ──────────────────────────────────────────────────────────────
+# The agent ships the line body as the RAW Traefik JSON string; DownstreamStatus and
+# friends are NOT structured metadata. Without `| json` every label match below is against
+# a field that does not exist, the expression returns nothing, and the alert never fires --
+# silently, because "no results" and "no attacks" look identical.
+#
+# Traefik's own app log is plain text, not JSON, so those lines fail the json parser and
+# drop out on their own. That is the intended behaviour, not an accident to rely on
+# forever -- if Traefik's `log:` section is ever switched to json format, revisit this.
+#
+# ── WHAT THIS CAN AND CANNOT SEE ──────────────────────────────────────────────────────
+# #552 filters Traefik's access log to statusCodes 400-599. Successful requests produce
+# NO log line at all. So this alert says "someone is repeatedly failing auth against a
+# public host". It can NEVER say "someone got in" -- a successful login after the failures
+# is invisible from this data. Do not read silence after a burst as the attempt failing.
+groups:
+  - name: public-surface
+    interval: 1m
+    rules:
+      - alert: PublicAuthFailureBurst
+        # Concentration, not volume: ONE source against ONE app-auth-only host.
+        # Background scanning sprays across hosts and paths and rarely trips this;
+        # a real attempt is narrow and repetitive.
+        expr: |
+          sum by (ClientHost, RequestHost) (
+            count_over_time(
+              {service_name="traefik"}
+                | json
+                | DownstreamStatus =~ "401|403"
+                | RequestHost =~ "(audiobookshelf|seerr)\\..*"
+              [10m]
+            )
+          ) > 20
+        for: 0m
+        labels:
+          severity: warning
+          # Ingress lives in Core -> routes to the `core` ntfy topic. No Alertmanager or
+          # ntfy change needed; that route already exists and is live.
+          stack: core
+          # Alertmanager groups by [alertname, name], so setting `name` to the source IP
+          # gives ONE notification per attacker rather than collapsing every source into
+          # a single group.
+          name: "{{ $labels.ClientHost }}"
+        annotations:
+          summary: "{{ $labels.ClientHost }} — {{ $value }} auth failures on {{ $labels.RequestHost }} in 10m"
+          description: >-
+            Repeated 401/403 from a single source against an app-auth-only host.
+            Successful requests are not logged, so this shows attempts only, never
+            whether one succeeded.
+
+# ── DELIBERATELY severity: warning, NOT critical ──────────────────────────────────────
+# critical maps to ntfy priority 5, which bypasses iOS Focus. That tier should be spent on
+# something worth waking for, and "someone is failing to log in" is not -- especially when
+# we cannot tell whether they then succeeded. If a stronger signal ever becomes available
+# (e.g. Traefik metrics showing a 2xx from the same source right after a burst), THAT is
+# what deserves critical.
+#
+# ── TUNING ────────────────────────────────────────────────────────────────────────────
+# >20 in 10m and the (audiobookshelf|seerr) host match are both first guesses. Neither can
+# be calibrated until real data is flowing -- run the expr in Grafana against a few days of
+# ingested logs and set the threshold above observed background, then commit the number.
+# The /api/* bypass paths on *.arr.chrison.dev are NOT matched yet; add them once the
+# label shape is confirmed against real ingested data.

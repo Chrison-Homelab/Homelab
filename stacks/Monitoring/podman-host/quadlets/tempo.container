@@ -10,14 +10,18 @@ After=network-online.target
 Wants=network-online.target
 
 [Container]
-Image=docker.io/grafana/tempo:latest
+# PINNED (#599). `:latest` + AutoUpdate=registry is how this broke unnoticed: Grafana
+# stopped moving `latest` at a 3.0.0 build on 2 June 2026, so auto-update had silently been
+# a no-op ever since, while the config still described the 2.x compactor architecture.
+# A bump is a deliberate change: read the release notes for every version in between,
+# adapt tempo.yml, converge, then check compaction runs. See docs/runbooks/image-upgrade.md.
+Image=docker.io/grafana/tempo:3.1.0
 ContainerName=tempo
 Network=monitoring.network
 UserNS=keep-id:uid=10001,gid=10001
 Volume=/home/podman/monitoring/config/tempo.yml:/etc/tempo/tempo.yml:ro
 Volume=/home/podman/monitoring/data/tempo:/var/tempo
 Exec=-config.file=/etc/tempo/tempo.yml
-AutoUpdate=registry
 
 [Service]
 ExecStartPre=/usr/bin/mkdir -p /home/podman/monitoring/data/tempo

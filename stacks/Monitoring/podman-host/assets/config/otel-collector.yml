@@ -1,16 +1,74 @@
-# OpenTelemetry Collector — receives OTLP from the power-orchestrator (and any future
-# OTLP emitters) and fans out: metrics → Prometheus (scraped off :8889), traces → Tempo,
-# logs → Loki. See tools/PowerOrchestrator/README.md.
+# OpenTelemetry Collector — fans OTLP out to Prometheus (metrics, scraped off :8889),
+# Tempo (traces) and Loki (logs). See tools/PowerOrchestrator/README.md.
+#
+# ── TWO RECEIVERS, ON PURPOSE ───────────────────────────────────────────────────
+# :4317 gRPC is UNAUTHENTICATED and LAN-only. PowerOrchestrator (#191) points
+# OTEL_EXPORTER_OTLP_ENDPOINT at it, so adding auth here would silently break that
+# telemetry — the collector would start fine and the data would just stop arriving.
+#
+# :4318 HTTP requires a bearer token, because that is the one published through Pangolin
+# as otel.lab.chrison.dev for Claude Code telemetry. Without auth that hostname would be
+# an open WRITE path into Prometheus, Tempo AND Loki — anyone scanning could inject
+# metrics and log lines, and fill a 30 GB CT that is already 72% used.
+#
+# The token is read from a podman secret mounted under /run/secrets, never from this file:
+# this config is rendered from the repo by config.assets, so a literal token here would be
+# committed in plaintext.
+extensions:
+  bearertokenauth:
+    filename: /run/secrets/otel_bearer_token
+
 receivers:
+  # LAN, unauthenticated. Deliberately gRPC-only now — see the note above.
   otlp:
     protocols:
       grpc:
         endpoint: 0.0.0.0:4317
+  # Public path via Pangolin, bearer-token authenticated.
+  otlp/auth:
+    protocols:
       http:
         endpoint: 0.0.0.0:4318
+        auth:
+          authenticator: bearertokenauth
 
 processors:
   batch: {}
+
+  # Logs get their own, CAPPED batches. `batch: {}` sends up to 8192 records with no upper
+  # bound, and a burst of ~1 KB Traefik lines makes a single ~8 MB push. Loki rejects any
+  # push over its burst limit with 429, and it can never succeed on retry, so it was
+  # dropped: 62,800 lines in one hour on 2026-10-09, with nothing logged on this side.
+  # 2000 x ~1 KB stays well inside loki-config.yml's ingestion_burst_size_mb.
+  batch/logs:
+    send_batch_size: 1000
+    send_batch_max_size: 2000
+
+  # Claude Code reports CUMULATIVE PER-SESSION counters from a short-lived process, so
+  # session.id is load-bearing, NOT just noise. Dropping it collapses every session on a
+  # machine onto one series where each new session overwrites the last with its own small
+  # value instead of accumulating — measured: three series all stuck at 1, and
+  # sum(increase(...)) over a week returned 0. Concurrent sessions (the whole point of this
+  # setup) would interleave and corrupt it further. It stays.
+  #
+  # What IS safe to drop is the constant-per-account set: user.id (a 64-char hash),
+  # user.account_id, user.account_uuid and organization.id never vary for a given user, so
+  # they widen every series and distinguish nothing. user.email is kept — two values, and
+  # it is how the work laptop is told apart from this Mac.
+  #
+  # Cardinality therefore still grows with session count. That is inherent to how Claude
+  # Code reports; the bound is Prometheus's 12 GB size cap, not label surgery.
+  #
+  # Scoped to claude_code.* so PowerOrchestrator's metrics are untouched.
+  attributes/claude_code:
+    include:
+      match_type: regexp
+      metric_names: ["^claude_code\\..*"]
+    actions:
+      - { key: user.id, action: delete }
+      - { key: user.account_id, action: delete }
+      - { key: user.account_uuid, action: delete }
+      - { key: organization.id, action: delete }
 
 exporters:
   # Prometheus scrapes these (see assets/config/prometheus.yml → job 'otel-collector').
@@ -25,16 +83,17 @@ exporters:
     endpoint: http://loki:3100/otlp
 
 service:
+  extensions: [bearertokenauth]
   pipelines:
     metrics:
-      receivers: [otlp]
-      processors: [batch]
+      receivers: [otlp, otlp/auth]
+      processors: [attributes/claude_code, batch]
       exporters: [prometheus]
     traces:
-      receivers: [otlp]
+      receivers: [otlp, otlp/auth]
       processors: [batch]
       exporters: [otlp/tempo]
     logs:
-      receivers: [otlp]
-      processors: [batch]
+      receivers: [otlp, otlp/auth]
+      processors: [batch/logs]
       exporters: [otlphttp/loki]

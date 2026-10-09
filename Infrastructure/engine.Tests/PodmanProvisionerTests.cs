@@ -457,6 +457,112 @@ public sealed class PodmanProvisionerTests : IDisposable
         Assert.Contains(">> /home/podman/assets/config/big.yml.b64", writes[1]);
     }
 
+    // ── assetTrees: several trees on one host (Media CT 5114: recyclarr + trackerwatch) ──
+    private Shape WithExtraTree(Shape s, string from, string to, params (string Rel, string Content)[] files)
+    {
+        var root = Path.Combine(s.SourceDir!, from.Replace('/', Path.DirectorySeparatorChar));
+        foreach (var (rel, content) in files)
+        {
+            var full = Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+            File.WriteAllText(full, content);
+        }
+        var list = s.Spec.Config.TryGetValue("assetTrees", out var v) && v is List<object> l ? l : new List<object>();
+        list.Add(new Dictionary<object, object> { ["from"] = from, ["to"] = to });
+        s.Spec.Config["assetTrees"] = list;
+        return s;
+    }
+
+    private Shape TwoTrees()
+    {
+        var s = WithAssets(PodmanShape(("recyclarr.container", "[Container]\nImage=x:1\n")), ("recyclarr.yml", "a: 1\n"));
+        s.Spec.Config["assetsTarget"] = "/home/podman/recyclarr";
+        return WithExtraTree(s, "podman-host/trackerwatch/assets", "/home/podman/trackerwatch",
+            ("app.cs", "// c#\n"), ("config/trackers.json", "{}\n"));
+    }
+
+    [Fact]
+    public async Task AssetTrees_EachTreeIsPushedAndChownedOnlyWithinItsOwnTarget()
+    {
+        var shape = TwoTrees();
+        Assert.Empty(PodmanProvisioner.AssetTreeProblems(shape));
+
+        var exec = new FakeNodeExec(_ => new ExecResult(0, "", ""));
+        var (msg, failed) = await PodmanProvisioner.PushAssetsAsync(shape, Ctx(exec), "pve1", "5114", "podman");
+
+        Assert.Null(failed);
+        Assert.Contains(exec.Commands, c => c.Contains("base64 -d < /home/podman/recyclarr/recyclarr.yml.b64"));
+        Assert.Contains(exec.Commands, c => c.Contains("base64 -d < /home/podman/trackerwatch/config/trackers.json.b64"));
+        var chowns = exec.Commands.Where(c => c.Contains("chown -R")).ToList();
+        Assert.Equal(new[] { "chown -R podman:podman /home/podman/recyclarr", "chown -R podman:podman /home/podman/trackerwatch" }, chowns);
+        // THE POINT: nothing ever chowns the home, which holds youtarr's and krautwatch's data.
+        Assert.DoesNotContain(exec.Commands, c => c.TrimEnd().EndsWith("chown -R podman:podman /home/podman", StringComparison.Ordinal));
+        Assert.Contains("→ /home/podman/trackerwatch", msg);
+    }
+
+    [Fact]
+    public void AssetTrees_LegacyOnlyShape_KeepsExactlyTheMarkerItHad()
+    {
+        // An empty assetTrees list must not move the marker either, or every existing podman
+        // host re-deploys (restarting every unit) on its first converge with this code.
+        var legacy = WithAssets(PodmanShape(("a.container", "[Container]\nImage=x:1\n")), ("x.yml", "k: v\n"));
+        var before = PodmanProvisioner.DesiredMarker(legacy);
+        legacy.Spec.Config["assetTrees"] = new List<object>();
+        Assert.Equal(before, PodmanProvisioner.DesiredMarker(legacy));
+    }
+
+    [Fact]
+    public void AssetTrees_ExtraTreeContent_MovesTheMarker()
+    {
+        var a = TwoTrees(); var m1 = PodmanProvisioner.DesiredMarker(a);
+        File.WriteAllText(Path.Combine(a.SourceDir!, "podman-host", "trackerwatch", "assets", "app.cs"), "// changed\n");
+        Assert.NotEqual(m1, PodmanProvisioner.DesiredMarker(a));
+    }
+
+    [Theory]
+    [InlineData("/home/podman", "above")]                  // chown -R the whole home
+    [InlineData("/home", "above")]
+    [InlineData("/home/podman/recyclarr", "overlap")]      // same target as the legacy tree
+    [InlineData("/home/podman/recyclarr/sub", "overlap")]  // nested inside it
+    [InlineData("relative/dir", "absolute")]
+    public void AssetTrees_UnsafeTargets_AreRefused(string to, string expect)
+    {
+        var s = WithAssets(PodmanShape(), ("recyclarr.yml", "a: 1\n"));
+        s.Spec.Config["assetsTarget"] = "/home/podman/recyclarr";
+        WithExtraTree(s, "podman-host/other/assets", to, ("f.txt", "x"));
+        Assert.Contains(PodmanProvisioner.AssetTreeProblems(s), p => p.Contains(expect));
+    }
+
+    [Fact]
+    public async Task AssetTrees_FromOutsideAnAssetsDir_IsRefused_AndNothingIsPushed()
+    {
+        // The shape validator skips YAML only under `/assets/`; a tree elsewhere would have its
+        // config validated as shapes.
+        var s = WithExtraTree(PodmanShape(), "podman-host/trackerwatch/files", "/home/podman/trackerwatch", ("c.yml", "k: v\n"));
+        Assert.Contains(PodmanProvisioner.AssetTreeProblems(s), p => p.Contains("assets/"));
+
+        var exec = new FakeNodeExec(_ => new ExecResult(0, "", ""));
+        var (_, failed) = await PodmanProvisioner.PushAssetsAsync(s, Ctx(exec), "pve1", "5114", "podman");
+        Assert.NotNull(failed);
+        Assert.Empty(exec.Commands);
+    }
+
+    [Fact]
+    public void AssetTrees_MissingFromDir_IsRefused()
+    {
+        var s = PodmanShape();
+        s.Spec.Config["assetTrees"] = new List<object> { new Dictionary<object, object> { ["from"] = "nope/assets", ["to"] = "/home/podman/x" } };
+        Assert.Contains(PodmanProvisioner.AssetTreeProblems(s), p => p.Contains("not found"));
+    }
+
+    [Fact]
+    public void AssetsTarget_StillMeansTheLegacyTree_SoTheDashboardPathDoesNotMove()
+    {
+        // DashboardCommand writes CT 4001's services.yaml under AssetsTarget(host).
+        var s = TwoTrees();
+        Assert.Equal("/home/podman/recyclarr", PodmanProvisioner.AssetsTarget(s));
+    }
+
     [Fact]
     public async Task Assets_PushEnsuresUserAndTargetExist_BecauseItRunsBeforeTheDeployScript()
     {

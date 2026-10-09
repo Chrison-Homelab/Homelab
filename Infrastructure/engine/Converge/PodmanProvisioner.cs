@@ -73,9 +73,13 @@ public sealed class PodmanProvisioner : IAppProvisioner
         else
             yield return $"render {files.Count} quadlet(s) → ~{user}/{QuadletDir}/: {string.Join(", ", files.Select(f => Path.GetFileName(f)))}";
 
-        var assets = AssetFiles(s);
-        if (assets.Count > 0)
-            yield return $"render {assets.Count} asset file(s) → {AssetsTarget(s)}/ (config trees, dashboards, scripts)";
+        if (AssetTreeProblems(s) is { Count: > 0 } problems)
+            yield return $"⚠ INVALID asset trees — apply will refuse: {string.Join("; ", problems)}";
+        foreach (var t in AssetTrees(s))
+        {
+            var n = AssetFiles(t.SourceDir).Count;
+            if (n > 0) yield return $"render {n} asset file(s) {t.From} → {t.To}/ (pushed and chowned only within {t.To})";
+        }
 
         var secrets = SecretNames(s);
         if (secrets.Count > 0)
@@ -121,6 +125,17 @@ public sealed class PodmanProvisioner : IAppProvisioner
             parts.Add($"assetsTarget={AssetsTarget(s)}");
             foreach (var rel in AssetFiles(s))
                 parts.Add($"asset:{rel}:{Sha(SafeRead(Path.Combine(adir, rel)))}");
+        }
+        // Extra trees (assetTrees) hash in AFTER the legacy pair and in its own format, so a
+        // shape that declares only `assets`/`assetsTarget` keeps exactly the marker it had.
+        // Changing that would re-deploy — and restart every unit on — every podman host for no
+        // reason the first time this code converged.
+        foreach (var t in ExtraAssetTrees(s))
+        {
+            parts.Add($"assetTree={t.From}->{t.To}");
+            if (t.SourceDir is { } tdir)
+                foreach (var rel in AssetFiles(tdir))
+                    parts.Add($"asset@{t.To}:{rel}:{Sha(SafeRead(Path.Combine(tdir, rel)))}");
         }
 
         // Hash the generated script too, so a change to the deploy RECIPE — not just to its
@@ -183,7 +198,17 @@ public sealed class PodmanProvisioner : IAppProvisioner
         // this converge" from "was already in that state". Read from the container rather
         // than the engine host: the comparison is against timestamps the container itself
         // writes, and the two clocks are not the same clock.
-        var sinceRes = await ctx.Exec.InContainerAsync(node, ctid, "date -u '+%Y-%m-%d %H:%M:%S'");
+        //
+        // ⚠ THE `+00` IS LOAD-BEARING AND ITS ABSENCE IS SILENT. This is UTC, but an
+        // offset-less literal does not say so, and the consumer resolves it in ITS OWN
+        // timezone — Postgres parses '2026-09-06 00:01:18' against the session TimeZone, and
+        // the authentik container sets TZ=Pacific/Auckland. The stamp then lands ~12 hours
+        // EARLIER than the instant meant, so `last_applied < '{{since}}'` is false for any
+        // apply that happened today and the freshness clause never fires. The check silently
+        // degrades to "is it successful right now" — the exact stale-read it exists to catch.
+        // Found when a converge reported a passing verify over a blueprint it had shipped but
+        // authentik had not yet applied (#539).
+        var sinceRes = await ctx.Exec.InContainerAsync(node, ctid, "date -u '+%Y-%m-%d %H:%M:%S+00'");
         var since = sinceRes.Ok ? sinceRes.Stdout.Trim() : "";
 
         // Assets BEFORE the deploy script: units must never start before the configs they
@@ -269,7 +294,11 @@ public sealed class PodmanProvisioner : IAppProvisioner
     // stale-read failure the mechanism is meant to catch.
     // Substituted for {{since}} when a run changed nothing, so the freshness clause becomes
     // vacuously true and the check reduces to "is it successful right now".
-    internal const string EpochSince = "1970-01-01 00:00:00";
+    //
+    // Carries the same explicit `+00` as a real stamp. Nothing depends on it at the epoch —
+    // every plausible timestamp is after 1970 in any timezone — but the two must stay the
+    // same shape, or the next person copies the offset-less one back into the live path.
+    internal const string EpochSince = "1970-01-01 00:00:00+00";
 
     internal readonly record struct VerifyStep(string Name, string Run, int Retries, int IntervalSeconds);
 
@@ -335,16 +364,34 @@ public sealed class PodmanProvisioner : IAppProvisioner
     internal static async Task<(string? Msg, string? Failed)> PushAssetsAsync(
         Shape s, ConvergeContext ctx, string node, string ctid, string user)
     {
-        IReadOnlyList<(string Rel, string B64, bool Exec)> assets;
-        try { assets = ReadAssets(s); }
-        catch (Exception ex) { return (null, ex.Message); }
-        if (assets.Count == 0) return (null, null);
+        if (AssetTreeProblems(s) is { Count: > 0 } problems)
+            return (null, "invalid asset trees: " + string.Join("; ", problems));
 
-        var target = AssetsTarget(s);
+        // One push per tree, each confined to its own target: PushFilesAsync ends with
+        // `chown -R <target>`, so a tree's target is exactly as far as ownership is rewritten.
+        var msgs = new List<string>();
+        foreach (var t in AssetTrees(s))
+        {
+            IReadOnlyList<(string Rel, string B64, bool Exec)> assets;
+            try { assets = ReadAssets(t.SourceDir); }
+            catch (Exception ex) { return (null, ex.Message); }
+            if (assets.Count == 0) continue;
+            var (msg, failed) = await PushFilesAsync(ctx.Exec, node, ctid, user, t.To, assets);
+            if (failed is not null) return (null, failed);
+            if (msg is not null) msgs.Add(msg);
+        }
+        return msgs.Count == 0 ? (null, null) : (string.Join("; ", msgs), null);
+    }
 
+    // The chunked push itself, for any list of files → <target>/<rel>. Shared with the
+    // dashboard deploy (ADR-0012), which delivers ONE rendered file outside a converge.
+    internal static async Task<(string? Msg, string? Failed)> PushFilesAsync(
+        INodeExec exec, string node, string ctid, string user, string target,
+        IReadOnlyList<(string Rel, string B64, bool Exec)> assets)
+    {
         // The deploy script also does this (idempotently) — but assets land first, so the
         // user and directory have to exist by now.
-        var prep = await ctx.Exec.InContainerAsync(node, ctid, string.Join("\n", new[]
+        var prep = await exec.InContainerAsync(node, ctid, string.Join("\n", new[]
         {
             "set -e",
             $"id -u {user} >/dev/null 2>&1 || useradd -m -s /bin/bash {user}",
@@ -353,12 +400,12 @@ public sealed class PodmanProvisioner : IAppProvisioner
         if (!prep.Ok) return (null, $"preparing assets dir {target} failed: {prep.Stderr}");
 
         var chunks = 0;
-        foreach (var (rel, b64, exec) in assets)
+        foreach (var (rel, b64, isExec) in assets)
         {
             var dirPart = Path.GetDirectoryName(rel)?.Replace('\\', '/');
             if (!string.IsNullOrEmpty(dirPart))
             {
-                var mk = await ctx.Exec.InContainerAsync(node, ctid,
+                var mk = await exec.InContainerAsync(node, ctid,
                     $"install -d -o {user} -g {user} -m 755 {target}/{dirPart}");
                 if (!mk.Ok) return (null, $"creating {target}/{dirPart} failed: {mk.Stderr}");
             }
@@ -369,23 +416,23 @@ public sealed class PodmanProvisioner : IAppProvisioner
             {
                 var part = b64.Substring(off, Math.Min(AssetChunkBytes, b64.Length - off));
                 var redirect = off == 0 ? ">" : ">>";
-                var put = await ctx.Exec.InContainerAsync(node, ctid,
+                var put = await exec.InContainerAsync(node, ctid,
                     $"printf '%s' '{part}' {redirect} {target}/{rel}.b64");
                 if (!put.Ok) return (null, $"writing {rel} (offset {off}) failed: {put.Stderr}");
                 chunks++;
             }
 
-            var fin = await ctx.Exec.InContainerAsync(node, ctid, string.Join("\n", new[]
+            var fin = await exec.InContainerAsync(node, ctid, string.Join("\n", new[]
             {
                 "set -e",
                 $"base64 -d < {target}/{rel}.b64 > {target}/{rel}",
                 $"rm -f {target}/{rel}.b64",
-                $"chmod {(exec ? "0755" : "0644")} {target}/{rel}",
+                $"chmod {(isExec ? "0755" : "0644")} {target}/{rel}",
             }));
             if (!fin.Ok) return (null, $"decoding {rel} failed: {fin.Stderr}");
         }
 
-        var own = await ctx.Exec.InContainerAsync(node, ctid, $"chown -R {user}:{user} {target}");
+        var own = await exec.InContainerAsync(node, ctid, $"chown -R {user}:{user} {target}");
         if (!own.Ok) return (null, $"chown {target} failed: {own.Stderr}");
 
         return ($"rendered {assets.Count} asset file(s) → {target} ({chunks} chunk(s))", null);
@@ -882,13 +929,97 @@ public sealed class PodmanProvisioner : IAppProvisioner
         return s.SourceDir is { Length: > 0 } dir ? Path.Combine(dir, rel) : null;
     }
 
+    // The LEGACY tree's target. DashboardCommand writes the dashboard host's services.yaml under
+    // this, so its meaning is pinned: it is the `assets`/`assetsTarget` pair's target and never
+    // anything from `assetTrees`.
     internal static string AssetsTarget(Shape s) =>
         s.Spec.Config.Str("assetsTarget") ?? $"/home/{User(s)}/{DefaultAssetsTargetSuffix}";
 
-    // Relative paths under the assets dir, ordinal-sorted for a stable marker.
-    internal static IReadOnlyList<string> AssetFiles(Shape s)
+    // ── several asset trees on one host ─────────────────────────────────────────────
+    // A podman host serves several apps, but `assets`/`assetsTarget` is ONE tree, and its push
+    // ends in `chown -R <target>`. On the Media host that tree is Recyclarr's (/home/podman/
+    // recyclarr, whose keep-id mapping depends on the chown), so a second app had nowhere to put
+    // its files: pointing the one target at /home/podman would have chowned youtarr's and
+    // krautwatch's data too (the authentik lesson, Core #469). `assetTrees` adds trees, each
+    // pushed and chowned ONLY within its own `to`:
+    //
+    //   config:
+    //     assets: podman-host/recyclarr/assets          # still works, = the first tree
+    //     assetsTarget: /home/podman/recyclarr
+    //     assetTrees:
+    //       - { from: podman-host/trackerwatch/assets, to: /home/podman/trackerwatch }
+    internal sealed record AssetTree(string From, string? SourceDir, string To, bool Legacy);
+
+    internal static IReadOnlyList<AssetTree> AssetTrees(Shape s)
     {
-        var dir = AssetsSourceDir(s);
+        var list = new List<AssetTree>();
+        if (s.Spec.Config.Str("assets") is { Length: > 0 } legacy)
+            list.Add(new AssetTree(legacy, AssetsSourceDir(s), AssetsTarget(s).TrimEnd('/'), Legacy: true));
+        list.AddRange(ExtraAssetTrees(s));
+        return list;
+    }
+
+    private static IEnumerable<AssetTree> ExtraAssetTrees(Shape s)
+    {
+        if (!(s.Spec.Config.TryGetValue("assetTrees", out var v) && v is IEnumerable<object> items)) yield break;
+        foreach (var it in items)
+        {
+            if (it is not System.Collections.IDictionary d) continue;   // reported by AssetTreeProblems
+            var from = d["from"]?.ToString() ?? "";
+            var to = (d["to"]?.ToString() ?? "").TrimEnd('/');
+            string? dir = from.Length == 0 ? null
+                : Path.IsPathRooted(from) ? from
+                : s.SourceDir is { Length: > 0 } sd ? Path.Combine(sd, from) : null;
+            yield return new AssetTree(from, dir, to, Legacy: false);
+        }
+    }
+
+    // Every reason the declared trees are unsafe or unusable. Empty means fine. Checked in the
+    // plan (shown) and before any push (refused), never by throwing from the marker.
+    internal static List<string> AssetTreeProblems(Shape s)
+    {
+        var problems = new List<string>();
+        if (s.Spec.Config.TryGetValue("assetTrees", out var v) && v is IEnumerable<object> raw)
+            foreach (var it in raw)
+                if (it is not System.Collections.IDictionary) problems.Add("assetTrees entries must be { from, to } maps");
+
+        var home = $"/home/{User(s)}";
+        var trees = AssetTrees(s);
+        foreach (var t in trees)
+        {
+            if (t.Legacy) continue;   // the existing pair keeps its existing (lenient) behaviour
+            if (t.From.Length == 0 || t.To.Length == 0) { problems.Add("every assetTrees entry needs both `from` and `to`"); continue; }
+            if (!t.To.StartsWith('/')) problems.Add($"`to` must be absolute: {t.To}");
+            // The shape validator skips YAML only under an `/assets/` directory, so a tree outside
+            // one would have its config files validated as shapes.
+            if (!("/" + t.From.Replace('\\', '/').Trim('/') + "/").Contains("/assets/", StringComparison.Ordinal))
+                problems.Add($"`from` must sit under an `assets/` directory (the shape validator skips only those): {t.From}");
+            if (t.SourceDir is null || !Directory.Exists(t.SourceDir))
+                problems.Add($"`from` directory not found: {t.From}");
+        }
+        foreach (var t in trees)
+        {
+            if (t.To.Length == 0) continue;
+            // chown -R on the home (or above it) reaches every other app's data.
+            if ((home + "/").StartsWith(t.To + "/", StringComparison.Ordinal))
+                problems.Add($"`to` {t.To} is {home} or above it — its chown -R would reach every app's data");
+        }
+        for (var i = 0; i < trees.Count; i++)
+            for (var j = i + 1; j < trees.Count; j++)
+            {
+                string a = trees[i].To, b = trees[j].To;
+                if (a.Length == 0 || b.Length == 0) continue;
+                if (a == b || b.StartsWith(a + "/", StringComparison.Ordinal) || a.StartsWith(b + "/", StringComparison.Ordinal))
+                    problems.Add($"asset trees overlap ({a} and {b}) — one tree's chown -R would rewrite the other's files");
+            }
+        return problems;
+    }
+
+    // Relative paths under the assets dir, ordinal-sorted for a stable marker.
+    internal static IReadOnlyList<string> AssetFiles(Shape s) => AssetFiles(AssetsSourceDir(s));
+
+    internal static IReadOnlyList<string> AssetFiles(string? dir)
+    {
         if (dir is null || !Directory.Exists(dir)) return Array.Empty<string>();
         return Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
             .Select(f => Path.GetRelativePath(dir, f).Replace('\\', '/'))
@@ -907,14 +1038,15 @@ public sealed class PodmanProvisioner : IAppProvisioner
     // (relativePath, base64Content, isExecutable) for every asset file. `.sh` is rendered
     // executable; everything else 0644. Throws with a clear message if the tree is too big to
     // ship in one `pct exec` command line.
-    internal static IReadOnlyList<(string Rel, string B64, bool Exec)> ReadAssets(Shape s)
+    internal static IReadOnlyList<(string Rel, string B64, bool Exec)> ReadAssets(Shape s) => ReadAssets(AssetsSourceDir(s));
+
+    internal static IReadOnlyList<(string Rel, string B64, bool Exec)> ReadAssets(string? dir)
     {
-        var dir = AssetsSourceDir(s);
         if (dir is null || !Directory.Exists(dir)) return Array.Empty<(string, string, bool)>();
 
         var result = new List<(string, string, bool)>();
         long total = 0;
-        foreach (var rel in AssetFiles(s))
+        foreach (var rel in AssetFiles(dir))
         {
             var bytes = File.ReadAllBytes(Path.Combine(dir, rel));
             total += bytes.Length;

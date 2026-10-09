@@ -12,6 +12,10 @@ ContainerName=loki
 Network=monitoring.network
 UserNS=keep-id:uid=10001,gid=10001
 Volume=/home/podman/monitoring/config/loki-config.yml:/etc/loki/loki-config.yml:ro
+# Alert rules for the ruler. Mounted UNDER the data volume at the single tenant's path
+# (`fake`, because auth_enabled is false) -- the ruler looks for <storage.local.directory>/
+# <tenant>/*.yml and finds nothing if this lands anywhere else.
+Volume=/home/podman/monitoring/config/loki-rules/public-surface.rules.yml:/loki/rules/fake/public-surface.rules.yml:ro
 Volume=/home/podman/monitoring/data/loki:/loki
 Exec=-config.file=/etc/loki/loki-config.yml
 AutoUpdate=registry

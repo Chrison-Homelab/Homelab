@@ -19,17 +19,15 @@ UserNS=keep-id:uid=472,gid=472
 
 Environment=GF_SECURITY_ADMIN_USER=admin
 Secret=grafana_admin_password,type=env,target=GF_SECURITY_ADMIN_PASSWORD
-# Alert delivery. Grafana expands $HA_ALERT_WEBHOOK_URL inside the provisioned
-# contact point, so the webhook id never lands in a file under git.
-Secret=ha_alert_webhook_url,type=env,target=HA_ALERT_WEBHOOK_URL
 
 # ── SSO against the homelab IdP (#485) ────────────────────────────────────────────────
 # ROOT_URL MUST MATCH HOW THE BROWSER REACHES GRAFANA, because Grafana builds its OAuth
 # redirect from it. Get it wrong and the flow fails at the callback with a redirect_uri
-# mismatch that names neither value. LAN name, plain http, port 3000: there is no Pangolin
-# resource for Grafana and this change does not add one — exposing it publicly is a separate
-# decision, not a side effect of giving it SSO.
-Environment=GF_SERVER_ROOT_URL=http://monitoring.homelab.chrison.internal:3000
+# mismatch that names neither value. The public Pangolin name (SSO-gated, Admin role only), so
+# the LAN address :3000 still serves pages but can no longer complete a login — use
+# https://grafana.lab.chrison.dev from home too. The Homepage widget is unaffected: it uses
+# basic auth against http://grafana:3000 on monitoring.network.
+Environment=GF_SERVER_ROOT_URL=https://grafana.lab.chrison.dev
 Environment=GF_AUTH_GENERIC_OAUTH_ENABLED=true
 Environment=GF_AUTH_GENERIC_OAUTH_NAME=authentik
 Environment=GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP=true

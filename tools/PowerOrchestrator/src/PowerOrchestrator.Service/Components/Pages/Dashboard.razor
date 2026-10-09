@@ -124,7 +124,7 @@
     private void Refresh()
     {
         report = State.Current;
-        canArm = ArmGuard.CanArm(out _);
+        canArm = ArmGuard.CanArm(report.ArmPreconditions, out _);   // judged from the latest poll
     }
 
     private Task Wake(string node) => Run($"WoL sent to {node}", () => Actions.WakeAsync(node, "manual"));
@@ -140,7 +140,7 @@
 
     private void TryArm()
     {
-        Flash(ArmGuard.CanArm(out var unmet)
+        Flash(ArmGuard.CanArm(State.Current.ArmPreconditions, out var unmet)
             ? "Preconditions met — set ORCH_ARMED=true and restart to arm."
             : $"Cannot arm: {unmet.Count} precondition(s) unmet.");
     }

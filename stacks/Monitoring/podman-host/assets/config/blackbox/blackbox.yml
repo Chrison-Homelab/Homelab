@@ -1,0 +1,46 @@
+# blackbox_exporter modules (#591). Prometheus calls /probe?module=<m>&target=<url>.
+#
+# A probe checks the SERVICE, not the container: Pangolin's three containers all
+# "running" while the ingress refuses connections is the case worth catching.
+modules:
+  # Internal services present self-signed / internal-CA certs. Reachability is the
+  # question here, not certificate hygiene.
+  http_internal:
+    prober: http
+    timeout: 10s
+    http:
+      preferred_ip_protocol: ip4
+      follow_redirects: true
+      tls_config:
+        insecure_skip_verify: true
+
+  # Public hostnames are verified properly, so an expired or wrong certificate is a
+  # failed probe -- that IS an outage for anyone outside the house.
+  http_public:
+    prober: http
+    timeout: 10s
+    http:
+      preferred_ip_protocol: ip4
+      follow_redirects: true
+
+  # OpenBao's health endpoint answers 200 only when initialised, unsealed and active:
+  # 503 = sealed, 501 = not initialised, 429 = standby. Since #637 OpenBao is the only
+  # secrets store and has no fallback, so a sealed vault means every deploy fails.
+  openbao_health:
+    prober: http
+    timeout: 10s
+    http:
+      preferred_ip_protocol: ip4
+      valid_status_codes: [200]
+      tls_config:
+        insecure_skip_verify: true
+
+  # Homepage answers 400 to any Host not in HOMEPAGE_ALLOWED_HOSTS, including its own
+  # container name, so the probe has to present the published hostname.
+  http_homepage:
+    prober: http
+    timeout: 10s
+    http:
+      preferred_ip_protocol: ip4
+      headers:
+        Host: monitoring.homelab.chrison.internal:3010

@@ -2,7 +2,7 @@
 #
 # ONE member: `podman-host` (CT 4001), a rootless-podman host on hpe-01 running the
 # observability fleet as quadlets — Prometheus, Grafana, Alertmanager, the OTel pipeline
-# (collector → Tempo/Loki), snmp_exporter, exportarr, podman-exporter, unpoller and Pulse.
+# (collector → Tempo/Loki), snmp_exporter, exportarr, podman-exporter, unpoller and Beszel.
 #
 # Deliberately NOT co-located with any other stack: this host watches everything else, so it
 # needs its own lifecycle and can migrate or resize independently.

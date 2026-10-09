@@ -1,0 +1,167 @@
+# Claude Code transcript backfill
+
+Turns `~/.claude/projects/**/*.jsonl` into Prometheus TSDB blocks so the Claude Code
+usage dashboard has history from before OTel telemetry was switched on.
+
+```
+BACKFILL_INSTANCE=<service.instance.id> python3 generate.py /tmp/cc [live-sessions.txt] [cutoff-epoch]
+```
+
+`BACKFILL_INSTANCE` is required and deliberately not guessed. It must match, exactly, the
+`service.instance.id` in that machine's `~/.claude/settings.json` — Prometheus stores it as
+`exported_instance` and the dashboard groups on it. A default of "local hostname" would be
+the silent-wrong-data failure: settings saying `MFB-1234` and a backfill saying
+`MFB-1234.local` produce two machines each holding half the history, with nothing erroring.
+`BACKFILL_EMAIL` is optional and adds the `user_email` label.
+
+Writes `<prefix>.tokens.om` and `<prefix>.sessions.om` in OpenMetrics, as
+cumulative-per-`(session, model, type)` counters over each session's real timeline — so
+`max_over_time()` gives session totals and `increase()` gives genuine rates, unlike live
+one-shot `claude -p` runs whose series are flat.
+
+Pass the session ids already present in Prometheus as the second argument, or they will
+be counted twice:
+
+```
+curl -sG http://monitoring.homelab.chrison.internal:9091/api/v1/series \
+  --data-urlencode 'match[]={__name__=~"claude_code.*"}' \
+  | python3 -c 'import json,sys;print("\n".join(sorted({x["session_id"] for x in json.load(sys.stdin)["data"] if x.get("session_id")})))' \
+  > live-sessions.txt
+```
+
+## ⚠ The cutoff is load-bearing, and it is only a heuristic
+
+Samples from the last ~4 hours are dropped on purpose.
+
+It used to be "the last completed 2h boundary", on the claim that this is always below the
+running head's minTime. **That claim is false.** Prometheus compacts the head only once it
+spans more than 1.5x the 2h block range, so the head holds up to ~3h and its minTime can sit
+~3h behind now. Measured on 2026-09-12: the cutoff resolved to 00:00 UTC while the head began
+at 22:00 UTC, so generated blocks reached **119 minutes into the head**.
+
+The generator often runs on a machine that cannot reach Prometheus, so it cannot query the
+head. **The loader must check, every time:**
+
+```
+curl -s http://monitoring.homelab.chrison.internal:9091/metrics \
+  | grep ^prometheus_tsdb_head_min_time_seconds
+```
+
+Refuse to load if the blocks' `maxTime` is not comfortably below that. Either wait for the
+head to compact past it, or regenerate with an explicit earlier cutoff as argv[3].
+
+A block whose `maxTime` reaches into Prometheus's head makes the next restart set the
+head's min-valid-time to that `maxTime` and **silently discard every older WAL sample**.
+WAL replay still logs `"WAL replay completed"`, no error is raised, and
+`prometheus_tsdb_out_of_bound_samples_total` stays `0`.
+
+On 2026-09-05 this destroyed ~2h of *all* homelab metrics: the transcript of the session
+running the backfill extended to the present minute, so the blocks ended at 09:59:47 and
+took the live head with them.
+
+## ⚠ Transcripts expire after 30 days — recovery has a deadline
+
+Claude Code deletes session transcripts under `~/.claude/projects/` after **30 days** by
+default (`cleanupPeriodDays`, documented default 30). Unset means the default is running.
+
+Transcripts are the only copy of anything that did not reach the collector, so **gap
+recovery expires silently**. No warning, no error — the files are simply not there, and
+nothing in Prometheus or the dashboard indicates that a recoverable gap has become
+permanent.
+
+Measured on the work laptop, 2026-09-05 to 2026-09-12: 89 transcripts became 76, with a
+hard floor at 31 days and no taper below it. Forward attrition on that machine — 5 gone
+within a day, 12 within three, 19 within a week, **37 within a fortnight**.
+
+This is a worse failure mode than the two bugs that preceded it, because both of those were
+detectable after the fact. This one destroys the evidence.
+
+Consequences for anyone using this tool:
+
+* **Any backfill must run inside the 30-day window.** The 2026-09-05 to 09-12 outage was
+  recovered with ~23 days to spare. Five weeks of broken telemetry would have been
+  unrecoverable.
+* **Do not assume transcripts are durable.** They are a rolling window, not an archive.
+* The mitigation is `cleanupPeriodDays`. Setting it to `400` aligns transcript retention
+  with this Prometheus's 400d, so a transcript survives as long as the metrics it could
+  repair. Cost measured: ~4.9 GB/year on the Mac, ~2.1 GB/year on the laptop.
+* An exclusion list built from Prometheus is fine, but the *corpus it is compared against*
+  erodes. Ids in the list that match no transcript are expected, not an anomaly.
+
+### The gap you cannot see
+
+The dangerous case is the inverse, and it is invisible from every angle. A session that
+**never reached Prometheus** *and* whose **transcript has since expired** leaves no trace
+anywhere:
+
+* not in an exclusion list — that is built from Prometheus, which never saw it;
+* not in the transcripts — they are gone;
+* not in the totals, the dashboard, or any diff between them.
+
+There is no query that finds it and no count that comes out wrong. Reconciling Prometheus
+against transcripts can only ever show what one of them still holds. This is precisely the
+state the 2026-09-05 → 09-12 outage was heading for: exports dead while the clock ran on
+the transcripts that were its only backup.
+
+The practical consequence: **the dashboard going quiet for a machine is an incident, not an
+inconvenience.** After 30 days there is nothing to recover and nothing to tell you so.
+
+## Loading
+
+promtool lives in the prometheus container; CT 4001 on hpe-01 is the monitoring host.
+
+```
+pct push 4001 cc.tokens.om /home/podman/monitoring/data/prometheus/backfill/cc.tokens.om
+podman exec prometheus promtool tsdb create-blocks-from openmetrics \
+    --max-block-duration=24h /prometheus/backfill/cc.tokens.om /prometheus/backfill/out
+mv .../backfill/out/* .../prometheus/ && chown -R podman:podman .../prometheus
+systemctl --user restart prometheus
+```
+
+Run the two families separately — OpenMetrics forbids interleaved metric families, and
+each file must be globally timestamp-sorted.
+
+## Verifying, and recovering if it goes wrong
+
+**Probe fixed timestamps per metric.** A `query_range` gap check reported `gaps: none`
+across a window that was entirely missing; it is not a valid check.
+
+```
+curl -sG .../api/v1/query --data-urlencode 'query=count(up)' --data-urlencode "time=$TS"
+```
+
+If the head was eaten, the WAL segments are still on disk — the samples were dropped
+from memory, not deleted:
+
+1. stop prometheus, `mv` the offending block (the only one whose `maxTime` exceeds the
+   head's `minTime`) out of the data dir, start prometheus — WAL replay re-admits them;
+2. restore the block **only** once the head has been compacted into a block reaching
+   past that block's `maxTime`, or `reloadBlocks()` truncates the head again at runtime.
+
+
+## A second machine (the Windows work laptop)
+
+Generation needs the transcripts; loading needs the homelab. Those are different machines,
+so split them — do not copy transcripts onto another box.
+
+1. **On the laptop**, set `service.instance.id` in `~/.claude/settings.json` first (replace
+   `REPLACE-WITH-LAPTOP-HOSTNAME`). Backfill and live telemetry must agree on it or the
+   dashboard shows the same laptop twice.
+2. **On the laptop**, run the generator with that same value. It is pure stdlib Python and
+   reads `%USERPROFILE%\.claude\projects`; output is forced to UTF-8 and LF, because
+   Windows would otherwise write CRLF that the OpenMetrics parser rejects.
+3. **Copy the two `.om` files** to a machine with homelab access and load them there, as in
+   *Loading* above.
+
+Notes for a much bigger history:
+
+* **Blocks scale with span.** `--max-block-duration=24h` over a year is ~365 blocks; use
+  `--max-block-duration=168h` for long spans. Prometheus wants a block duration under 10% of
+  retention, so with 400d anything up to ~40d is fine.
+* **Check the oldest transcript against retention.** Samples older than
+  `--storage.tsdb.retention.time` are deleted on the next compaction — silently, as
+  "obsolete block". The generator prints its span; if it starts earlier than retention
+  allows, raise retention *before* loading or that history evaporates.
+* **Only counts leave the machine.** Token totals, session ids, model names and timestamps —
+  no prompt or response text, no file paths, no project names. Worth knowing when the source
+  is a work laptop.
