@@ -62,7 +62,8 @@ metadata:
 spec:
   app: podman            # community-scripts ct/podman.sh + the `podman` provisioner
   ctid: 2014             # in-block (Core owns 2010–2099); 2014 verified free
-  node: hpe-01           # NOT nuc-01 — see the header
+  node: hpe-02           # NOT nuc-01 — see the header. Moved off hpe-01 2026-10-09 (offline
+                         # `pct migrate`) so login survives an hpe-01 outage or reboot.
   cores: 2
   memory: 4096           # MB — server + worker each ask for 512 MB of /dev/shm, plus Postgres
   disk: 20               # GB — Postgres + /data (media, certs, custom templates)
