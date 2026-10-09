@@ -1,6 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Json.Schema;
+using YamlDotNet.Core;
+using YamlDotNet.RepresentationModel;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -11,8 +13,9 @@ namespace Homelab.Infrastructure.Shapes;
 // YamlDotNet deserialization path, so unknown/invalid fields are caught even
 // though ShapeLoader uses IgnoreUnmatchedProperties (#43).
 //
-// The shape is authored in YAML; we parse it to a plain object graph, convert to
-// a System.Text.Json JsonNode, and run JsonSchema.Net over it. Failures are
+// The shape is authored in YAML; we parse it through YamlDotNet's representation
+// model (which preserves scalar STYLE — see ParseToJsonNode), convert to a
+// System.Text.Json JsonNode, and run JsonSchema.Net over it. Failures are
 // surfaced with the file path + JSON pointer (instance location) + message.
 public static class ShapeValidator
 {
@@ -68,8 +71,7 @@ public static class ShapeValidator
         JsonNode? node;
         try
         {
-            var obj = YamlToObject.Deserialize<object?>(File.ReadAllText(path));
-            node = ToJsonNode(obj);
+            node = ParseToJsonNode(File.ReadAllText(path));
         }
         catch (Exception ex)
         {
@@ -147,36 +149,50 @@ public static class ShapeValidator
         }
     }
 
-    // --- YAML object graph → System.Text.Json JsonNode ---
-    private static JsonNode? ToJsonNode(object? value)
+    // --- YAML document → System.Text.Json JsonNode ---
+    //
+    // Parsed through the REPRESENTATION MODEL rather than Deserialize<object?>, because
+    // the object graph throws away the one thing this conversion needs: whether a scalar
+    // was QUOTED. YamlDotNet hands every scalar back as a string either way, so the
+    // re-typing below cannot otherwise tell `24.04` (a float) from `"24.04"` (a string)
+    // — and it re-typed both to a number, which made `osVersion: "24.04"` unauthorable
+    // even though the schema accepts a string and the loader already reads it as one
+    // (Ubuntu is the first OS in the lab whose version is not an integer, #508).
+    internal static JsonNode? ParseToJsonNode(string yamlText)
     {
-        switch (value)
+        var stream = new YamlStream();
+        using var reader = new StringReader(yamlText);
+        stream.Load(reader);
+        return stream.Documents.Count == 0 ? null : ToJsonNode(stream.Documents[0].RootNode);
+    }
+
+    private static JsonNode? ToJsonNode(YamlNode? node)
+    {
+        switch (node)
         {
-            case null:
-                return null;
-            case IDictionary<object, object> map:
+            case YamlMappingNode map:
             {
                 var obj = new JsonObject();
-                foreach (var kv in map)
-                    obj[Convert.ToString(kv.Key) ?? ""] = ToJsonNode(kv.Value);
+                foreach (var kv in map.Children)
+                    obj[(kv.Key as YamlScalarNode)?.Value ?? kv.Key.ToString()] = ToJsonNode(kv.Value);
                 return obj;
             }
-            case IEnumerable<object?> list when value is not string:
+            case YamlSequenceNode seq:
             {
                 var arr = new JsonArray();
-                foreach (var item in list)
+                foreach (var item in seq.Children)
                     arr.Add(ToJsonNode(item));
                 return arr;
             }
-            case string s:
+            case YamlScalarNode scalar:
             {
-                // YamlDotNet hands everything back as strings. Re-type scalars so
-                // the schema's integer/number/boolean constraints evaluate
-                // correctly (a YAML `ctid: 3000` arrives as "3000").
-                return ScalarToNode(s);
+                // A quoted (or block) scalar is a string by definition — no re-typing.
+                // Only PLAIN scalars carry an implicit type for us to recover.
+                if (scalar.Style != ScalarStyle.Plain) return JsonValue.Create(scalar.Value ?? "");
+                return ScalarToNode(scalar.Value ?? "");
             }
             default:
-                return JsonValue.Create(value);
+                return null;
         }
     }
 
@@ -204,10 +220,7 @@ public static class ShapeValidator
     }
 
     // Best-effort: also expose the parsed node as JSON text (diagnostics/tests).
-    public static string ToJsonText(string yamlPath)
-    {
-        var obj = YamlToObject.Deserialize<object?>(File.ReadAllText(yamlPath));
-        var node = ToJsonNode(obj);
-        return node?.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) ?? "null";
-    }
+    public static string ToJsonText(string yamlPath) =>
+        ParseToJsonNode(File.ReadAllText(yamlPath))
+            ?.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) ?? "null";
 }

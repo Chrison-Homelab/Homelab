@@ -56,6 +56,47 @@ public sealed class ShapeValidatorTests : IDisposable
     }
 
     [Fact]
+    public void QuotedScalar_StaysAString_EvenWhenItLooksLikeANumber()
+    {
+        // Regression (#508): a bare `24.04` is a YAML float, so a validator that re-types
+        // every scalar by its text made `osVersion: "24.04"` impossible to author — it
+        // reported "should be string, integer" against a value the author HAD quoted, and
+        // that ShapeLoader already reads as a string. Ubuntu is the first OS in the lab
+        // whose version is not an integer, so nothing hit this until InvenTree.
+        var path = Write("quoted.lxc.yaml", """
+            apiVersion: homelab/v1
+            kind: LXC
+            metadata:
+              name: quoted
+            spec:
+              node: hpe-01
+              app: inventree
+              ctid: 8000
+              os: ubuntu
+              osVersion: "24.04"
+              network:
+                ipv4: dhcp
+            """);
+
+        var result = ShapeValidator.ValidateFile(path);
+        Assert.True(result.Valid, string.Join("\n", result.Failures.Select(f => f.ToString())));
+    }
+
+    [Fact]
+    public void PlainScalars_AreStillRetyped()
+    {
+        // The other half of the same fix: unquoted scalars must keep their implicit types,
+        // or `ctid: 3001` and `unprivileged: true` stop satisfying integer/boolean.
+        var json = ShapeValidator.ParseToJsonNode("a: 3001\nb: true\nc: 1.5\nd: plain\ne: \"3001\"\n")!;
+
+        Assert.Equal(3001, json["a"]!.GetValue<long>());
+        Assert.True(json["b"]!.GetValue<bool>());
+        Assert.Equal(1.5, json["c"]!.GetValue<double>());
+        Assert.Equal("plain", json["d"]!.GetValue<string>());
+        Assert.Equal("3001", json["e"]!.GetValue<string>());
+    }
+
+    [Fact]
     public void CtidAuto_IsAccepted()
     {
         var path = Write("auto.lxc.yaml", """

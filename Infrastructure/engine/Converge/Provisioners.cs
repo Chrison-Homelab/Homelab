@@ -78,6 +78,7 @@ public sealed class ProvisionerRegistry
         new PlexProvisioner(),
         new RomMProvisioner(),
         new OpenBaoProvisioner(),
+        new InvenTreeProvisioner(),
     });
 }
 

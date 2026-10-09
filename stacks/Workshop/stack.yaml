@@ -1,0 +1,63 @@
+# Workshop stack — the bench, not the lab. What we OWN and where it IS (#508).
+#
+# ONE member today: `inventree` (CT 8000), a parts inventory with a REST API, so
+# "what do we need to buy for this build" can be answered against real stock
+# instead of assembled by hand. It exists because SmartHome#48 — the garage-door
+# BOM — had to be written as "list everything, we will work out stock later".
+#
+# WHY ITS OWN STACK, and not a member of an existing one. Every other stack is a
+# domain that RUNS something: Core is the remote-access lifeline, Monitoring
+# watches the lab, Media serves it, SmartHome automates the house, DevOps builds
+# it. This is none of those — it is record-keeping ABOUT the lab's physical
+# parts, and it serves every other stack's builds. Filing it under SmartHome
+# because the first BOM happened to be a garage door would be an accident of
+# chronology, and Core is explicitly scoped to the lifeline.
+#
+# IN-TREE, not a `Homelab.Stacks.Workshop` submodule. ADR-0008 extracts DOMAIN
+# stacks and keeps cross-cutting ones in-tree (Core, Monitoring, Media, Photos);
+# this is cross-cutting. It also carries no binary blobs, no vendor material and
+# no separate audience — none of the reasons that justified extracting SmartHome
+# or BuildLab apply — so it would buy the 2-PR tax and nothing else.
+#
+# ROOM TO GROW: anything else that serves the bench rather than the house belongs
+# here — a label-printer service for storage bins, a KiCad/component library, a
+# firmware artifact store.
+#
+# Validate members against ../../Infrastructure/schema/shape.schema.json.
+# CTID allocation policy: members set ctid EXPLICITLY (omission is an error).
+
+apiVersion: homelab/v1
+kind: Stack
+
+metadata:
+  name: Workshop
+  tags: [workshop, inventory, infra]
+
+spec:
+  ctidRange:
+    start: 8000           # guard rail: a fresh block. 1xxx (Gaming/BuildLab), 2xxx (Core),
+    end: 8099             # 3xxx (DevOps), 4xxx (Monitoring), 5xxx (Media) and 6xxx
+                          # (SmartHome) are taken, and 7000 is the unmanaged `shopdemo`
+                          # CT — so 7xxx is skipped rather than shared with a guest that
+                          # no stack owns.
+  defaults:
+    node: hpe-01          # always-on. desktop-01 is Wake-on-LAN and sleeps when idle,
+                          # which is disqualifying for a service an agent queries
+                          # mid-conversation; nuc-01 is always-on too but its local-lvm
+                          # pool has only ~27 GiB free against hpe-01's ~153 GiB.
+    source:
+      channel: stable     # → community-scripts/ProxmoxVE (ct/inventree.sh)
+      ref: main
+    os: debian            # the lab norm. `inventree` OVERRIDES this to ubuntu — see the
+    osVersion: 13         # member shape; the upstream install script requires it.
+    unprivileged: true
+    storage: local-lvm
+    templateStorage: local
+    onboot: true
+    network:
+      bridge: vmbr0
+      vlan: 1010          # Homelab — real tag → interface name=vlan1010,tag=1010
+      ipv4: dhcp          # a member needing a stable address declares
+      ipv6: none          # `network.reservation` and converge reconciles it (#416)
+    timezone: Pacific/Auckland
+    tags: [workshop, inventory, community-script]
