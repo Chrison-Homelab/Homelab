@@ -996,6 +996,36 @@ public sealed class ConvergeCoreTests
     }
 
     [Fact]
+    public void Pangolin_JournaldCap_DefaultsTo500M_AndIsOverridable()
+    {
+        var s = PangolinWildcardShape();
+        s.Spec.Config["otlpLogsEndpoint"] = "monitoring.homelab.chrison.internal:4317";
+        var script = PangolinProvisioner.BuildJournaldCap(s);
+        var decoded = System.Text.RegularExpressions.Regex.Matches(script, "echo ([A-Za-z0-9+/=]{20,}) \\| base64 -d")
+            .Select(m => System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(m.Groups[1].Value)))
+            .Single();
+        Assert.Contains("[Journal]\nSystemMaxUse=500M", decoded);
+        // Restart journald only when the drop-in changed, never unconditionally.
+        Assert.Contains("journald-cap: ok", script);
+        Assert.True(script.IndexOf("exit 0", StringComparison.Ordinal) < script.IndexOf("systemctl restart systemd-journald", StringComparison.Ordinal));
+
+        s.Spec.Config["journaldMaxUse"] = "1G";
+        Assert.Equal("1G", PangolinProvisioner.JournaldMaxUse(s));
+    }
+
+    [Fact]
+    public void Pangolin_JournaldCap_DoesNotMoveTheDeployMarker()
+    {
+        // The marker gates a deploy that ends in `docker compose restart` (public ingress and
+        // every Newt tunnel bounce). A journal size limit must never trigger that.
+        var s = PangolinWildcardShape();
+        s.Spec.Config["otlpLogsEndpoint"] = "monitoring.homelab.chrison.internal:4317";
+        var before = PangolinProvisioner.DesiredMarker(s);
+        s.Spec.Config["journaldMaxUse"] = "1G";
+        Assert.Equal(before, PangolinProvisioner.DesiredMarker(s));
+    }
+
+    [Fact]
     public void Pangolin_OtelcolConfig_ReadsTheBody_AndGroupsByContainer()
     {
         var s = PangolinWildcardShape();

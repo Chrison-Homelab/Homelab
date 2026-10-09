@@ -762,6 +762,10 @@ public sealed class PangolinProvisioner : IAppProvisioner
     // release; overriding the version means overriding the checksum too, or the install fails.
     internal const string DefaultOtelcolVersion = "0.161.0";
     internal const string DefaultOtelcolSha256 = "9ea10aff606104408b253925ab66e8bd2a09217359e675a3c28b34e2b56aee5b";
+    // journald's own cap on the CT once logs ship from the journal (#587 step 3). Loki holds
+    // the long-term copy, so the local journal is only a buffer for an agent or Loki outage.
+    // CT 2013 grew ~4 MB/day (429 MB since June), so 500M is about four months of buffer.
+    internal const string DefaultJournaldMaxUse = "500M";
     private const string LeProd = "https://acme-v02.api.letsencrypt.org/directory";
     private const string LeStaging = "https://acme-staging-v02.api.letsencrypt.org/directory";
 
@@ -776,7 +780,10 @@ public sealed class PangolinProvisioner : IAppProvisioner
             yield return $"Traefik owns :443 with LE wildcard certs (DNS-01 via Cloudflare) for {string.Join(" + ", WildcardFqdns(s))}";
             yield return "docker compose up -d (idempotent via managed marker) — then activate EE once at /admin/license (manual)";
             if (OtlpLogsEndpoint(s) is { } otlp)
+            {
                 yield return $"containers log to journald; host otelcol-contrib {s.Spec.Config.Str("otelcolVersion") ?? DefaultOtelcolVersion} ships them to {otlp}";
+                yield return $"cap the CT's journal at SystemMaxUse={JournaldMaxUse(s)} (journald drop-in; checked every converge, outside the deploy marker)";
+            }
             if (s.Spec.Config.Str("publicIp") is { Length: > 0 } pip)
                 yield return $"ensure grey-cloud A record(s) {string.Join(" + ", WildcardFqdns(s))} → {pip} (add-only)";
         }
@@ -1012,6 +1019,24 @@ public sealed class PangolinProvisioner : IAppProvisioner
             done.Count == 0 ? reason : $"{reason} — completed before this: {string.Join("; ", done)}");
         if (configMsg is not null) done.Add(configMsg);
 
+        // journald cap (#587 step 3). Deliberately NOT part of the deploy script or the marker:
+        // anything that moves the marker reruns the whole deploy, including `docker compose
+        // restart`, which bounces public ingress and every Newt tunnel. A journal size limit
+        // needs none of that, so it is its own idempotent step that only restarts journald,
+        // and only when the drop-in actually changed.
+        string? journalMsg = null;
+        var journalChanged = false;
+        if (OtlpLogsEndpoint(s) is not null)
+        {
+            var jr = await ctx.Exec.InContainerAsync(node, ctid, BuildJournaldCap(s));
+            if (!jr.Ok) return FailWithContext($"journald cap failed: {jr.Stderr.Trim()}");
+            journalChanged = jr.Stdout.Contains("journald-cap: changed");
+            journalMsg = journalChanged
+                ? $"journal capped at SystemMaxUse={JournaldMaxUse(s)} (journald restarted)"
+                : null;
+            if (journalMsg is not null) done.Add(journalMsg);
+        }
+
         var (dnsMsg, dnsChanged, dnsFailed) = await ReconcileWildcardDnsAsync(s, ctx);
         if (dnsFailed is not null) return FailWithContext(dnsFailed);
         if (dnsMsg is not null) done.Add(dnsMsg);
@@ -1028,11 +1053,11 @@ public sealed class PangolinProvisioner : IAppProvisioner
         var (idpMsg, idpChanged, idpFailed) = await ReconcileIdpsAsync(s, ctx, node, ctid);
         if (idpFailed is not null) return FailWithContext(idpFailed);
 
-        if (configMsg is null && !dnsChanged && !resChanged && !idpChanged)
+        if (configMsg is null && !journalChanged && !dnsChanged && !resChanged && !idpChanged)
             return ApplyResult.NoChange($"config current (marker {marker})"
                 + (dnsMsg is null ? "" : $"; {dnsMsg}") + (resMsg is null ? "" : $"; {resMsg}")
                 + (idpMsg is null ? "" : $"; {idpMsg}"));
-        return ApplyResult.Applied(string.Join("; ", new[] { configMsg, dnsMsg, resMsg, idpMsg }.Where(x => x is not null)));
+        return ApplyResult.Applied(string.Join("; ", new[] { configMsg, journalMsg, dnsMsg, resMsg, idpMsg }.Where(x => x is not null)));
     }
 
     // ── Identity providers (#468) ─────────────────────────────────────────────────────
@@ -1857,6 +1882,28 @@ public sealed class PangolinProvisioner : IAppProvisioner
     // container's lines to it. Unset → neither happens, and the compose is unchanged.
     internal static string? OtlpLogsEndpoint(Shape s) =>
         s.Spec.Config.Str("otlpLogsEndpoint") is { Length: > 0 } e ? e : null;
+
+    // config.journaldMaxUse — journald size syntax (K/M/G/T suffix), e.g. "500M".
+    internal static string JournaldMaxUse(Shape s) =>
+        s.Spec.Config.Str("journaldMaxUse") is { Length: > 0 } v ? v : DefaultJournaldMaxUse;
+
+    // Idempotent: writes the drop-in only when its content differs, and restarts journald only
+    // then. On restart journald applies the cap straight away, vacuuming archived files down to
+    // it. Prints "journald-cap: changed" or "journald-cap: ok" for ApplyAsync to read.
+    internal static string BuildJournaldCap(Shape s)
+    {
+        var want = $"# homelab-managed (#587): Loki holds the long-term copy; this is a local buffer.\n[Journal]\nSystemMaxUse={JournaldMaxUse(s)}\n";
+        var f = "/etc/systemd/journald.conf.d/homelab.conf";
+        var sb = new StringBuilder();
+        sb.Append("set -e\n");
+        sb.Append("mkdir -p /etc/systemd/journald.conf.d\n");
+        sb.Append($"want=$(echo {B64(want)} | base64 -d)\n");
+        sb.Append($"if [ \"$(cat {f} 2>/dev/null)\" = \"$want\" ]; then echo 'journald-cap: ok'; exit 0; fi\n");
+        sb.Append($"printf '%s\\n' \"$want\" > {f}\n");
+        sb.Append("systemctl restart systemd-journald\n");
+        sb.Append("echo 'journald-cap: changed'\n");
+        return sb.ToString();
+    }
 
     // A host systemd unit, NOT a compose service: the journald receiver shells out to
     // `journalctl`, which the otel-collector-contrib image does not ship, so as a container it
