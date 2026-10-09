@@ -35,6 +35,15 @@ receivers:
 processors:
   batch: {}
 
+  # Logs get their own, CAPPED batches. `batch: {}` sends up to 8192 records with no upper
+  # bound, and a burst of ~1 KB Traefik lines makes a single ~8 MB push. Loki rejects any
+  # push over its burst limit with 429, and it can never succeed on retry, so it was
+  # dropped: 62,800 lines in one hour on 2026-10-09, with nothing logged on this side.
+  # 2000 x ~1 KB stays well inside loki-config.yml's ingestion_burst_size_mb.
+  batch/logs:
+    send_batch_size: 1000
+    send_batch_max_size: 2000
+
   # Claude Code reports CUMULATIVE PER-SESSION counters from a short-lived process, so
   # session.id is load-bearing, NOT just noise. Dropping it collapses every session on a
   # machine onto one series where each new session overwrites the last with its own small
@@ -86,5 +95,5 @@ service:
       exporters: [otlp/tempo]
     logs:
       receivers: [otlp, otlp/auth]
-      processors: [batch]
+      processors: [batch/logs]
       exporters: [otlphttp/loki]

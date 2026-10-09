@@ -29,6 +29,12 @@ schema_config:
 limits_config:
   allow_structured_metadata: true
 
+  # Raised from the 4 MB/s / 6 MB defaults. Single tenant, one collector, and a push over
+  # the burst size is rejected outright (not slowed), so a modest burst costs data. Paired
+  # with the capped `batch/logs` processor in otel-collector.yml (2026-10-09).
+  ingestion_rate_mb: 8
+  ingestion_burst_size_mb: 16
+
   # Required for delete requests to be accepted at all (#587). Without it the API returns
   # success-shaped responses and nothing is ever deleted.
   deletion_mode: filter-and-delete
