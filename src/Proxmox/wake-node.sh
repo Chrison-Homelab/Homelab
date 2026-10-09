@@ -3,7 +3,8 @@
 #
 # Sends a Wake-on-LAN magic packet to bring a sleeping Proxmox node back up.
 # Designed to run from an always-on node (e.g. nuc-01/hpe-01) so heavy nodes
-# (desktop-01, hpe-02) can be powered down when idle and woken on demand.
+# (desktop-01) can be powered down when idle and woken on demand. hpe-02 is
+# always-on but has WoL armed too, so it can be woken after a manual shutdown.
 #
 # The target NIC must have WoL armed (see wol-arm.service / `ethtool -s <if> wol g`)
 # and BIOS WoL enabled. Sender and target must share an L2 broadcast domain, OR
@@ -30,6 +31,7 @@ PORT=9
 declare -A NODE_MACS=(
     ["desktop-01"]="18:c0:4d:de:9f:82"
     ["hpe-01"]="c8:d3:ff:9d:da:02"
+    ["hpe-02"]="c8:d3:ff:a3:fd:53"
     ["nuc-01"]="b8:ae:ed:72:82:fe"
 )
 

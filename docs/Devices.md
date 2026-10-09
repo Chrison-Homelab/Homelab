@@ -13,33 +13,34 @@ directly via `X-API-KEY`, not from the MCP.)*
 
 ## Proxmox Hosts
 
-Three nodes, all on **Proxmox VE 9.2.4**, all **2 × 8 GB = 16 GB** (≈15 GB usable),
-all on gigabit with WoL armed. Synology NFS is mounted at the host level on every
+Four nodes, all **2 × 8 GB = 16 GB** (≈15 GB usable), all on gigabit with WoL armed.
+The first three were on **Proxmox VE 9.2.4** at the 2026-08-01 audit; hpe-02 joined on
+**9.2.21** on 2026-10-09. Synology NFS is mounted at the host level on every
 node (see [NAS](#nas)).
 
 > ⚠️ **The node names do not describe the hardware.** `hpe-01` is an HP EliteDesk
 > **Mini**, not the decommissioned ProLiant DL360p Gen8 — that machine is *not* in
 > the cluster. Verified 2026-08-01.
 
-| | hpe-01 | nuc-01 | desktop-01 |
-|---|---|---|---|
-| **Model** | HP EliteDesk 800 G2 DM 35W | Intel NUC D34010WYK | Gigabyte **B450 GAMING X** (AM4) |
-| **CPU** | i5-6500T, 4c/4t, 3.1 GHz max | i3-4010U, 2c/4t, 1.7 GHz | Ryzen 5 3600, 6c/12t, 4.2 GHz max |
-| **RAM** | 2 × 8 GB DDR4-2133 — **slots full** | 2 × 8 GB DDR3-1600 — **slots full** | 2 × 8 GB DDR4 — **2 of 4 slots free** |
-| **GPU** | Intel HD 530 (iGPU) | Haswell-ULT (iGPU) | **Quadro P400** + **RX 6600** |
-| **PCIe card slot** | **none** ⚠️ | none (SFF NUC) | ✅ x16 in use, x8 free |
-| **Boot** | UEFI | UEFI | **Legacy BIOS** |
-| **Kernel** | `7.0.12-1-pve` | `7.0.12-1-pve` | `7.0.14-5-pve` |
-| **Disk** | 480 GB SATA SSD (HP MK000480GWXFF) | 128 GB SATA SSD (Crucial M550) | **2 TB NVMe** (Samsung 970 EVO Plus) |
-| **`local-lvm`** | 320 GB, 44% used | 54 GB, 45% used | 1.71 TB, 19% used |
-| **`local`** | 94 GB, 22% used | 39 GB, 64% used | 94 GB, 64% used |
-| **NIC** | Intel `e1000e` (I219) | Intel `e1000e` (I218) | Realtek `r8169` (RTL8111) |
-| **MAC** | `c8:d3:ff:9d:da:02` | `b8:ae:ed:72:82:fe` | `18:c0:4d:de:9f:82` |
-| **Mgmt IP** | `10.0.0.13` | `10.0.0.11` | `10.0.0.12` |
-| **Mgmt DNS** | `hpe-01.homelab.chrison.internal` | `nuc-01.…` | `desktop-01.…` |
-| **BIOS** | N21 v02.21 (**2016**) | WYLPT10H.86A.0030 (**2014**) | F62b (2021) |
-| **Idle draw** | ~22 W | ~10 W | ~65 W |
-| **Power role** ([#191](https://github.com/Chrison-Homelab/Homelab/issues/191)) | always-on sentinel | always-on sentinel | **on-demand (sleep target)** |
+| | hpe-01 | nuc-01 | desktop-01 | hpe-02 |
+|---|---|---|---|---|
+| **Model** | HP EliteDesk 800 G2 DM 35W | Intel NUC D34010WYK | Gigabyte **B450 GAMING X** (AM4) | HP **ProDesk 400 G4 SFF** |
+| **CPU** | i5-6500T, 4c/4t, 3.1 GHz max | i3-4010U, 2c/4t, 1.7 GHz | Ryzen 5 3600, 6c/12t, 4.2 GHz max | i5-7500, 4c/4t, 3.8 GHz max |
+| **RAM** | 2 × 8 GB DDR4-2133 — **slots full** | 2 × 8 GB DDR3-1600 — **slots full** | 2 × 8 GB DDR4 — **2 of 4 slots free** | 2 × 8 GB DDR4-2400 — **slots full** |
+| **GPU** | Intel HD 530 (iGPU) | Haswell-ULT (iGPU) | **Quadro P400** + **RX 6600** | Intel HD 630 (iGPU) |
+| **PCIe card slot** | **none** ⚠️ | none (SFF NUC) | ✅ x16 in use, x8 free | ✅ x16 + x4 free (low-profile, SFF) |
+| **Boot** | UEFI | UEFI | **Legacy BIOS** | UEFI (Secure Boot on) |
+| **Kernel** | `7.0.12-1-pve` | `7.0.12-1-pve` | `7.0.14-5-pve` | `7.0.14-23-pve` |
+| **Disk** | 480 GB SATA SSD (HP MK000480GWXFF) | 128 GB SATA SSD (Crucial M550) | **2 TB NVMe** (Samsung 970 EVO Plus) | 128 GB SATA SSD (LITEON CV3-CE128-HP) |
+| **`local-lvm`** | 320 GB, 44% used | 54 GB, 45% used | 1.71 TB, 19% used | 54 GB, empty |
+| **`local`** | 94 GB, 22% used | 39 GB, 64% used | 94 GB, 64% used | 39 GB, 15% used |
+| **NIC** | Intel `e1000e` (I219) | Intel `e1000e` (I218) | Realtek `r8169` (RTL8111) | Realtek `r8169` (RTL8111), `nic0` |
+| **MAC** | `c8:d3:ff:9d:da:02` | `b8:ae:ed:72:82:fe` | `18:c0:4d:de:9f:82` | `c8:d3:ff:a3:fd:53` |
+| **Mgmt IP** | `10.0.0.13` | `10.0.0.11` | `10.0.0.12` | `10.0.0.14` |
+| **Mgmt DNS** | `hpe-01.homelab.chrison.internal` | `nuc-01.…` | `desktop-01.…` | `hpe-02.…` |
+| **BIOS** | N21 v02.21 (**2016**) | WYLPT10H.86A.0030 (**2014**) | F62b (2021) | P08 v02.06 (**2017**) |
+| **Idle draw** | ~22 W | ~10 W | ~65 W | not measured |
+| **Power role** ([#191](https://github.com/Chrison-Homelab/Homelab/issues/191)) | always-on sentinel | always-on sentinel | **on-demand (sleep target)** | always-on |
 
 **Migrated off the legacy subnet on 2026-08-02** ([#37](https://github.com/Chrison-Homelab/Homelab/issues/37)):
 all three now sit on the **Network Devices VLAN (1000)**, carried on a tagged
@@ -57,6 +58,10 @@ re-address needs no config change anywhere.
   proxy), the cloudflared HA replica, and Proxmox Datacenter Manager. **5 running
   LXCs.** *(Traefik CT 2007 and Teleport, previously listed here, are both retired —
   Traefik's origin no longer exists and Teleport never went live.)*
+- **hpe-02** — joined 2026-10-09, empty so far. Always-on. Its HD 630 (Kaby Lake) does
+  HEVC 10-bit decode **and** encode in hardware, which hpe-01's HD 530 can't, and it has
+  a free x16 slot that could take the stranded Quadro P400 (low-profile)
+  ([#334](https://github.com/Chrison-Homelab/Homelab/issues/334)).
 - **desktop-01** — dev, gaming and CI. Forgejo + runners, the ERP stack, topaz, and
   five stopped VMs. **7 running LXCs.** It is the designated sleep node, so #191's
   hard blocker is moving its always-on services off it first.
@@ -88,10 +93,10 @@ re-address needs no config change anywhere.
 - **desktop-01's VMs (all stopped):** 1002 `gaming-vm-01`,
   1003 `bazzite`, 1100 `buildvm`, 9999 `proxmoxsharp-dev`.
 
-**Wake-on-LAN:** all three have WoL armed (`ethtool ... wol g`) and persisted via the
+**Wake-on-LAN:** all four have WoL armed (`ethtool ... wol g`) and persisted via the
 `wol-arm.service` unit. Wake from an always-on node with
 `src/Proxmox/wake-node.sh <node>` (MAC registry baked in). The Intel-NIC nodes keep
-WoL on by `e1000e` default; desktop-01 needs the unit because `r8169` clears WoL each
+WoL on by `e1000e` default; desktop-01 and hpe-02 need the unit because `r8169` clears WoL each
 boot. **Wake from full power-off (S5) is verified working on desktop-01.**
 
 ---

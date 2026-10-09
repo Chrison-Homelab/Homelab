@@ -64,10 +64,11 @@ proxmoxsharp version     # PVE version
 
 Public endpoint (valid TLS): `https://proxmox.chrison.dev/api2/json`. On the LAN,
 reach nodes **by name** — `hpe-01.homelab.chrison.internal:8006` (also `nuc-01.`,
-`desktop-01.`), which is what `secrets.env` uses. Those hit the node's own
+`desktop-01.`, `hpe-02.`), which is what `secrets.env` uses. Those hit the node's own
 self-signed cert, hence `PROXMOX_VERIFY_TLS=false`.
 
-> **The nodes moved to VLAN 1000 (`10.0.0.11/.12/.13`) on 2026-08-02** and the NAS
+> **The nodes moved to VLAN 1000 (`10.0.0.11/.12/.13`) on 2026-08-02** (hpe-02 joined at
+> `10.0.0.14` on 2026-10-09) and the NAS
 > to `10.0.0.10` (#37). Nothing in this repo should hard-code those addresses —
 > the UniFi local-DNS records (`*.homelab.chrison.internal`) exist so a future
 > re-address is a DHCP-reservation edit and nothing more. The one deliberate
@@ -313,8 +314,8 @@ Secrets come from the root `secrets.env` as podman secrets, declared in the shap
 - **Homelab VLAN**: `10.10.0.0/16`
 - **Consumer VLAN**: `10.20.0.0/16`
 - **IoT VLAN**: `10.40.0.0/16`
-- **Network Devices**: `10.0.0.0/16` (VLAN 1000) — switches, APs, **the three Proxmox
-  nodes** (`10.0.0.11/.12/.13`) and **the NAS** (`10.0.0.10`), so hypervisor↔storage
+- **Network Devices**: `10.0.0.0/16` (VLAN 1000) — switches, APs, **the four Proxmox
+  nodes** (`10.0.0.11/.12/.13/.14`) and **the NAS** (`10.0.0.10`), so hypervisor↔storage
   traffic never leaves the zone
 - **Legacy** (being retired, #37): `192.168.178.0/23`. Nodes, NAS and all WiFi clients
   have left it as of 2026-08-02. What remains is guest-level: the old `50xx` arr fleet,
