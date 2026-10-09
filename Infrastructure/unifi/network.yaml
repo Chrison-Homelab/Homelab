@@ -97,6 +97,25 @@ spec:
       protocol: tcp_udp
       log: false
 
+  # Zone-based firewall policies (UnifiSharp#20). Reconciled through the official integration
+  # API, matched by NAME among user-defined policies: a missing one is created, a differing
+  # one is replaced. Policies nothing here declares (the Azure/Homelab/IoT allow rules made
+  # in the UI) and every system-defined policy are left alone.
+  firewallPolicies:
+    # ── qBittorrent peer port over IPv6 (Media, CT 5104). IPv6 has no NAT, so the IPv4
+    #    `qbittorrent-peers` forward above has no v6 twin; inbound needs this allow instead.
+    #    Matched by INTERFACE ID, not address: CT 5104 uses a fixed SLAAC token ::6342:9
+    #    (ipv6-token.service), so this keeps matching if Quic re-delegates the /56. It
+    #    replaces the hand-made 2026-10-07 policy of the same name, which pinned the full
+    #    address. Only the BitTorrent listener: the web UI (8090) stays internal.
+    - name: qbittorrent-peers-v6
+      description: qBittorrent peer port over IPv6 (CT 5104, interface id ::6342:9). Declared in Infrastructure/unifi/network.yaml.
+      action: allow
+      source: { zone: External }
+      destination: { zone: Homelab, ipv6InterfaceId: "::6342:9", ports: ["63429"] }
+      ipVersion: ipv6
+      protocol: tcp_udp
+
   # Controller-local DNS (#419). The three Pangolin-fronted zones are grey-cloud A records
   # at Cloudflare pointing to the home WAN IP, so INSIDE the house they resolved to the WAN
   # too and every admin UI was reached by NAT hairpin back through the port-forward above.

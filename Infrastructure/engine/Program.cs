@@ -452,13 +452,51 @@ static async Task<int> RunConvergeUnifi(string[] args)
             Console.WriteLine($"  ? {u.Key,-34} {u.Type} → {u.Value}  (no shape declares this — left alone)");
     }
 
+    // Firewall policies (UnifiSharp#20) — the OFFICIAL integration API, not the legacy
+    // adapter, so they authenticate with UNIFI_BASE_URL + UNIFI_API_KEY.
+    var fwWork = 0;
+    if (doc.Spec.FirewallPolicies.Count > 0)
+    {
+        var fwOptions = UnifiClientOptions.TryFromEnvironment();
+        if (fwOptions is null)
+        {
+            Console.Error.WriteLine("firewallPolicies declared but UNIFI_BASE_URL / UNIFI_API_KEY are not set (integration API).");
+            return 2;
+        }
+        using var fw = new UnifiSharp.Firewall.UnifiFirewallClient(fwOptions);
+        var fr = await UnifiFirewallConverge.ReconcileAsync(doc.Spec.FirewallPolicies, fw, apply);
+        Console.WriteLine($"\nfirewall policies — {doc.Spec.FirewallPolicies.Count} declared, {fr.Undeclared.Count} user policies on the controller we don't own");
+        foreach (var item in fr.Items)
+        {
+            var d = item.Desired;
+            var what = $"{d.Action} {d.Source.Zone} → {d.Destination.Zone} {d.IpVersion}/{d.Protocol}"
+                       + (d.Destination.Ports.Count > 0 ? $" :{string.Join(",", d.Destination.Ports)}" : "");
+            switch (item.Action)
+            {
+                case FirewallPolicyAction.NoChange:
+                    Console.WriteLine($"  = {d.Name,-30} {what}");
+                    break;
+                case FirewallPolicyAction.Create:
+                    Console.WriteLine($"  {(apply ? "+" : "~")} {d.Name,-30} {what}{(apply ? " (created)" : " (would create)")}");
+                    break;
+                case FirewallPolicyAction.Update:
+                    Console.WriteLine($"  {(apply ? "~" : "!")} {d.Name,-30} DRIFTED{(apply ? " (replaced)" : "")}");
+                    foreach (var c in item.Changes) Console.WriteLine($"      {c}");
+                    break;
+            }
+        }
+        foreach (var c in fr.Conflicts) Console.WriteLine($"  ✗ {c}");
+        foreach (var u in fr.Undeclared) Console.WriteLine($"  ? {u}  (no shape declares this — left alone)");
+        fwWork = fr.Items.Count(i => i.Action != FirewallPolicyAction.NoChange);
+    }
+
     var pfWork = result.Plan.ToCreate.Count + result.Plan.ToUpdate.Count;
     var dnsWork = result.StaticDns.Count(i => i.Action != StaticDnsAction.NoChange);
-    Console.WriteLine(pfWork + dnsWork == 0
+    Console.WriteLine(pfWork + dnsWork + fwWork == 0
         ? "\nEverything declared is present and matching — nothing to do."
         : apply
-            ? $"\nApplied: {result.Created.Count} port-forward(s) created, {result.Updated.Count} corrected; {dnsWork} DNS record(s) written."
-            : $"\nPlan: {pfWork} port-forward change(s), {dnsWork} DNS change(s). Re-run with --apply to write.");
+            ? $"\nApplied: {result.Created.Count} port-forward(s) created, {result.Updated.Count} corrected; {dnsWork} DNS record(s) written; {fwWork} firewall polic(ies) written."
+            : $"\nPlan: {pfWork} port-forward change(s), {dnsWork} DNS change(s), {fwWork} firewall policy change(s). Re-run with --apply to write.");
     return 0;
 }
 

@@ -126,6 +126,11 @@
           "description": "WAN→LAN port-forwards.",
           "items": { "$ref": "#/$defs/portForward" }
         },
+        "firewallPolicies": {
+          "type": "array",
+          "description": "Zone-based firewall policies (UniFi Network 9+; UnifiSharp#20), reconciled through the official integration API. Matched by NAME among USER-DEFINED policies: missing → created, different → replaced (PUT). Undeclared and system-defined policies are never touched.",
+          "items": { "$ref": "#/$defs/firewallPolicy" }
+        },
         "staticDns": {
           "type": "array",
           "description": "Controller-local DNS records (#314/#419) — how a name resolves ON THE LAN, with no public zone involved. Reconciled, not just created: a record that exists but answers differently is corrected. Declared here rather than on a guest shape because the useful ones are zone-level and belong to no single member; a per-client record that rides a DHCP reservation is a different endpoint and lives on the guest as network.reservation.localDnsRecord (#416).",
@@ -144,6 +149,38 @@
         "type": { "type": "string", "enum": ["A", "AAAA", "CNAME", "TXT"], "default": "A", "description": "Record type." },
         "ttl": { "type": "integer", "minimum": 0, "description": "Seconds. Omit to leave the controller's default (300) alone — stating it makes converge own it." },
         "enabled": { "type": "boolean", "default": true }
+      }
+    },
+    "firewallEndpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["zone"],
+      "description": "One side of a firewall policy: a zone, optionally narrowed by ONE of addresses / networks / ipv6InterfaceId, and optionally by ports.",
+      "properties": {
+        "zone": { "type": "string", "minLength": 1, "description": "Zone name as the controller shows it (External, Internal, Homelab, IOT, …)." },
+        "addresses": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "IPs, CIDR subnets, or ranges written first-last." },
+        "networks": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "Network names (e.g. Consumer)." },
+        "ipv6InterfaceId": { "type": "string", "minLength": 1, "description": "IPv6 interface identifier (e.g. ::6342:9). Matches that host suffix under ANY delegated prefix, so the rule survives an ISP prefix change." },
+        "ports": { "type": "array", "items": { "type": "string", "pattern": "^[0-9]+(-[0-9]+)?$" }, "description": "Ports or ranges (\"443\", \"1000-2000\"). Empty = all." },
+        "matchOpposite": { "type": "boolean", "description": "Invert the address/network/IID match." },
+        "matchOppositePorts": { "type": "boolean", "description": "Invert the port match." }
+      }
+    },
+    "firewallPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "source", "destination"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "description": "Unique policy name — the reconcile key." },
+        "description": { "type": "string" },
+        "enabled": { "type": "boolean", "default": true },
+        "action": { "type": "string", "enum": ["allow", "block", "reject"], "default": "allow" },
+        "allowReturnTraffic": { "type": "boolean", "default": true, "description": "Allow only: also create the mirrored return-traffic policy." },
+        "source": { "$ref": "#/$defs/firewallEndpoint" },
+        "destination": { "$ref": "#/$defs/firewallEndpoint" },
+        "ipVersion": { "type": "string", "enum": ["ipv4", "ipv6", "both"], "default": "both" },
+        "protocol": { "type": "string", "minLength": 1, "default": "all", "description": "all | tcp_udp | tcp | udp | another named protocol (gre, esp, …)." },
+        "logging": { "type": "boolean", "default": false }
       }
     },
     "portForward": {
