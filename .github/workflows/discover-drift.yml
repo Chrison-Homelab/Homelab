@@ -17,10 +17,13 @@ name: discover-drift
 # PROXMOX_TOKEN_ID and PROXMOX_VERIFY_TLS are not secrets; they are the committed literals in
 # secrets.env.template. If OpenBao is unavailable the run fails (no GitHub-secrets fallback since #609).
 #
-# DRIFT_PR_PAT: fine-grained PAT scoped to THIS repo (contents: write +
-# pull-requests: write) for the "Open PR on drift" step. Deliberately a scoped
-# PAT rather than the org-wide "Allow Actions to create and approve PRs" toggle,
-# to keep the blast radius minimal.
+# The "Open PR on drift" step uses the job's own GITHUB_TOKEN (#640). It used to use a
+# fine-grained PAT (DRIFT_PR_PAT); that PAT silently lost access once and the PR step failed
+# every night unnoticed, and it would have expired yearly. GITHUB_TOKEN never expires. It needs
+# the repo's "Allow GitHub Actions to create and approve pull requests" setting (on; the
+# default workflow token stays read-only) and the `pull-requests: write` granted below.
+# A PR opened by GITHUB_TOKEN does not trigger other workflows, which is fine for this
+# docs-only snapshot.
 
 on:
   schedule:
@@ -76,9 +79,7 @@ jobs:
       - name: Open PR on drift
         uses: peter-evans/create-pull-request@v8
         with:
-          # Scoped fine-grained PAT (this repo only: contents:write + pull-requests:write)
-          # so we don't depend on the org-wide "Actions can create PRs" toggle.
-          token: ${{ secrets.DRIFT_PR_PAT }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           branch: chore/discovered-state
           title: '[Proxmox Discovery] refresh discovered cluster state'
           commit-message: 'chore: refresh docs/discovered-state.json from live cluster'
