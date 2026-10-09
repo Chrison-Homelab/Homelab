@@ -22,12 +22,20 @@ UserNS=keep-id:uid=10001,gid=10001
 Volume=/home/podman/monitoring/config/tempo.yml:/etc/tempo/tempo.yml:ro
 Volume=/home/podman/monitoring/data/tempo:/var/tempo
 Exec=-config.file=/etc/tempo/tempo.yml
+# Tempo needs ~31s to shut down cleanly (measured 2026-10-09). Podman's default stop
+# timeout is 10s, so EVERY converge SIGKILLed it (exit 137, 20 times in 14 days) mid-flush,
+# and it then discarded a half-written WAL block on start ("failed to replay block.
+# removing."). An interrupted write is the likeliest origin of the zero-byte block that
+# stalled compaction for 81 days (#599). Loki, Prometheus and Grafana stop within 10s.
+StopTimeout=90
 
 [Service]
 ExecStartPre=/usr/bin/mkdir -p /home/podman/monitoring/data/tempo
 Restart=always
 RestartSec=10
 TimeoutStartSec=300
+# Above StopTimeout, so systemd never kills the unit before podman's own stop completes.
+TimeoutStopSec=120
 
 [Install]
 WantedBy=default.target
