@@ -104,15 +104,18 @@ spec:
   firewallPolicies:
     # ── qBittorrent peer port over IPv6 (Media, CT 5104). IPv6 has no NAT, so the IPv4
     #    `qbittorrent-peers` forward above has no v6 twin; inbound needs this allow instead.
-    #    Matched by INTERFACE ID, not address: CT 5104 uses a fixed SLAAC token ::6342:9
-    #    (ipv6-token.service), so this keeps matching if Quic re-delegates the /56. It
-    #    replaces the hand-made 2026-10-07 policy of the same name, which pinned the full
-    #    address. Only the BitTorrent listener: the web UI (8090) stays internal.
+    #    Matched by the FULL address: CT 5104 uses a fixed SLAAC token ::6342:9
+    #    (ipv6-token.service) under Quic's delegated prefix. ⚠ An `ipv6InterfaceId` match was
+    #    tried on 2026-10-09 and the UCG (UniFi OS 5.1.33 / Network 10.6.106) stored it fine
+    #    (`matching_target: IID`) but never matched: hits stopped dead the moment it applied
+    #    and inbound v6 peers were dropped. So the address is pinned, and a Quic prefix
+    #    re-delegation means editing it here. Re-test IID on a later Network release.
+    #    Only the BitTorrent listener: the web UI (8090) stays internal.
     - name: qbittorrent-peers-v6
-      description: qBittorrent peer port over IPv6 (CT 5104, interface id ::6342:9). Declared in Infrastructure/unifi/network.yaml.
+      description: qBittorrent peer port over IPv6 (CT 5104, token ::6342:9 under the Quic prefix). Declared in Infrastructure/unifi/network.yaml.
       action: allow
       source: { zone: External }
-      destination: { zone: Homelab, ipv6InterfaceId: "::6342:9", ports: ["63429"] }
+      destination: { zone: Homelab, addresses: ["2407:8b00:116d:e502::6342:9"], ports: ["63429"] }
       ipVersion: ipv6
       protocol: tcp_udp
 
