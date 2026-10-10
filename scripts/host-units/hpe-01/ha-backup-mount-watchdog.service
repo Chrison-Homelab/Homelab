@@ -1,0 +1,20 @@
+[Unit]
+# Homelab#488. The CIFS share loses a boot race against the NAS: the fstab entry
+# carries _netdev,nofail, so a NAS that is not answering yet leaves the .mount unit
+# FAILED and nothing ever retries it. That happened at the 7 Sep 2026 reboot and went
+# unnoticed for 12 days, because the only visible symptom was a Home Assistant error
+# that named a missing backup agent rather than a missing mount.
+#
+# This also covers the case an automount would NOT: the share dropping mid-life
+# (NAS reboot, network blip) while the host stays up.
+#
+# NOTE: systemctl is handed the PATH, not the unit name. systemd applies C-style
+# escape processing to ExecStart, so a literal mnt-ha\x2dbackup.mount here arrives
+# as mnt-ha-backup.mount and fails with NOTINSTALLED. systemctl escapes a path itself.
+Description=Ensure the Home Assistant backup CIFS share is mounted
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'mountpoint -q /mnt/ha-backup || exec systemctl start /mnt/ha-backup'
