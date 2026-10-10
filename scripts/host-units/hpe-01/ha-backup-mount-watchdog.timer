@@ -1,0 +1,11 @@
+[Unit]
+Description=Re-mount the Home Assistant backup share if it has dropped (Homelab#488)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Persistent=false
+
+[Install]
+WantedBy=timers.target
