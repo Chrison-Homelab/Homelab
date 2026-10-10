@@ -172,6 +172,8 @@ spec:
       authentik_pve_client_secret: AUTHENTIK_PVE_CLIENT_SECRET
       authentik_pbs_client_id: AUTHENTIK_PBS_CLIENT_ID
       authentik_pbs_client_secret: AUTHENTIK_PBS_CLIENT_SECRET
+      authentik_tracearr_client_id: AUTHENTIK_TRACEARR_CLIENT_ID
+      authentik_tracearr_client_secret: AUTHENTIK_TRACEARR_CLIENT_SECRET
       # Plex identity SOURCE (#316) — not a client pair. plex_owner_token is a credential
       # for the whole Plex ACCOUNT (authentik calls /api/v2/friends with it); the machine
       # identifier is not secret but is kept out of this PUBLIC repo like HOME_WAN_IP.
