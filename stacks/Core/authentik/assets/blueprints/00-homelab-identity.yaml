@@ -610,6 +610,22 @@ entries:
   # claim-to-role mapping (henrygd/beszel#1967), so an SSO user lands as a plain `user` and
   # is promoted by hand. The local superuser stays as break-glass (DISABLE_PASSWORD_AUTH is
   # deliberately unset). PocketBase's redirect is fixed at <app-url>/api/oauth2-redirect.
+  # PocketBase's OIDC login DROPS an email whose email_verified claim is not true, and
+  # authentik's stock `email` mapping sends email_verified: false. With the email blanked,
+  # PocketBase can neither create the account (email is required -- "Failed to create
+  # record. email: cannot be blank", 2026-10-11) nor link it to the existing local account
+  # by matching email. So Beszel gets its own `email` scope asserting verified. Safe here:
+  # authentik emails are admin-managed, and only homelab-admins can reach this app.
+  # Attached to the Beszel provider only, so no other application's claims change.
+  - model: authentik_providers_oauth2.scopemapping
+    id: beszel-email-scope
+    identifiers: { name: "Beszel email (verified)" }
+    attrs:
+      scope_name: email
+      description: "Email for Beszel/PocketBase, which ignores unverified emails."
+      expression: |
+        return {"email": request.user.email, "email_verified": True}
+
   - model: authentik_providers_oauth2.oauth2provider
     id: beszel-provider
     identifiers: { name: Beszel }
@@ -625,7 +641,7 @@ entries:
         - authorization_code
       property_mappings:
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
-        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+        - !KeyOf beszel-email-scope
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
       redirect_uris:
         - matching_mode: strict
