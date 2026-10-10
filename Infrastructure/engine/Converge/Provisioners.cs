@@ -79,6 +79,7 @@ public sealed class ProvisionerRegistry
         new RomMProvisioner(),
         new OpenBaoProvisioner(),
         new InvenTreeProvisioner(),
+        new TracearrProvisioner(),
     });
 }
 
