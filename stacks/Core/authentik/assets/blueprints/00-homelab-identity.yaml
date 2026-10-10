@@ -345,6 +345,59 @@ entries:
     identifiers: { target: !KeyOf openbao-app, group: !KeyOf grp-homelab-admins }
     attrs: { order: 0, enabled: true }
 
+  # ── Proxmox Datacenter Manager: OIDC realm (#485 infrastructure tier) ──────────────
+  # PDM (CT 2002 / nuc-01) manages the whole fleet, so this is bound to homelab-admins only,
+  # like OpenBao. It is an ADDITIONAL realm: `root@pam` keeps working and must never be
+  # removed (docs/runbooks/authentik-break-glass.md). PDM has no per-app group mapping of its
+  # own — the realm autocreates the user and an ACL grants the role — so this side decides WHO
+  # may sign in and PDM decides what they can do.
+  #
+  # ⚠ PDM builds redirect_uri from the address the browser used, so EVERY way into PDM needs
+  # its own entry, the same trap that broke Audiobookshelf twice. The union is the tunnel
+  # ingress in stacks/Core/cloudflared-hpe-01.lxc.yaml (pdm.chrison.dev) plus the direct
+  # origin (10.10.208.155:8443, a UniFi DHCP reservation). Each is listed with and without a
+  # trailing slash because PDM's UI path is unverified until the first real login.
+  - model: authentik_providers_oauth2.oauth2provider
+    id: pdm-provider
+    identifiers: { name: Proxmox Datacenter Manager }
+    attrs:
+      client_type: confidential
+      client_id: !Env AUTHENTIK_PDM_CLIENT_ID
+      client_secret: !Env AUTHENTIK_PDM_CLIENT_SECRET
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      include_claims_in_id_token: true
+      grant_types:
+        - authorization_code
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+      redirect_uris:
+        - matching_mode: strict
+          url: https://pdm.chrison.dev
+        - matching_mode: strict
+          url: https://pdm.chrison.dev/
+        - matching_mode: strict
+          url: https://10.10.208.155:8443
+        - matching_mode: strict
+          url: https://10.10.208.155:8443/
+
+  - model: authentik_core.application
+    id: pdm-app
+    identifiers: { slug: pdm }
+    attrs:
+      name: Proxmox Datacenter Manager
+      provider: !KeyOf pdm-provider
+      meta_launch_url: https://pdm.chrison.dev
+      meta_description: Cluster-wide view across the Proxmox nodes.
+      policy_engine_mode: any
+
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf pdm-app, group: !KeyOf grp-homelab-admins }
+    attrs: { order: 0, enabled: true }
+
   # ── Forgejo: OAuth2/OIDC provider ─────────────────────────────────────────────────
   # Tier-1 migration (#485). Forgejo does its own group→role mapping from the claim
   # (--admin-group), so this side only decides WHO gets a token; the forge decides what they
