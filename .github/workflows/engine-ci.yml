@@ -14,6 +14,7 @@ on:
       - 'Infrastructure/engine/**'
       - 'Infrastructure/engine.Tests/**'   # #299: a test-only PR MUST run this workflow
       - 'Infrastructure/schema/**'         # app-catalogue/schema drift is asserted by the tests
+      - 'Infrastructure/unifi/**'          # network.yaml is loaded and asserted by UnifiFirewallConvergeTests
       - 'build/**'                         # the TestEngine target itself
       - 'nuget.config'
       - 'global.json'

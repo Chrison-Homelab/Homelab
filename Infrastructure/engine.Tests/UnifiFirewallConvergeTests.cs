@@ -79,15 +79,17 @@ public class UnifiFirewallConvergeTests
     }
 
     [Fact]
-    public void Network_yaml_declares_the_qbittorrent_policy_by_interface_id()
+    public void Network_yaml_declares_the_qbittorrent_policy_by_full_address()
     {
+        // By ADDRESS, not ipv6InterfaceId: the UCG stores an IID match but never matches it
+        // (live 2026-10-09, #687). If this ever flips back to an IID, re-check the hit counter.
         var dir = AppContext.BaseDirectory;
         while (dir is not null && !File.Exists(Path.Combine(dir, "Infrastructure", "unifi", "network.yaml"))) dir = Path.GetDirectoryName(dir);
         Assert.NotNull(dir);
         var doc = UnifiConverge.Load(Path.Combine(dir!, "Infrastructure", "unifi", "network.yaml"));
         var spec = Assert.Single(doc.Spec.FirewallPolicies, p => p.Name == "qbittorrent-peers-v6").ToSpec();
-        Assert.Equal("::6342:9", spec.Destination.Ipv6InterfaceId);
-        Assert.Empty(spec.Destination.Addresses);
+        Assert.Null(spec.Destination.Ipv6InterfaceId);
+        Assert.Single(spec.Destination.Addresses, a => a.EndsWith("::6342:9"));
         Assert.Equal(FirewallIpVersion.IPv6, spec.IpVersion);
         // Must round-trip through the API mapping without losing anything.
         Assert.Equal(spec, FirewallPolicyJson.FromJson(FirewallPolicyJson.ToJson(spec, Names), Names).Spec);
