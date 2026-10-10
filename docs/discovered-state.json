@@ -2,161 +2,73 @@
   "nodes": [
     {
       "node": "desktop-01",
-      "status": "Online",
-      "maxMem": 16707514368,
-      "reachable": true,
+      "status": "Offline",
+      "reachable": false,
       "lxc": [
         {
           "vmId": 2008,
-          "name": "erp-for-factory-games",
-          "status": "Stopped",
-          "maxMem": 4294967296,
-          "cores": 2,
+          "status": "unknown",
           "tags": "ai;cloudflare;desktop-01;vlan-1010"
         },
         {
           "vmId": 2009,
-          "name": "topaz",
-          "status": "Stopped",
-          "maxMem": 2147483648,
-          "cores": 2
+          "status": "unknown"
         },
         {
           "vmId": 3000,
-          "name": "forgejo",
-          "status": "Stopped",
-          "maxMem": 2147483648,
-          "cores": 2,
+          "status": "unknown",
           "tags": "community-script;devops;forge;git"
         },
         {
           "vmId": 3001,
-          "name": "forgejo-runner",
-          "status": "Stopped",
-          "maxMem": 4294967296,
-          "cores": 4,
+          "status": "unknown",
           "tags": "ci;community-script;devops;forge"
         },
         {
           "vmId": 3003,
-          "name": "shell",
-          "status": "Stopped",
-          "maxMem": 8589934592,
-          "cores": 8,
+          "status": "unknown",
           "tags": "community-script;dev;devops;shell;tmux"
         },
         {
           "vmId": 3004,
-          "name": "cloudflared",
-          "status": "Stopped",
-          "maxMem": 536870912,
-          "cores": 1,
+          "status": "unknown",
           "tags": "cloudflare;community-script;devops;network;tunnel"
         },
         {
           "vmId": 3005,
-          "name": "newt",
-          "status": "Stopped",
-          "maxMem": 536870912,
-          "cores": 1,
+          "status": "unknown",
           "tags": "community-script;devops;network;pangolin;tunnel;wireguard"
         },
         {
           "vmId": 9905,
-          "name": "openwebui",
-          "status": "Stopped",
-          "maxMem": 8589934592,
-          "cores": 4,
+          "status": "unknown",
           "tags": "retired"
         }
       ],
       "qemu": [
         {
           "vmId": 1002,
-          "name": "gaming-vm-01",
-          "status": "Stopped",
-          "maxMem": 12884901888,
-          "cores": 6,
+          "status": "unknown",
           "tags": "gaming"
         },
         {
           "vmId": 1003,
-          "name": "bazzite",
-          "status": "Stopped",
-          "maxMem": 12884901888,
-          "cores": 6,
+          "status": "unknown",
           "tags": "gaming"
         },
         {
           "vmId": 1100,
-          "name": "buildvm",
-          "status": "Stopped",
-          "maxMem": 12884901888,
-          "cores": 6,
+          "status": "unknown",
           "tags": "buildlab"
         }
       ],
-      "storage": [
-        {
-          "storage": "ds1813-nfs-volume-1",
-          "type": "nfs",
-          "content": "images,import,iso,rootdir,snippets,vztmpl"
-        },
-        {
-          "storage": "ds1813-nfs-volume-2",
-          "type": "nfs",
-          "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
-        },
-        {
-          "storage": "ds1813-nfs-volume-3",
-          "type": "nfs",
-          "content": "backup,images,import,iso,rootdir,snippets,vztmpl"
-        },
-        {
-          "storage": "ds1813-nfs-volume-4",
-          "type": "nfs",
-          "content": "import"
-        },
-        {
-          "storage": "local",
-          "type": "dir",
-          "content": "backup,iso,vztmpl"
-        },
-        {
-          "storage": "local-lvm",
-          "type": "lvmthin",
-          "content": "images,rootdir"
-        },
-        {
-          "storage": "pbs-homelab",
-          "type": "pbs",
-          "content": "backup"
-        }
-      ],
-      "network": [
-        {
-          "iface": "eno1",
-          "type": "Eth"
-        },
-        {
-          "iface": "vmbr0",
-          "type": "Bridge"
-        },
-        {
-          "iface": "vmbr0.1000",
-          "type": "Vlan",
-          "address": "10.0.0.12"
-        },
-        {
-          "iface": "wlp8s0",
-          "type": "Unknown"
-        }
-      ]
+      "storage": [],
+      "network": []
     },
     {
       "node": "hpe-01",
       "status": "Online",
-      "maxMem": 16642404352,
+      "maxMem": 16642351104,
       "reachable": true,
       "lxc": [
         {
@@ -166,14 +78,6 @@
           "maxMem": 536870912,
           "cores": 1,
           "tags": "cloudflare;community-script;core;ha-primary;network;tunnel"
-        },
-        {
-          "vmId": 2014,
-          "name": "authentik",
-          "status": "Running",
-          "maxMem": 4294967296,
-          "cores": 2,
-          "tags": "adr-0009;community-script;core;identity;oidc;podman;quadlet;sso"
         },
         {
           "vmId": 3002,
@@ -190,14 +94,6 @@
           "maxMem": 4294967296,
           "cores": 2,
           "tags": "adr-0009;browser-automation;community-script;container-host;devops;podman;quadlet"
-        },
-        {
-          "vmId": 3007,
-          "name": "openbao",
-          "status": "Running",
-          "maxMem": 536870912,
-          "cores": 1,
-          "tags": "community-script;devops;openbao;secrets;security"
         },
         {
           "vmId": 4001,
@@ -238,14 +134,6 @@
           "maxMem": 1073741824,
           "cores": 2,
           "tags": "arr;community-script;media;subtitles"
-        },
-        {
-          "vmId": 5104,
-          "name": "qbittorrent",
-          "status": "Running",
-          "maxMem": 2147483648,
-          "cores": 2,
-          "tags": "arr;community-script;downloads;media"
         },
         {
           "vmId": 5105,
@@ -437,12 +325,36 @@
       "reachable": true,
       "lxc": [
         {
+          "vmId": 2014,
+          "name": "authentik",
+          "status": "Running",
+          "maxMem": 4294967296,
+          "cores": 2,
+          "tags": "adr-0009;community-script;core;identity;oidc;podman;quadlet;sso"
+        },
+        {
+          "vmId": 3007,
+          "name": "openbao",
+          "status": "Running",
+          "maxMem": 536870912,
+          "cores": 1,
+          "tags": "community-script;devops;openbao;secrets;security"
+        },
+        {
           "vmId": 5008,
           "name": "plex",
           "status": "Running",
           "maxMem": 2147483648,
           "cores": 4,
           "tags": "arr;community-script;media;media-server;plex"
+        },
+        {
+          "vmId": 5104,
+          "name": "qbittorrent",
+          "status": "Running",
+          "maxMem": 2147483648,
+          "cores": 2,
+          "tags": "arr;community-script;downloads;media"
         }
       ],
       "qemu": [],
@@ -502,7 +414,7 @@
     {
       "node": "nuc-01",
       "status": "Online",
-      "maxMem": 16692977664,
+      "maxMem": 16692932608,
       "reachable": true,
       "lxc": [
         {
