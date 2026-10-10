@@ -1992,7 +1992,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
             "      - { key: host.name, value: pangolin, action: upsert }",
             "  batch: {}",
             "exporters:",
-            "  otlp:",
+            "  otlp_grpc:",                   // the newer name for the `otlp` (gRPC) exporter; same exporter
             $"    endpoint: {endpoint}",
             "    tls:",
             "      insecure: true",              // LAN-only :4317, unauthenticated by design
@@ -2002,7 +2002,7 @@ public sealed class PangolinProvisioner : IAppProvisioner
             "    logs:",
             "      receivers: [ journald ]",
             "      processors: [ filter/containers_only, transform/hoist, groupbyattrs, resource/host, batch ]",
-            "      exporters: [ otlp ]",
+            "      exporters: [ otlp_grpc ]",
         };
         return string.Join("\n", L) + "\n";
     }

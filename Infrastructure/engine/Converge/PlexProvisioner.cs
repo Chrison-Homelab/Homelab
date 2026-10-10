@@ -8,14 +8,17 @@ namespace Homelab.Infrastructure.Converge;
 //
 // WHY THIS EXISTS (#332): Plex's server settings lived ONLY inside the container, in
 // `Preferences.xml`. Nothing declared them, so a rebuild would silently come back with
-// Plex defaults — and at least one of the live settings is a deliberate NON-default that
-// materially changes playback behaviour:
+// Plex defaults, and some of the live settings materially change playback:
 //
-//   TranscoderCanOnlyRemuxVideo = 1   ("Disable video stream transcoding", default 0)
+//   TranscoderCanOnlyRemuxVideo   "Disable video stream transcoding". Ran 1 on hpe-01 (i5-6500T,
+//                                 HD 530: only hybrid HEVC 10-bit decode). 0 since 2026-10-09,
+//                                 when Plex moved to hpe-02, whose HD 630 decodes AND encodes
+//                                 HEVC 10-bit in hardware.
+//   HardwareDevicePath            "" (Auto). Plex stores the chosen GPU by PCI id, and after the
+//                                 move the stale hpe-01 id silently sent every transcode to the
+//                                 CPU. Auto keeps it following whatever iGPU the host has.
 //
-// That is an intentional choice: this box is a 4-core i5-6500T, so video transcoding is
-// refused outright and clients get direct play / remux / audio-only transcode. Losing it in
-// a rebuild would let a weak server start accepting 4K video transcodes it cannot serve.
+// Declaring a pref is what keeps a rebuild (or a node move) from quietly reverting it.
 //
 // HOW: reconciled through the Plex HTTP API (`/:/prefs`), not by editing Preferences.xml.
 // Plex holds that file open and rewrites it on shutdown, so an edit underneath a running
