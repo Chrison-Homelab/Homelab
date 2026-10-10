@@ -452,6 +452,52 @@ entries:
     identifiers: { target: !KeyOf synology-app, group: !KeyOf grp-homelab-admins }
     attrs: { order: 0, enabled: true }
 
+  # ── InvenTree: OIDC login (#485) ───────────────────────────────────────────────────
+  # The parts inventory (Workshop, CT 8000). Not household-facing, so homelab-admins only for now.
+  # InvenTree does its own login through django-allauth's openid_connect provider, so this side
+  # only decides WHO gets a token. The callback is /accounts/oidc/<provider_id>/login/callback/,
+  # coupled to the provider_id the InvenTree provisioner writes (`authentik`). The path is fixed,
+  # so there is one strict entry. InvenTree is reached by NAME over plain HTTP on the LAN only (no
+  # Pangolin or tunnel route); allauth builds the callback from the host the browser used, so
+  # browsing it by IP would not match and is not supported.
+  #
+  # The existing local `admin` account stays: its email is not the one authentik will send, so
+  # allauth will not link the two, and the first SSO login creates a separate user with no rights.
+  - model: authentik_providers_oauth2.oauth2provider
+    id: inventree-provider
+    identifiers: { name: InvenTree }
+    attrs:
+      client_type: confidential
+      client_id: !Env AUTHENTIK_INVENTREE_CLIENT_ID
+      client_secret: !Env AUTHENTIK_INVENTREE_CLIENT_SECRET
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      include_claims_in_id_token: true
+      grant_types:
+        - authorization_code
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+      redirect_uris:
+        - matching_mode: strict
+          url: http://inventory.homelab.chrison.internal/accounts/oidc/authentik/login/callback/
+
+  - model: authentik_core.application
+    id: inventree-app
+    identifiers: { slug: inventree }
+    attrs:
+      name: InvenTree
+      provider: !KeyOf inventree-provider
+      meta_launch_url: http://inventory.homelab.chrison.internal
+      meta_description: Parts inventory and BOMs.
+      policy_engine_mode: any
+
+  - model: authentik_policies.policybinding
+    identifiers: { target: !KeyOf inventree-app, group: !KeyOf grp-homelab-admins }
+    attrs: { order: 0, enabled: true }
+
   # ── Forgejo: OAuth2/OIDC provider ─────────────────────────────────────────────────
   # Tier-1 migration (#485). Forgejo does its own group→role mapping from the claim
   # (--admin-group), so this side only decides WHO gets a token; the forge decides what they
