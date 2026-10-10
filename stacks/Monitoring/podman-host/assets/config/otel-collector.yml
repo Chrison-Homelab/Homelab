@@ -32,6 +32,24 @@ receivers:
         auth:
           authenticator: bearertokenauth
 
+
+  # Proxmox VE's built-in metric server (Datacenter > Metric Server, cluster-wide in
+  # /etc/pve/status.cfg) pushes InfluxDB line protocol over HTTP. PVE cannot speak OTLP or
+  # Prometheus, so the collector translates: measurement + field become the metric name and
+  # Influx tags become labels (host, object, nodename, vmid, instance, type). Names are then
+  # prefixed by transform/pve: pvemetrics_cpustat_iowait, pvemetrics_blockstat_read_ios,
+  # pvemetrics_nics_receive, pvemetrics_system_cpu{object="qemu",vmid=...}, ...
+  # PVE's org/bucket/token are ignored.
+  #
+  # COMPLEMENTS prometheus-pve-exporter, does not replace it: the exporter feeds the
+  # guest-down / node-down / storage alerts and onboot. This adds per-disk I/O, per-NIC
+  # traffic, the CPU-time split and per-guest disk/net I/O.
+  #
+  # Unauthenticated on purpose (Christian, 2026-10-11): internal network only, and PVE's
+  # `Authorization: Token` header is not something bearertokenauth can verify.
+  influxdb/pve:
+    endpoint: 0.0.0.0:8086
+
 processors:
   batch: {}
 
@@ -40,6 +58,14 @@ processors:
   # push over its burst limit with 429, and it can never succeed on retry, so it was
   # dropped: 62,800 lines in one hour on 2026-10-09, with nothing logged on this side.
   # 2000 x ~1 KB stays well inside loki-config.yml's ingestion_burst_size_mb.
+  # PVE's measurement names are generic (`system_cpu`, `system_used`, `memory_memtotal`), so
+  # prefix them. `pvemetrics_`, not `pve_`, which belongs to prometheus-pve-exporter.
+  transform/pve:
+    metric_statements:
+      - context: metric
+        statements:
+          - set(name, Concat(["pvemetrics", name], "_"))
+
   batch/logs:
     send_batch_size: 1000
     send_batch_max_size: 2000
@@ -88,6 +114,12 @@ service:
     metrics:
       receivers: [otlp, otlp/auth]
       processors: [attributes/claude_code, batch]
+      exporters: [prometheus]
+    # Kept apart from `metrics` so the Claude Code attribute scrubbing never touches PVE
+    # series, and PVE can be switched off by removing one pipeline.
+    metrics/pve:
+      receivers: [influxdb/pve]
+      processors: [transform/pve, batch]
       exporters: [prometheus]
     traces:
       receivers: [otlp, otlp/auth]
