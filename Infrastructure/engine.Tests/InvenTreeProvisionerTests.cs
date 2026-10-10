@@ -202,4 +202,239 @@ public sealed class InvenTreeProvisionerTests
 
         Assert.Contains($"test -f {InvenTreeProvisioner.ConfigPath} ||", script, StringComparison.Ordinal);
     }
+
+    // ---- SSO (#485) -------------------------------------------------------
+
+    private const string ClientId = "inventree";
+    private const string ClientSecret = "s3cr3t-client-value-0123456789";
+    private const string Issuer = "https://identity.chrison.dev/application/o/inventree/";
+
+    private static Shape SsoShape()
+    {
+        var s = InvenTreeShape();
+        s.Spec.Config["ssoIssuer"] = Issuer;
+        return s;
+    }
+
+    private static InvenTreeProvisioner.SsoCredentials Creds(string secret = ClientSecret) => new(ClientId, secret);
+
+    private static ConvergeContext SsoCtx(INodeExec exec, string? id = ClientId, string? secret = ClientSecret)
+    {
+        Environment.SetEnvironmentVariable(InvenTreeProvisioner.SsoClientIdKey, id);
+        Environment.SetEnvironmentVariable(InvenTreeProvisioner.SsoClientSecretKey, secret);
+        return Ctx(exec);
+    }
+
+    [Fact]
+    public void Sso_IsOffUnlessTheShapeAsksForIt()
+    {
+        // Every shape that predates SSO must converge exactly as it did: no social keys, no
+        // managed block, no API calls, and no extra plan lines.
+        var script = InvenTreeProvisioner.BuildDeploy(InvenTreeShape(), "marker", Password);
+
+        Assert.DoesNotContain("social_", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("homelab-managed sso", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("LOGIN_ENABLE_SSO", script, StringComparison.Ordinal);
+        Assert.DoesNotContain(new InvenTreeProvisioner().PlanSteps(InvenTreeShape()), l => l.Contains("SSO", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Sso_Fails_WhenTheClientPairIsMissing()
+    {
+        // A provider with no credentials can never log anyone in, so this is a failed
+        // provision rather than a quiet no-op.
+        var exec = OkExec();
+
+        var result = await new InvenTreeProvisioner().ApplyAsync(SsoShape(), SsoCtx(exec, id: null, secret: null));
+
+        Assert.Equal(ApplyOutcome.Failed, result.Outcome);
+        Assert.Contains(InvenTreeProvisioner.SsoClientIdKey, result.Message, StringComparison.Ordinal);
+        Assert.Contains(InvenTreeProvisioner.SsoClientSecretKey, result.Message, StringComparison.Ordinal);
+        Assert.Empty(exec.Commands);
+    }
+
+    [Fact]
+    public async Task Sso_Fails_WhenOnlyHalfThePairIsSet()
+    {
+        var exec = OkExec();
+
+        var result = await new InvenTreeProvisioner().ApplyAsync(SsoShape(), SsoCtx(exec, secret: null));
+
+        Assert.Equal(ApplyOutcome.Failed, result.Outcome);
+        Assert.Empty(exec.Commands);
+    }
+
+    [Fact]
+    public async Task Sso_AppliesAndNeverLeaksTheClientSecret()
+    {
+        var exec = OkExec();
+        var shape = SsoShape();
+
+        var result = await new InvenTreeProvisioner().ApplyAsync(shape, SsoCtx(exec));
+
+        Assert.Equal(ApplyOutcome.Applied, result.Outcome);
+        // The secret belongs in the script that runs inside the CT and nowhere a human reads.
+        Assert.DoesNotContain(ClientSecret, result.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(new InvenTreeProvisioner().PlanSteps(shape), l => l.Contains(ClientSecret, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Sso_WritesTheProviderBlockPointingAtTheDiscoveryDocument()
+    {
+        var shape = SsoShape();
+        var script = InvenTreeProvisioner.BuildDeploy(shape, "marker", Password, Creds());
+        var lines = InvenTreeProvisioner.SsoBlockLines(shape, Creds());
+
+        // The YAML itself: the provider_id is the third path segment of the callback the
+        // authentik blueprint registers, so it is load-bearing, not cosmetic.
+        Assert.Contains("allauth.socialaccount.providers.openid_connect", lines[2], StringComparison.Ordinal);
+        Assert.Contains("      - provider_id: 'authentik'", lines);
+        Assert.Contains(
+            "          server_url: 'https://identity.chrison.dev/application/o/inventree/.well-known/openid-configuration'",
+            lines);
+
+        // And how it reaches the file: every line is shell-quoted once more, so the YAML's own
+        // single quotes appear as '\'' in the script text and the shell reassembles them.
+        Assert.Contains(InvenTreeProvisioner.SsoBlockBegin, script, StringComparison.Ordinal);
+        Assert.Contains("provider_id: '\\''authentik'\\''", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Sso_ForcesTheConfigFileToOwnerOnly_BecauseItNowHoldsASecret()
+    {
+        // config.yaml ships 0664. The client secret has no `_file` variant, so it lands inline.
+        var script = InvenTreeProvisioner.BuildDeploy(SsoShape(), "marker", Password, Creds());
+
+        Assert.Contains($"chmod 600 {InvenTreeProvisioner.ConfigPath};", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Sso_ValidatesTheConfigBeforeRestarting_AndRestoresTheBackupOnFailure()
+    {
+        // A block that breaks the YAML must not be the thing the restart trips over.
+        var script = InvenTreeProvisioner.BuildDeploy(SsoShape(), "marker", Password, Creds());
+
+        var backup = script.IndexOf($"cp -p {InvenTreeProvisioner.ConfigPath} ", StringComparison.Ordinal);
+        var validate = script.IndexOf("yaml.safe_load", StringComparison.Ordinal);
+        var restore = script.IndexOf("restored the backup, nothing restarted", StringComparison.Ordinal);
+        var restart = script.IndexOf("systemctl restart", StringComparison.Ordinal);
+
+        Assert.True(backup >= 0 && backup < validate, "backup must precede validation");
+        Assert.True(validate < restore, "restore must follow a failed validation");
+        Assert.True(restore < restart, "nothing may restart before validation has passed");
+    }
+
+    [Fact]
+    public void Sso_RemovesItsOwnPreviousBlock_WithALiteralSedPattern()
+    {
+        // Regression: the pattern used to be Regex.Escape'd, which turns `(` into `\(` — a capture
+        // group in sed's basic regex — so the old block was never matched and the NEXT converge
+        // refused it as a foreign key. The pattern must be plain text.
+        var script = InvenTreeProvisioner.BuildDeploy(SsoShape(), "marker", Password, Creds());
+
+        Assert.Contains("sed -i '/^# >>> homelab-managed sso/,/^# <<< homelab-managed sso/d'", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("\\(", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Sso_BlockMarkers_ContainNothingSedTreatsSpecially()
+    {
+        foreach (var marker in new[] { InvenTreeProvisioner.SsoBlockBeginPrefix, InvenTreeProvisioner.SsoBlockEnd })
+            Assert.Empty(new[] { "\\", "[", "]", "*", ".", "^", "$" }.Where(c => marker.Contains(c, StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void Sso_RefusesAForeignSocialKey_RatherThanWritingADuplicate()
+    {
+        // A duplicate top-level YAML key is a parse error, which would take InvenTree down.
+        var script = InvenTreeProvisioner.BuildDeploy(SsoShape(), "marker", Password, Creds());
+
+        Assert.Contains("grep -qE '^(social_backends|social_providers):'", script, StringComparison.Ordinal);
+        Assert.Contains("refusing to add a duplicate YAML key", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Sso_EnablesTheDbSettings_AfterTheRestart_AndBeforeTheMarker()
+    {
+        var script = InvenTreeProvisioner.BuildDeploy(SsoShape(), "marker", Password, Creds());
+
+        var restart = script.IndexOf("systemctl restart", StringComparison.Ordinal);
+        var ssoOn = script.IndexOf("/api/settings/global/LOGIN_ENABLE_SSO/", StringComparison.Ordinal);
+        var regOn = script.IndexOf("/api/settings/global/LOGIN_ENABLE_SSO_REG/", StringComparison.Ordinal);
+        var marker = script.IndexOf(InvenTreeProvisioner.MarkerPath, StringComparison.Ordinal);
+
+        Assert.True(restart < ssoOn && ssoOn < marker, "LOGIN_ENABLE_SSO is set after the restart, before the marker");
+        Assert.True(restart < regOn && regOn < marker, "LOGIN_ENABLE_SSO_REG is set after the restart, before the marker");
+        Assert.EndsWith($"printf '%s' 'marker' > {InvenTreeProvisioner.MarkerPath}", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Sso_KeepsTheAdminCredentialsOffCurlsArgv()
+    {
+        // `ps` inside the guest would otherwise show the superuser password for the length of the call.
+        var script = InvenTreeProvisioner.BuildDeploy(SsoShape(), "marker", Password, Creds());
+
+        Assert.Contains("curl -fsS -K -", script, StringComparison.Ordinal);
+        Assert.DoesNotContain(" -u ", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("--user", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Sso_DoublesSingleQuotesInYamlScalars()
+    {
+        var lines = InvenTreeProvisioner.SsoBlockLines(SsoShape(), Creds("a'b"));
+
+        Assert.Contains("        secret: 'a''b'", lines);
+    }
+
+    [Fact]
+    public void Sso_Marker_ChangesWhenTheClientSecretRotates()
+    {
+        // A rotated secret must re-converge or InvenTree keeps presenting the old one and every login fails.
+        Assert.NotEqual(
+            InvenTreeProvisioner.DesiredMarker(SsoShape(), Password, Creds()),
+            InvenTreeProvisioner.DesiredMarker(SsoShape(), Password, Creds("rotated")));
+    }
+
+    [Fact]
+    public void Sso_Marker_DiffersFromTheNoSsoMarker()
+    {
+        Assert.NotEqual(
+            InvenTreeProvisioner.DesiredMarker(InvenTreeShape(), Password),
+            InvenTreeProvisioner.DesiredMarker(SsoShape(), Password, Creds()));
+    }
+
+    [Fact]
+    public async Task Sso_ReportsNoChange_WhenTheMarkerAlreadyMatches()
+    {
+        var shape = SsoShape();
+        var exec = OkExec(markerReply: InvenTreeProvisioner.DesiredMarker(shape, Password, Creds()));
+
+        var result = await new InvenTreeProvisioner().ApplyAsync(shape, SsoCtx(exec));
+
+        Assert.Equal(ApplyOutcome.NoChange, result.Outcome);
+        Assert.Single(exec.Commands);   // the marker read only: no rewrite, no restart
+    }
+
+    [Fact]
+    public void Sso_RejectsAnIssuerThatIsNotHttps()
+    {
+        var s = InvenTreeShape();
+        s.Spec.Config["ssoIssuer"] = "http://identity.chrison.dev/application/o/inventree/";
+
+        Assert.Throws<InvalidOperationException>(() => InvenTreeProvisioner.SsoIssuer(s));
+    }
+
+    [Theory]
+    [InlineData("auth/entik")]
+    [InlineData("auth entik")]
+    [InlineData("auth'entik")]
+    public void Sso_RejectsAProviderIdThatIsNotAUrlSafeSegment(string id)
+    {
+        // It becomes a path segment in the callback URL and a value in YAML.
+        var s = SsoShape();
+        s.Spec.Config["ssoProviderId"] = id;
+
+        Assert.Throws<InvalidOperationException>(() => InvenTreeProvisioner.SsoProviderId(s));
+    }
 }
