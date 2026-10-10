@@ -85,3 +85,9 @@ spec:
     siteUrl: http://inventory.homelab.chrison.internal
     adminUser: admin
     adminEmail: homelab@chrison.dev
+    # SSO through authentik (#485). Opt-in: with no ssoIssuer the provisioner configures none of it.
+    # The client pair is NOT here — AUTHENTIK_INVENTREE_CLIENT_ID/SECRET come from the secrets
+    # store, the same two values the authentik blueprint pins. The provider id (default `authentik`)
+    # is the third segment of the callback the blueprint registers, so renaming it means editing
+    # both ends. The local `admin` account stays as the break-glass.
+    ssoIssuer: https://identity.chrison.dev/application/o/inventree/

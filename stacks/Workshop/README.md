@@ -26,6 +26,22 @@ submodule because [ADR-0008](../../docs/adr/ADR-0008-stack-extraction-meta-repo.
 extracts *domain* stacks and keeps cross-cutting ones in-tree — and there are no blobs,
 no vendor material and no separate audience here to pay the 2-PR tax for.
 
+## Signing in with authentik
+
+InvenTree logs in through django-allauth's OIDC provider, set up by the provisioner when the shape
+carries `config.ssoIssuer` (#485). The local `admin` stays as the break-glass, so SSO is an additional
+way in and never the only one.
+
+- **Who:** the authentik app is bound to `homelab-admins`. The first SSO login creates a **separate user
+  with no rights**, because the existing `admin`'s email differs from the one authentik sends and
+  allauth will not link them. Promote that user once, as `admin`, under Admin Center → Users.
+- **How it is applied:** a managed block in `/etc/inventree/config.yaml` (markers `homelab-managed sso`),
+  replaced wholesale on every converge, plus the two DB-backed switches `LOGIN_ENABLE_SSO` and
+  `LOGIN_ENABLE_SSO_REG` set through the REST API. The file is forced to `0600` because it holds the
+  client secret inline. It is parsed before InvenTree restarts and rolled back if it does not.
+- **Reach it by name.** The callback is built from the host the browser used, so
+  `http://inventory.homelab.chrison.internal` works and the bare IP does not.
+
 ## Using the API
 
 Token auth. Mint one with the admin credentials, then use it as `Authorization: Token …`:
