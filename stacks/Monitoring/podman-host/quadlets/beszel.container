@@ -43,13 +43,17 @@ Environment=APP_URL=http://monitoring.homelab.chrison.internal:8090
 Environment=USER_EMAIL=csimon@chrison.dev
 Secret=beszel_admin_password,type=env,target=USER_PASSWORD
 
-# NO OIDC WIRING YET, deliberately. Beszel authenticates via PocketBase and its OIDC
-# role sync is still open upstream (henrygd/beszel#1967), so an SSO user would land
-# non-admin exactly like Pulse. The difference we actually care about — that Beszel has
-# a user admin surface where a role can be set BY HAND — is a thing to verify with local
-# auth first. Wiring authentik before confirming that would test two unknowns at once.
-# The first admin account is created through the web UI on first run; there is no
-# USER_EMAIL/USER_PASSWORD env path, so that step is manual and belongs to a human.
+# OIDC via authentik (#485). PocketBase keeps OAuth2 providers in its DATABASE (users
+# collection > Options > OAuth2), so the provider itself -- client pair from OpenBao
+# AUTHENTIK_BESZEL_CLIENT_*, issuer https://identity.chrison.dev/application/o/beszel/ --
+# is entered once through the PocketBase superuser API, not converged; the authentik half
+# is in the Core blueprint. Redirect: APP_URL + /api/oauth2-redirect.
+#
+# USER_CREATION lets the first SSO login create its Beszel account. There is NO role sync
+# (henrygd/beszel#1967): every SSO user lands as a plain `user` and is promoted by hand in
+# the users collection. DISABLE_PASSWORD_AUTH is deliberately UNSET, so the local
+# csimon@chrison.dev login above stays as break-glass if authentik is down.
+Environment=USER_CREATION=true
 
 [Service]
 ExecStartPre=/usr/bin/mkdir -p /home/podman/monitoring/data/beszel
